@@ -1,5 +1,6 @@
 import type { ClientContext } from "@deepseek-ai/dsh-client-runtime/client"
 import { baseName, relativeTo } from "../paths.ts"
+import { MAX_FILE_SEARCH_QUERY_LENGTH, rankFilePaths } from "../file-search-ranking.ts"
 import { listMentionPaths } from "./file-index.ts"
 import { bindWorkbenchCwd, workbenchCwd } from "./runtime-api.ts"
 
@@ -7,11 +8,17 @@ const SOURCE_NAME = "file"
 const SOURCE_ORDER = -10
 const CACHE_TTL_MS = 8_000
 const CANDIDATE_LIMIT = 20
+const MAX_SEARCH_SESSIONS = 256
 const PLAIN_PATH = /^[\w./:@+~-]+$/u
 
 interface PathIndex {
   readonly paths: readonly string[]
   readonly fetchedAt: number
+}
+
+interface SearchSession {
+  readonly searchId: string
+  revision: number
 }
 
 interface FileCandidate {
@@ -37,9 +44,9 @@ interface InputTriggers {
 }
 
 /**
- * `@` file source: index the session workspace, rank locally, insert `@path`.
- * A failed or missing `fs.search` falls back to `fs.tree` so the menu does
- * not open-and-close empty.
+ * `@` file source: keep a small warm lexicon for rendering and ask the Host to
+ * rank typed queries against the complete workspace index. A failed or missing
+ * `fs.search` falls back to the legacy client-side tree walk.
  */
 export function registerFileMention(ctx: ClientContext): void {
   const inputTriggers = readInputTriggers(ctx)
@@ -47,6 +54,8 @@ export function registerFileMention(ctx: ClientContext): void {
   const cache = new Map<string, PathIndex>()
   const inflight = new Map<string, Promise<readonly string[]>>()
   const lexiconListeners = new Map<string, Set<() => void>>()
+  const searchSessions = new Map<string, SearchSession>()
+  const searchNamespace = globalThis.crypto?.randomUUID?.() ?? `${String(Date.now())}-${Math.random().toString(36).slice(2)}`
 
   const notifyLexicon = (sessionId: string): void => {
     for (const listener of [...(lexiconListeners.get(sessionId) ?? [])]) {
@@ -82,10 +91,30 @@ export function registerFileMention(ctx: ClientContext): void {
       name: SOURCE_NAME,
       order: SOURCE_ORDER,
       async candidates(session, { query, signal }) {
-        const paths = await load(session.sessionId)
+        const normalized = normalizeQuery(query)
+        const cwd = sessionCwd(ctx, session.sessionId)
+        let search = searchSessions.get(session.sessionId)
+        if (search === undefined) {
+          while (searchSessions.size >= MAX_SEARCH_SESSIONS) {
+            const oldest = searchSessions.keys().next().value as string | undefined
+            if (oldest === undefined) break
+            searchSessions.delete(oldest)
+          }
+          search = { searchId: `${searchNamespace}:${session.sessionId}`, revision: 0 }
+          searchSessions.set(session.sessionId, search)
+        }
+        const paths = normalized === ""
+          ? await load(session.sessionId)
+          : await listMentionPaths(session.sessionId, cwd, {
+            query: normalized,
+            limit: CANDIDATE_LIMIT,
+            signal,
+            searchId: search.searchId,
+            revision: ++search.revision,
+          })
         if (signal.aborted) return []
-        return rankPaths(paths, normalizeQuery(query), CANDIDATE_LIMIT)
-          .map((path) => toCandidate(path, workspaceLabel(sessionCwd(ctx, session.sessionId))))
+        return rankFilePaths(paths, normalized, CANDIDATE_LIMIT)
+          .map((path) => toCandidate(path, workspaceLabel(cwd)))
       },
       warm(session) {
         load(session.sessionId).catch(() => {})
@@ -112,6 +141,7 @@ export function registerFileMention(ctx: ClientContext): void {
       cache.clear()
       inflight.clear()
       lexiconListeners.clear()
+      searchSessions.clear()
     }
   }, "cocode-workbench: @ file source")
   ctx.on("connection/reset", () => {
@@ -176,35 +206,8 @@ export function treeMentionPath(root: string, path: string, isDir: boolean): str
   return isDir && relative !== "." && !relative.endsWith("/") ? `${relative}/` : relative
 }
 
-function rankPaths(paths: readonly string[], query: string, limit: number): string[] {
-  const needle = query.trim().toLowerCase()
-  return paths
-    .map((path, index) => ({ path, index, score: pathScore(path, needle) }))
-    .filter((entry) => entry.score !== undefined)
-    .sort((left, right) => (right.score as number) - (left.score as number) || left.index - right.index)
-    .slice(0, Math.max(0, limit))
-    .map((entry) => entry.path)
-}
-
 function normalizeQuery(query: string): string {
   const trimmed = query.trim()
-  return trimmed.startsWith("\"") ? trimmed.slice(1).replaceAll("\\\"", "\"") : trimmed
-}
-
-function pathScore(path: string, query: string): number | undefined {
-  if (query === "") return 0
-  const lower = path.toLowerCase()
-  const base = lower.slice(Math.max(0, lower.lastIndexOf("/") + 1)).replace(/\/$/, "")
-  if (lower === query) return 1_000
-  if (base.startsWith(query)) return 800 - base.length / 100
-  if (lower.startsWith(query)) return 700 - lower.length / 100
-  const index = lower.indexOf(query)
-  if (index >= 0) return 500 - index - lower.length / 100
-  let cursor = 0
-  for (const character of query) {
-    cursor = lower.indexOf(character, cursor)
-    if (cursor < 0) return undefined
-    cursor += 1
-  }
-  return 100 - lower.length / 100
+  const unquoted = trimmed.startsWith("\"") ? trimmed.slice(1).replaceAll("\\\"", "\"") : trimmed
+  return unquoted.slice(0, MAX_FILE_SEARCH_QUERY_LENGTH)
 }
