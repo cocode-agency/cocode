@@ -4,7 +4,7 @@ import htmlToDocx from "html-to-docx"
 import mammoth from "mammoth"
 import { promisify } from "node:util"
 import { tmpdir } from "node:os"
-import { resolve as resolvePath, sep } from "node:path"
+import { resolve as resolvePath, sep, win32 } from "node:path"
 import { extname, join } from "pathe"
 
 const MAX_WORD_BYTES = 24 * 1024 * 1024
@@ -13,41 +13,76 @@ const OFFICE_TIMEOUT_MS = 45_000
 const execFile = promisify(execFileCallback)
 let officePathPromise: Promise<string | undefined> | undefined
 
-function officeCandidates(): string[] {
-  return [
-    process.env.COCODE_SOFFICE_PATH,
-    process.env.SOFFICE_PATH,
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    "/Applications/LibreOfficeDev.app/Contents/MacOS/soffice",
-    "/opt/homebrew/bin/soffice",
-    "/usr/local/bin/soffice",
-    "soffice",
-  ].filter((value): value is string => value !== undefined && value !== "")
+type OfficeDiscoveryOptions = {
+  readonly platform?: NodeJS.Platform
+  readonly env?: Readonly<Record<string, string | undefined>>
+  readonly canAccess?: (path: string) => Promise<boolean>
+  readonly locateOnPath?: (locator: string, executable: string) => Promise<string | undefined>
+}
+
+/** Candidate paths in priority order; exported only for focused host tests. */
+export function officeCandidates(
+  platform: NodeJS.Platform = process.platform,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
+  const candidates = [env.COCODE_SOFFICE_PATH, env.SOFFICE_PATH]
+  if (platform === "win32") {
+    candidates.push(
+      ...[env.ProgramW6432, env.ProgramFiles, env["ProgramFiles(x86)"]]
+        .filter((value): value is string => value !== undefined && value !== "")
+        .map(base => win32.join(base, "LibreOffice", "program", "soffice.exe")),
+      env.LOCALAPPDATA === undefined || env.LOCALAPPDATA === ""
+        ? undefined
+        : win32.join(env.LOCALAPPDATA, "Programs", "LibreOffice", "program", "soffice.exe"),
+    )
+  } else if (platform === "darwin") {
+    candidates.push(
+      "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+      "/Applications/LibreOfficeDev.app/Contents/MacOS/soffice",
+      "/opt/homebrew/bin/soffice",
+      "/usr/local/bin/soffice",
+    )
+  } else {
+    candidates.push("/usr/local/bin/soffice")
+  }
+  candidates.push("soffice")
+  return [...new Set(candidates.filter((value): value is string => value !== undefined && value !== ""))]
+}
+
+async function canAccess(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function locateOfficeOnPath(locator: string, executable: string): Promise<string | undefined> {
+  try {
+    const result = await execFile(locator, [executable], { timeout: 2_000 })
+    return result.stdout.trim().split(/\r?\n/, 1)[0] || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Resolve an installed LibreOffice executable without relying on shell syntax. */
+export async function discoverOfficePath(options: OfficeDiscoveryOptions = {}): Promise<string | undefined> {
+  const platform = options.platform ?? process.platform
+  const candidates = officeCandidates(platform, options.env ?? process.env)
+  const accessible = options.canAccess ?? canAccess
+  const locate = options.locateOnPath ?? locateOfficeOnPath
+  for (const candidate of candidates) {
+    if (candidate === "soffice") return locate(platform === "win32" ? "where.exe" : "which", candidate)
+    if (await accessible(candidate)) return candidate
+  }
+  return undefined
 }
 
 async function findOffice(): Promise<string | undefined> {
   if (officePathPromise !== undefined) return officePathPromise
-  officePathPromise = (async () => {
-    for (const candidate of officeCandidates()) {
-      if (candidate === "soffice") {
-        try {
-          const result = await execFile("which", [candidate], { timeout: 2_000 })
-          const path = result.stdout.trim().split("\n")[0]
-          if (path !== "") return path
-        } catch {
-          continue
-        }
-      } else {
-        try {
-          await access(candidate)
-          return candidate
-        } catch {
-          continue
-        }
-      }
-    }
-    return undefined
-  })()
+  officePathPromise = discoverOfficePath()
   return officePathPromise
 }
 

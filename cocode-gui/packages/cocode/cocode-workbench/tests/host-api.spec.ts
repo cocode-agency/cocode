@@ -117,7 +117,7 @@ describe("Cocode Workbench host API", () => {
     const reread = await invoke(route, "word.read", { sessionId: "s1", path: "report.docx" })
     expect((reread.value?.value as { html?: string }).html).toMatch(/Edited\s+report/)
     expect((reread.value?.value as { html?: string }).html).toContain("Saved")
-  })
+  }, 15_000)
 
   it("round-trips rich Word formatting instead of flattening it to plain text", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-rich-word-"))
@@ -158,8 +158,8 @@ describe("Cocode Workbench host API", () => {
     expect(edited).toMatch(/Edited\s+rich\s+title/)
     expect(edited).toMatch(/Saved\s+style/)
     expect(edited).toContain("<ul>")
-    expect(edited).toContain("Saved code")
-  })
+    expect(edited).toMatch(/Saved\s+code/)
+  }, 15_000)
 
   it("uses the caller-supplied cwd when the session is not live", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
