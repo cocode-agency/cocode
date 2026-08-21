@@ -248,24 +248,6 @@
   border-radius: 8px;
 }
 
-.editor {
-  min-height: 0;
-  flex: 1;
-  width: 100%;
-  padding: 12px 16px;
-  border: 0;
-  color: var(--dsw-alias-label-primary);
-  background: transparent;
-  font: 12px/1.65 var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
-  tab-size: 2;
-  resize: none;
-  outline: none;
-}
-
-.editor[readonly] {
-  color: var(--dsw-alias-label-secondary);
-}
-
 .code {
   margin: 12px;
 }
