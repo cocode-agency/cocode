@@ -90,6 +90,37 @@ test("writes isolated Windows updater metadata for each architecture", () => {
 	}
 })
 
+test("writes Linux AppImage updater metadata with electron-updater channel names", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-linux-update-metadata-"))
+	try {
+		const appImage = path.join(root, "Cocode-1.2.3-x86_64.AppImage")
+		writeFileSync(appImage, "x64-appimage")
+		const x64Files = writeArchitectureUpdateMetadata({
+			outDir: root,
+			platform: "linux",
+			arch: "x64",
+			version: "1.2.3",
+			artifacts: [appImage],
+		})
+		assert.deepEqual(x64Files, [path.join(root, "latest-linux.yml")])
+		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(x64Files[0] as string, appImage))
+
+		const armImage = path.join(root, "Cocode-1.2.3-arm64.AppImage")
+		writeFileSync(armImage, "arm64-appimage")
+		const armFiles = writeArchitectureUpdateMetadata({
+			outDir: root,
+			platform: "linux",
+			arch: "arm64",
+			version: "1.2.3",
+			artifacts: [armImage],
+		})
+		assert.deepEqual(armFiles, [path.join(root, "latest-linux-arm64.yml")])
+		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(armFiles[0] as string, armImage))
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
 test("writes a Windows PE inventory with explicit required and excluded signing scope", () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-pe-inventory-"))
 	try {
@@ -255,6 +286,18 @@ test("writes one deterministic SHA256 manifest without duplicate artifacts", () 
 			`${createHash("sha256").update("zip").digest("hex")}  Cocode.zip`,
 		].sort()
 		assert.equal(readFileSync(manifest, "utf8"), `${expectedRows.join("\n")}\n`)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("supports architecture-scoped checksum manifest names", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-checksums-"))
+	try {
+		const appImage = path.join(root, "Cocode-x86_64.AppImage")
+		writeFileSync(appImage, "appimage")
+		const manifest = appendChecksumManifest(root, [appImage], "SHA256SUMS-x64")
+		assert.equal(manifest, path.join(root, "SHA256SUMS-x64"))
 	} finally {
 		rmSync(root, { recursive: true, force: true })
 	}

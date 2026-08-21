@@ -3,8 +3,10 @@ export type ApplicationUpdateDisabledReason =
 	| "disabled-by-environment"
 	| "unsupported-platform"
 	| "unsupported-architecture"
+	| "not-appimage"
 
 export type ApplicationUpdateChannel = "x64" | "arm64"
+export type ApplicationUpdatePlatform = "darwin" | "win32" | "linux"
 
 export type ApplicationUpdateConfig =
 	| {
@@ -13,9 +15,10 @@ export type ApplicationUpdateConfig =
 	  }
 	| {
 			readonly enabled: true
+			readonly platform: ApplicationUpdatePlatform
 			readonly repository: string
 			readonly updateInterval: string
-			readonly channel: ApplicationUpdateChannel
+			readonly channel: ApplicationUpdateChannel | null
 	  }
 
 export interface ResolveApplicationUpdateConfigOptions {
@@ -23,6 +26,7 @@ export interface ResolveApplicationUpdateConfigOptions {
 	readonly platform: NodeJS.Platform
 	readonly architecture: string
 	readonly defaultRepository: string
+	readonly isAppImage?: boolean
 	readonly environment?: NodeJS.ProcessEnv
 }
 
@@ -31,19 +35,20 @@ export function resolveApplicationUpdateConfig({
 	platform,
 	architecture,
 	defaultRepository,
+	isAppImage = true,
 	environment = process.env,
 }: ResolveApplicationUpdateConfigOptions): ApplicationUpdateConfig {
 	if (!packaged) return { enabled: false, reason: "development" }
 	if (isDisabled(environment.ELECTRON_AUTO_UPDATE)) {
 		return { enabled: false, reason: "disabled-by-environment" }
 	}
-	if (platform !== "darwin" && platform !== "win32") {
+	if (platform !== "darwin" && platform !== "win32" && platform !== "linux") {
 		return { enabled: false, reason: "unsupported-platform" }
 	}
-	if (platform === "win32" && architecture !== "x64" && architecture !== "arm64") {
-		return { enabled: false, reason: "unsupported-architecture" }
+	if (platform === "linux" && !isAppImage) {
+		return { enabled: false, reason: "not-appimage" }
 	}
-	if (platform === "darwin" && architecture !== "x64" && architecture !== "arm64") {
+	if (architecture !== "x64" && architecture !== "arm64") {
 		return { enabled: false, reason: "unsupported-architecture" }
 	}
 
@@ -51,10 +56,11 @@ export function resolveApplicationUpdateConfig({
 	assertGitHubRepository(repository)
 	const updateInterval = environment.ELECTRON_UPDATE_INTERVAL?.trim() || "10 minutes"
 	assertUpdateInterval(updateInterval)
-	const channel = architecture as ApplicationUpdateChannel
+	const channel = platform === "linux" ? null : (architecture as ApplicationUpdateChannel)
 
 	return {
 		enabled: true,
+		platform,
 		repository,
 		updateInterval,
 		channel,

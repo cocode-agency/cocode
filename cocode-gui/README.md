@@ -5,9 +5,8 @@ provides the workspace surface for sessions, files, terminals, diffs, and
 attachments while the Host owns agent execution and session persistence.
 
 > **Project status:** Developer preview. This package is a private Electron
-> workspace and is built from source as part of the Cocode repository. The
-> current release scripts target macOS and Windows artifacts; Linux is supported
-> for source builds.
+> workspace and is built from source as part of the Cocode repository. Release
+> scripts produce signed macOS/Windows artifacts and native Linux AppImages.
 
 See the [repository README](../README.md) for the overall architecture,
 component boundaries, credentials, and TUI setup.
@@ -97,12 +96,43 @@ corepack pnpm@10.34.5 run release:mac:x64
 corepack pnpm@10.34.5 run release:mac:arm64
 corepack pnpm@10.34.5 run release:win:x64
 corepack pnpm@10.34.5 run release:win:arm64
+corepack pnpm@10.34.5 run release:linux:x64
+corepack pnpm@10.34.5 run release:linux:arm64
 ```
 
-Signed macOS ZIP and Windows NSIS builds use `electron-updater` with the shared
-GitHub Releases repository. x64 and ARM64 use independent metadata files, and a
-Draft Release must be published manually only after all platform artifacts pass
-verification. Development and Linux builds do not start the updater.
+The Linux commands must run on a native Linux host matching the requested
+architecture. The release gate rejects macOS/Windows hosts, a mismatched
+`uname -m`, and cross-compilation overrides such as `npm_config_arch`; there is
+no x64-to-arm64 release path. Linux output is written under
+`release/linux/<arch>/` as `Cocode-<version>-x86_64.AppImage` or
+`Cocode-<version>-arm64.AppImage`. Local commands always use
+`--publish never`.
+
+For a clean Linux checkout, install the three sibling workspaces before the
+release command (the CI workflow uses the same order):
+
+```sh
+cd ../cocode-host-supervisor && corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+cd ../cocode-tui && corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+cd ../cocode-gui && corepack pnpm@10.34.5 install --frozen-lockfile
+```
+
+Use `xvfb-run -a release/linux/<arch>/*.AppImage --disable-gpu --no-sandbox`
+for a headless launch smoke when the host has no display. The release verifier
+also checks the AppImage ELF machine, embedded runtime/TUI/native modules,
+updater metadata, checksums, and architecture-scoped release manifest.
+
+Signed macOS ZIP and Windows NSIS builds, plus Linux AppImage builds, use
+`electron-updater` with the shared GitHub Releases repository. Linux x86_64
+uses `latest-linux.yml`; Linux arm64 uses `latest-linux-arm64.yml`. The
+architecture-specific checksum and evidence files are named
+`SHA256SUMS-x64`/`SHA256SUMS-arm64` and
+`linux-release-manifest-x64.json`/`linux-release-manifest-arm64.json` so they
+can coexist in GitHub Release's flat asset namespace. A Draft Release is
+published only by the protected GitHub Actions publish job after both native
+architectures pass verification. Development builds and Linux `--dir` or
+unpacked AppDirs do not start the updater; automatic updates require launching
+the real executable AppImage with its executable bit preserved.
 
 Windows x64 and ARM64 releases are per-user NSIS installers. Formal releases
 must use the configured team signing service; the release and update path does

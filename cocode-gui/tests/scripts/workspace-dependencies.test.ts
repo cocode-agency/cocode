@@ -9,6 +9,7 @@ import {
 	isPackageCompatible,
 	pruneIncompatibleNativePackages,
 	pruneNativePrebuildDirectories,
+	ensureLinuxNodePtyNatives,
 	ensureWindowsNodePtyNatives,
 	ensureWorkspaceDependencies,
 } from "../../scripts/lib/workspace-dependencies.mjs"
@@ -107,6 +108,39 @@ test("repairs missing Windows node-pty native files with the target architecture
 			true,
 		)
 		assert.equal(calls.at(-1)?.env?.npm_config_arch, "arm64")
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("repairs missing Linux node-pty native files with the target architecture", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-linux-node-pty-native-test-"))
+	const release = path.join(root, "node_modules", "node-pty", "prebuilds", "linux-arm64")
+	const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv }> = []
+	try {
+		assert.equal(
+			ensureLinuxNodePtyNatives({
+				root,
+				platform: "linux",
+				arch: "arm64",
+				run(command, args, options) {
+					calls.push({ command, args, env: options?.env })
+					for (const file of [
+						path.join(release, "pty.node"),
+						path.join(release, "spawn-helper"),
+					]) {
+						mkdirSync(path.dirname(file), { recursive: true })
+						writeFileSync(file, "native")
+					}
+				},
+			}),
+			true,
+		)
+		assert.equal(calls.length, 1)
+		assert.deepEqual(calls[0]?.args, ["pnpm@10.34.5", "rebuild", "node-pty"])
+		assert.equal(calls[0]?.env?.npm_config_arch, "arm64")
+		assert.equal(existsSync(path.join(release, "spawn-helper")), true)
+		assert.equal(ensureLinuxNodePtyNatives({ root, platform: "linux", arch: "arm64" }), false)
 	} finally {
 		rmSync(root, { recursive: true, force: true })
 	}

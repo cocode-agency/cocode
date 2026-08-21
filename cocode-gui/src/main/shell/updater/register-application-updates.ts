@@ -27,7 +27,7 @@ export interface ElectronUpdaterFeed {
 	readonly provider: "github"
 	readonly owner: string
 	readonly repo: string
-	readonly channel: "x64" | "arm64"
+	channel?: "x64" | "arm64"
 }
 
 interface ElectronUpdaterAdapter extends ApplicationUpdateEventSource {
@@ -52,12 +52,13 @@ export function configureElectronUpdater(
 	updater.autoDownload = true
 	updater.autoInstallOnAppQuit = false
 	updater.channel = config.channel
-	updater.setFeedURL({
+	const feed: ElectronUpdaterFeed = {
 		provider: "github",
 		owner,
 		repo,
-		channel: config.channel,
-	})
+	}
+	if (config.channel) feed.channel = config.channel
+	updater.setFeedURL(feed)
 }
 
 export function registerApplicationUpdates(
@@ -70,6 +71,7 @@ export function registerApplicationUpdates(
 			packaged: app.isPackaged,
 			platform: process.platform,
 			architecture: process.arch,
+			isAppImage: process.platform !== "linux" || Boolean(process.env.APPIMAGE),
 			defaultRepository: resolveGitHubRepositoryFromUrl(packageMetadata.repository.url),
 		})
 	} catch (error) {

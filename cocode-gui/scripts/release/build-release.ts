@@ -7,12 +7,13 @@ import {
 	resolveReleaseTarget,
 	resolveWindowsSignMode,
 } from "./release-config"
+import { assertNativeReleaseHost } from "./assert-native-release-host.mjs"
 
 loadReleaseEnvironment()
 
 const platform = readOption("--platform")
 const arch = readOption("--arch")
-if (!platform || !arch) throw new Error("Usage: pnpm release:{mac|win}:{x64|arm64}")
+if (!platform || !arch) throw new Error("Usage: pnpm release:{mac|win|linux}:{x64|arm64}")
 
 const runtimeArtifactRoot =
 	process.env.COCODE_RUNTIME_ARTIFACT_ROOT ?? path.resolve(`release/${platform}/${arch}/runtime`)
@@ -23,7 +24,7 @@ const environment: NodeJS.ProcessEnv = {
 	...process.env,
 	RELEASE_PLATFORM: platform,
 	RELEASE_ARCH: arch,
-	RELEASE_REQUIRE_SIGNING: "1",
+	RELEASE_REQUIRE_SIGNING: platform === "linux" ? "0" : "1",
 	RELEASE_REQUIRE_NATIVE_ARCH_MATCH: "1",
 	RELEASE_OUTPUT_DIR: process.env.RELEASE_OUTPUT_DIR ?? `release/${platform}/${arch}`,
 	COCODE_RUNTIME_ARTIFACT_ROOT: runtimeArtifactRoot,
@@ -35,14 +36,11 @@ environment.WINDOWS_SIGN_LEDGER_DIR = path.resolve(
 )
 delete environment.COREPACK_ROOT
 const target = resolveReleaseTarget(environment)
-if (target.platform !== process.platform)
-	throw new Error(
-		`Release builds must run on ${target.platform}; current host is ${process.platform}.`,
-	)
-if (target.arch !== process.arch)
-	throw new Error(
-		`Release builds must run on native ${target.arch}; current process is ${process.arch}.`,
-	)
+assertNativeReleaseHost({
+	targetPlatform: target.platform,
+	targetArch: target.arch,
+	environment,
+})
 requireReleaseCredentials(target, environment)
 
 if (target.platform === "darwin") {
@@ -64,18 +62,18 @@ if (target.platform === "win32" && resolveWindowsSignMode(environment) === "serv
 		throw new Error("Windows signing service credential preflight failed.")
 }
 
-if (target.platform === "win32") {
-	cleanWindowsNativeBuildOutputs()
+if (target.platform === "win32" || target.platform === "linux") {
+	cleanNativeBuildOutputs()
 	const nativeDependencyStatus = runPnpm([
 		"exec",
 		"electron-builder",
 		"install-app-deps",
-		"--platform=win32",
+		`--platform=${target.platform}`,
 		`--arch=${target.arch}`,
 	])
 	if (nativeDependencyStatus !== 0) {
 		throw new Error(
-			`Windows ${target.arch} native dependency preparation exited with code ${String(nativeDependencyStatus)}.`,
+			`${target.platform} ${target.arch} native dependency preparation exited with code ${String(nativeDependencyStatus)}.`,
 		)
 	}
 }
@@ -96,7 +94,8 @@ if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiSta
 const viteStatus = runPnpm(["exec", "electron-vite", "build"])
 if (viteStatus !== 0) throw new Error(`Electron Vite build exited with code ${String(viteStatus)}.`)
 
-const builderPlatform = target.platform === "darwin" ? "--mac" : "--win"
+const builderPlatform =
+	target.platform === "darwin" ? "--mac" : target.platform === "win32" ? "--win" : "--linux"
 const builderArch = target.arch === "arm64" ? "--arm64" : "--x64"
 process.exitCode = runPnpm([
 	"exec",
@@ -108,7 +107,7 @@ process.exitCode = runPnpm([
 	...["--publish", "never"],
 ])
 
-function cleanWindowsNativeBuildOutputs(): void {
+function cleanNativeBuildOutputs(): void {
 	for (const relativePath of ["node_modules/better-sqlite3/build", "node_modules/keytar/build"]) {
 		rmSync(path.resolve(relativePath), { recursive: true, force: true })
 	}

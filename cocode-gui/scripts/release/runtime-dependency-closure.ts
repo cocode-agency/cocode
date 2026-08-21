@@ -13,7 +13,7 @@ import { basename, dirname, extname, join, relative } from "node:path"
 import { pruneIncompatibleNativePackages } from "../lib/workspace-dependencies.mjs"
 
 type NativeStagingTarget = {
-	readonly platform: "darwin" | "win32"
+	readonly platform: "darwin" | "win32" | "linux"
 	readonly arch: "x64" | "arm64"
 }
 

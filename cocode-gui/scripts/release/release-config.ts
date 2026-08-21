@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { loadEnvFile } from "node:process"
 import * as path from "pathe"
 
-export type ReleasePlatform = "darwin" | "win32"
+export type ReleasePlatform = "darwin" | "win32" | "linux"
 export type ReleaseArchitecture = "x64" | "arm64"
 export type WindowsSignMode = "service" | "pfx"
 
@@ -127,7 +127,7 @@ export function validateReleaseEnvFile(file: string): void {
 export function resolveReleaseTarget(environment = process.env): ReleaseTarget {
 	const platform = environment.RELEASE_PLATFORM ?? process.platform
 	const arch = environment.RELEASE_ARCH ?? process.arch
-	if (platform !== "darwin" && platform !== "win32") {
+	if (platform !== "darwin" && platform !== "win32" && platform !== "linux") {
 		throw new Error(`Unsupported release platform: ${platform}.`)
 	}
 	if (arch !== "x64" && arch !== "arm64") {
@@ -339,6 +339,7 @@ export function createWindowsSignOptions(
 
 export function requireReleaseCredentials(target: ReleaseTarget, environment = process.env): void {
 	if (!isReleaseSigningRequired(environment)) return
+	if (target.platform === "linux") return
 	if (target.platform === "darwin") {
 		if (!createMacSignOptions(environment))
 			throw new Error("MAC_SIGNING_IDENTITY is required for a signed macOS release.")

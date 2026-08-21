@@ -4,6 +4,7 @@ import * as path from "pathe"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
 import {
+	ensureLinuxNodePtyNatives,
 	ensureWindowsNodePtyNatives,
 	ensureWorkspaceDependencies,
 } from "./lib/workspace-dependencies.mjs"
@@ -79,11 +80,14 @@ export function buildSupervisor({ clean = false, manifestPath = defaultManifestP
 			(file) => previous.artifacts?.[file] === sha256File(path.join(supervisorRoot, file)),
 		)
 	ensureSupervisorDependencies()
-	ensureWindowsNodePtyNatives({
+	const nativeOptions = {
 		root: supervisorRoot,
+		platform: process.platform,
 		arch: process.arch,
 		force: process.env.RELEASE_REQUIRE_NATIVE_ARCH_MATCH === "1",
-	})
+	}
+	ensureWindowsNodePtyNatives(nativeOptions)
+	ensureLinuxNodePtyNatives(nativeOptions)
 	if (!valid) {
 		console.log("[supervisor-build] building @cocode-agency/host-supervisor")
 		execFileSync(

@@ -31,6 +31,7 @@ test("configures electron-updater with the GitHub repository and architecture ch
 
 	configureElectronUpdater(updater, {
 		enabled: true,
+		platform: "win32",
 		repository: "acme/desktop",
 		updateInterval: "10 minutes",
 		channel: "arm64",

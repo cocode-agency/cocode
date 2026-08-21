@@ -5,13 +5,40 @@ import test from "node:test"
 
 const repoRoot = path.resolve("..")
 const releaseWorkflowPath = path.join(repoRoot, ".github/workflows/cocode-gui-release.yml")
+const releaseAssetVerifierPath = path.join(
+	repoRoot,
+	"cocode-gui/scripts/release/verify-github-release-assets.mjs",
+)
 const checkWorkflowPath = path.join(repoRoot, ".github/workflows/cocode-gui-check.yml")
 const guiPackagePath = path.join(repoRoot, "cocode-gui/package.json")
 const oxlintConfigPath = path.join(repoRoot, "cocode-gui/.oxlintrc.json")
 const lintStagedConfigPath = path.join(repoRoot, "cocode-gui/lint-staged.config.cjs")
 
-test("does not expose a public Desktop release workflow", () => {
-	assert.equal(existsSync(releaseWorkflowPath), false)
+test("exposes a Linux AppImage release workflow with native architecture jobs", () => {
+	assert.equal(existsSync(releaseWorkflowPath), true)
+	const workflow = readFileSync(releaseWorkflowPath, "utf8")
+
+	assert.match(workflow, /ubuntu-24\.04/)
+	assert.match(workflow, /ubuntu-24\.04-arm/)
+	assert.match(workflow, /fail-fast:\s*false/)
+	assert.match(workflow, /assert-native-release-host\.mjs/)
+	assert.match(workflow, /release:linux:\$\{\{ matrix\.arch \}\}/)
+	assert.match(workflow, /arch: x64/)
+	assert.match(workflow, /arch: arm64/)
+	assert.match(workflow, /verify-github-release-assets\.mjs/)
+	assert.match(workflow, /release-assets\/x64/)
+	assert.match(workflow, /release-assets\/arm64/)
+	assert.match(workflow, /SHA256SUMS-\$\{\{ matrix\.arch \}\}/)
+	assert.match(workflow, /linux-release-manifest-\$\{\{ matrix\.arch \}\}\.json/)
+	assert.doesNotMatch(workflow, /path: cocode-gui\/release\/linux\/\$\{\{ matrix\.arch \}\}\/\s*\n/)
+	assert.match(workflow, /contents:\s*write/)
+	assert.match(workflow, /gh release upload/)
+	assert.match(workflow, /gh release edit.*draft=false/)
+	assert.doesNotMatch(workflow, /electron-builder[^\n]+--publish always/)
+
+	const verifier = readFileSync(releaseAssetVerifierPath, "utf8")
+	assert.match(verifier, /SHA256SUMS-x64/)
+	assert.match(verifier, /linux-release-manifest-arm64\.json/)
 })
 
 test("keeps the public GUI workflow limited to checks and rebuildability", () => {
@@ -72,6 +99,15 @@ test("publishing stages fresh runtime and TUI artifacts before electron-builder"
 	assert.ok(publish.indexOf("prepare:release-assets") < publish.indexOf("electron-builder"))
 })
 
+test("provides native Linux release scripts and AppImage verification", () => {
+	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
+		scripts?: Record<string, string>
+	}
+	assert.match(packageJson.scripts?.["release:linux:x64"] ?? "", /--platform linux --arch x64/)
+	assert.match(packageJson.scripts?.["release:linux:arm64"] ?? "", /--platform linux --arch arm64/)
+	assert.match(packageJson.scripts?.["verify:linux-appimage"] ?? "", /verify-linux-appimage/)
+})
+
 test("builds mirrored DSH client bundles before fingerprinting the release runtime", () => {
 	const buildRuntime = readFileSync(
 		path.join(repoRoot, "cocode-gui/scripts/build-runtime.mjs"),
@@ -110,9 +146,10 @@ test("prepares target-native Windows dependencies before building release assets
 
 	assert.ok(installAppDeps >= 0)
 	assert.ok(runtimeBuild > installAppDeps)
-	assert.match(buildRelease, /--platform=win32/)
+	assert.match(buildRelease, /`--platform=\$\{target\.platform\}`/)
 	assert.match(buildRelease, /`--arch=\$\{target\.arch\}`/)
-	assert.match(buildRelease, /cleanWindowsNativeBuildOutputs/)
+	assert.match(buildRelease, /cleanNativeBuildOutputs/)
+	assert.match(buildRelease, /assertNativeReleaseHost/)
 })
 
 test("configures signed Windows updates and the Cocode NSIS include", () => {
@@ -126,4 +163,6 @@ test("configures signed Windows updates and the Cocode NSIS include", () => {
 	assert.match(builderConfig, /include:\s*path\.resolve\("resources\/installer\.nsh"\)/)
 	assert.match(builderConfig, /deleteAppDataOnUninstall:\s*false/)
 	assert.match(builderConfig, /windows-cli-installer\.ps1/)
+	assert.match(builderConfig, /linux:\s*\{[\s\S]+target:\s*\["AppImage"\]/)
+	assert.match(builderConfig, /cocode\.png/)
 })

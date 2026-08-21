@@ -37,6 +37,11 @@ import {
 	copyProductionDependencyClosure,
 	verifyProductionDependencyClosure,
 } from "./runtime-dependency-closure"
+import {
+	verifyLinuxAppImage,
+	verifyLinuxReleaseManifest,
+	writeLinuxReleaseManifest,
+} from "./verify-linux-appimage.mjs"
 
 interface WindowsSigningPolicy {
 	inspectAuthenticode(filePath: string): { Subject?: string; Thumbprint?: string }
@@ -304,6 +309,15 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		const installer = selectUpdateArtifact(target.platform, finalizedArtifacts)
 		windowsSignature = inspect ? inspect(installer) : undefined
 	}
+	const updateArtifact = selectUpdateArtifact(target.platform, finalizedArtifacts)
+	if (target.platform === "linux") {
+		verifyLinuxAppImage({
+			appImage: updateArtifact,
+			arch: target.arch,
+			metadataFile: undefined,
+			extract: false,
+		})
+	}
 
 	const updateMetadata = writeArchitectureUpdateMetadata({
 		outDir: context.outDir,
@@ -313,11 +327,27 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		artifacts: [...artifacts, ...additional],
 	})
 	additional.push(...updateMetadata)
-	const updateArtifact = selectUpdateArtifact(target.platform, finalizedArtifacts)
 	for (const metadata of updateMetadata) {
 		verifyArchitectureUpdateMetadata(metadata, updateArtifact)
 	}
-	const checksum = appendChecksumManifest(context.outDir, [...artifacts, ...additional])
+	if (target.platform === "linux") {
+		const manifest = writeLinuxReleaseManifest({
+			appImage: updateArtifact,
+			arch: target.arch,
+			version: packageMetadata.version,
+			metadataFiles: updateMetadata,
+			outDir: context.outDir,
+			hostPlatform: process.platform,
+			hostArch: process.arch,
+		})
+		verifyLinuxReleaseManifest(manifest, updateArtifact, target.arch, updateMetadata)
+		additional.push(manifest)
+	}
+	const checksum = appendChecksumManifest(
+		context.outDir,
+		[...artifacts, ...additional],
+		target.platform === "linux" ? `SHA256SUMS-${target.arch}` : undefined,
+	)
 	additional.push(checksum)
 	if (target.platform === "win32") {
 		const evidence = writeWindowsReleaseEvidenceManifest({
@@ -374,12 +404,15 @@ export function writeArchitectureUpdateMetadata(options: {
 	const artifact = selectUpdateArtifact(options.platform, options.artifacts)
 	const sha512 = createHash("sha512").update(readFileSync(artifact)).digest("base64")
 	const fileName = path.basename(artifact)
-	const canonical =
-		options.platform === "darwin" ? `${options.arch}-mac.yml` : `${options.arch}.yml`
-	const requestedAlias =
-		options.platform === "darwin"
-			? `latest-mac-${options.arch}.yml`
-			: `latest-${options.arch}.yml`
+	const names =
+		options.platform === "linux"
+			? [options.arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml"]
+			: [
+					options.platform === "darwin" ? `${options.arch}-mac.yml` : `${options.arch}.yml`,
+					options.platform === "darwin"
+						? `latest-mac-${options.arch}.yml`
+						: `latest-${options.arch}.yml`,
+				]
 	const metadata = [
 		`version: ${options.version}`,
 		"files:",
@@ -392,7 +425,7 @@ export function writeArchitectureUpdateMetadata(options: {
 		"",
 	].join("\n")
 	mkdirSync(options.outDir, { recursive: true })
-	const files = [canonical, requestedAlias].map((name) => path.join(options.outDir, name))
+	const files = names.map((name) => path.join(options.outDir, name))
 	for (const file of files) writeFileSync(file, metadata)
 	return files
 }
@@ -490,7 +523,11 @@ export function writeWindowsReleaseEvidenceManifest(options: {
 	return manifestPath
 }
 
-export function appendChecksumManifest(outDir: string, artifacts: readonly string[]): string {
+export function appendChecksumManifest(
+	outDir: string,
+	artifacts: readonly string[],
+	fileName = "SHA256SUMS",
+): string {
 	const uniqueArtifacts = [...new Set(artifacts.map((artifact) => path.resolve(artifact)))].filter(
 		existsSync,
 	)
@@ -502,7 +539,7 @@ export function appendChecksumManifest(outDir: string, artifacts: readonly strin
 					.digest("hex")}  ${path.relative(outDir, artifact)}`,
 		)
 		.sort()
-	const manifestPath = path.join(outDir, "SHA256SUMS")
+	const manifestPath = path.join(outDir, fileName)
 	writeFileSync(manifestPath, `${rows.join("\n")}\n`)
 	return manifestPath
 }
@@ -632,7 +669,7 @@ export function extractWindowsArchiveEntries(options: {
 function resolveBuilderTarget(): ReleaseTarget | undefined {
 	if (process.env.RELEASE_PLATFORM || process.env.RELEASE_ARCH) return resolveReleaseTarget()
 	if (
-		(process.platform === "darwin" || process.platform === "win32") &&
+		(process.platform === "darwin" || process.platform === "win32" || process.platform === "linux") &&
 		(process.arch === "x64" || process.arch === "arm64")
 	) {
 		return { platform: process.platform, arch: process.arch }
@@ -643,7 +680,7 @@ function resolveBuilderTarget(): ReleaseTarget | undefined {
 function resolveContextTarget(context: AfterPackContext): ReleaseTarget {
 	const platform = context.electronPlatformName
 	const arch = Arch[context.arch]
-	if (platform !== "darwin" && platform !== "win32")
+	if (platform !== "darwin" && platform !== "win32" && platform !== "linux")
 		throw new Error(`Unsupported Builder platform: ${platform}.`)
 	if (arch !== "x64" && arch !== "arm64")
 		throw new Error(`Unsupported Builder architecture: ${arch}.`)
@@ -660,7 +697,7 @@ function assertNativeStagingTarget(target: ReleaseTarget): void {
 }
 
 function resolvePackagedResourcesRoot(appOutDir: string, platform: ReleasePlatform): string {
-	if (platform === "win32") return path.join(appOutDir, "resources")
+	if (platform === "win32" || platform === "linux") return path.join(appOutDir, "resources")
 	const appPath = resolveMacAppPath(appOutDir)
 	return path.join(appPath, "Contents", "Resources")
 }
@@ -794,11 +831,11 @@ function selectUpdateArtifact(
 	platform: ReleasePlatform,
 	artifacts: readonly string[],
 ): string {
-	const extension = platform === "darwin" ? ".zip" : ".exe"
+	const extension = platform === "darwin" ? ".zip" : platform === "win32" ? ".exe" : ".appimage"
 	const artifact = artifacts.find((candidate) => candidate.toLowerCase().endsWith(extension))
 	if (!artifact)
 		throw new Error(
-			`No ${platform === "darwin" ? "ZIP" : "NSIS"} update artifact was generated.`,
+			`No ${platform === "darwin" ? "ZIP" : platform === "win32" ? "NSIS" : "AppImage"} update artifact was generated.`,
 		)
 	return artifact
 }

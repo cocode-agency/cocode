@@ -65,6 +65,41 @@ export function ensureWindowsNodePtyNatives({
 	return true
 }
 
+export function ensureLinuxNodePtyNatives({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+	force = false,
+	run = execFileSync,
+} = {}) {
+	if (platform !== "linux") return false
+	const packageRoot = path.join(root, "node_modules", "node-pty")
+	if (!force && resolveLinuxNodePtyMissing(packageRoot, arch).length === 0) return false
+
+	console.log(`[workspace-deps] rebuilding node-pty natives for linux/${arch}`)
+	run(
+		process.platform === "win32" ? "corepack.cmd" : "corepack",
+		["pnpm@10.34.5", "rebuild", "node-pty"],
+		{
+			...shellCommandOptions({ cwd: root, stdio: "inherit" }),
+			env: { ...process.env, npm_config_arch: arch },
+		},
+	)
+
+	const missing = resolveLinuxNodePtyMissing(packageRoot, arch)
+	if (missing.length > 0) {
+		throw new Error(
+			[
+				`node-pty Linux native files are missing after rebuild for linux/${arch}.`,
+				"Run the pinned pnpm rebuild in the host-supervisor workspace with build scripts enabled:",
+				`  corepack pnpm@10.34.5 --dir ${root} rebuild node-pty`,
+				...missing.map((file) => `  missing: ${file}`),
+			].join("\n"),
+		)
+	}
+	return true
+}
+
 export function pruneIncompatibleNativePackages(
 	root,
 	{ platform = process.platform, arch = process.arch } = {},
@@ -208,13 +243,10 @@ export function pruneNativePrebuildDirectories(
 	root,
 	{ platform = process.platform, arch = process.arch } = {},
 ) {
-	if (platform !== "win32" && platform !== "darwin") return false
+	if (platform !== "win32" && platform !== "darwin" && platform !== "linux") return false
 	const packageRoot = path.join(root, "node_modules", "node-pty")
 	if (!existsSync(packageRoot)) return false
-	let changed = pruneTargetDirectories(
-		path.join(packageRoot, "prebuilds"),
-		platform === "win32" || platform === "darwin" ? `${platform}-${arch}` : undefined,
-	)
+	let changed = pruneTargetDirectories(path.join(packageRoot, "prebuilds"), `${platform}-${arch}`)
 	changed =
 		(platform === "win32"
 			? pruneTargetDirectories(
@@ -265,6 +297,24 @@ function resolveWindowsNodePtyMissing(packageRoot, arch) {
 			const file = path.join(conptyDirectory, "conpty", companion)
 			if (!existsSync(file)) missing.push(file)
 		}
+	}
+	return missing
+}
+
+function resolveLinuxNodePtyMissing(packageRoot, arch) {
+	const searchDirectories = [
+		path.join(packageRoot, "build", "Release"),
+		path.join(packageRoot, "build", "Debug"),
+		path.join(packageRoot, "prebuilds", `linux-${arch}`),
+	]
+	const resolveDirectory = (name) =>
+		searchDirectories.find((directory) => existsSync(path.join(directory, name)))
+	const missing = []
+	const ptyDirectory = resolveDirectory("pty.node")
+	if (!ptyDirectory) {
+		missing.push(`pty.node (searched: ${searchDirectories.join(", ")})`)
+	} else if (!existsSync(path.join(ptyDirectory, "spawn-helper"))) {
+		missing.push(path.join(ptyDirectory, "spawn-helper"))
 	}
 	return missing
 }

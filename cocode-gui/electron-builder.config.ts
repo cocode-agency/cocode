@@ -25,6 +25,7 @@ const outputDirectory = path.resolve(
 	process.env.RELEASE_OUTPUT_DIR ?? path.join("release", target.platform, target.arch),
 )
 const iconRoot = path.resolve("resources/icons")
+const artifactArch = target.platform === "linux" && target.arch === "x64" ? "x86_64" : target.arch
 
 if (macSign?.keychain && !process.env.CSC_KEYCHAIN) {
 	process.env.CSC_KEYCHAIN = macSign.keychain
@@ -73,7 +74,7 @@ const config: Configuration = {
 			provider: "github",
 			owner: repository.owner,
 			repo: repository.name,
-			channel: target.arch,
+			...(target.platform === "linux" ? {} : { channel: target.arch }),
 			releaseType: "draft",
 			publishAutoUpdate: false,
 			tagNamePrefix: "v",
@@ -105,6 +106,13 @@ const config: Configuration = {
 				to: "windows-cli-installer.ps1",
 			},
 		],
+	},
+	linux: {
+		target: ["AppImage"],
+		artifactName: `Cocode-\${version}-${artifactArch}.\${ext}`,
+		icon: path.join(iconRoot, "cocode.png"),
+		category: "Development",
+		executableName: "cocode",
 	},
 	nsis: {
 		oneClick: true,
