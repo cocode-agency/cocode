@@ -9,6 +9,7 @@ import type { WorkbenchPanelProps } from "./model.ts"
 import { ExternalIcon, PreviewIcon } from "./icons.tsx"
 import type { DesktopApi } from "../../../../../src/contracts/ipc/desktop.contract.ts"
 import { State, message, useRemote } from "./panel-state.tsx"
+import { CodeEditor } from "./code-editor.tsx"
 import { fileUrl, workbenchRequest } from "./runtime-api.ts"
 import { resolveMarkdownImages } from "./markdown-assets.ts"
 import { baseName, relativeTo } from "../paths.ts"
@@ -314,17 +315,12 @@ function RegularFilePreview(props: WorkbenchPanelProps) {
     void api.open({ path }).catch(error => setNotice(message(error))).finally(() => setOpeningExternal(false))
   }
 
-  const sourceView = <textarea
-    className={css.editor}
+  const sourceView = <CodeEditor
     value={text}
+    lang={extension}
     readOnly={!editable}
-    spellCheck={false}
-    onChange={event => setDraft({ path, text: event.target.value })}
-    onKeyDown={event => {
-      if (event.key !== "s" || !(event.metaKey || event.ctrlKey)) return
-      event.preventDefault()
-      save()
-    }}
+    onChange={value => setDraft({ path, text: value })}
+    onSave={save}
   />
 
   const previewView = ((): ReactNode => {

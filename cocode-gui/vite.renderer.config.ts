@@ -97,9 +97,14 @@ function normalizeRuntimeUrl(value: string | undefined): string | undefined {
 }
 
 function createDshRuntimeProxy(runtimeUrl: string): Record<string, ProxyOptions> {
+	// changeOrigin must stay false: the /api trust fence (client-connection)
+	// requires the request Host header to match the browser's Origin host, and
+	// the page always calls same-origin through this proxy (localhost:5273).
+	// Rewriting Host to the target would 403 every /api RPC — pickDirectory
+	// and the other loopback-pinned methods fail first, then the rest.
 	const proxy: ProxyOptions = {
 		target: runtimeUrl,
-		changeOrigin: true,
+		changeOrigin: false,
 		ws: true,
 	}
 	return {
