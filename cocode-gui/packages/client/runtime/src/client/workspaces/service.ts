@@ -55,6 +55,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly manager: WorkspaceManager
   /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  /** In-flight ordinary-chat creates keyed by their configured storage directory. */
+  private readonly connectingDefault = new Map<string | undefined, Promise<SessionId>>()
   /** User-configured directory for sessions that do not belong to a project. */
   private defaultStoragePath: string | undefined
   /** Guards the runtime-owned one-shot initial-selection subscription. */
@@ -127,11 +129,36 @@ export class WorkspaceRuntime implements IWorkspaces {
     return attempt
   }
 
-  /** Create one ordinary chat session without attaching it to a project Workspace. */
+  /**
+   * Reuse the selected blank ordinary chat, or create one without attaching it
+   * to a project Workspace. Concurrent creates for the same storage directory
+   * share one Host request so repeated New Session clicks cannot mint hidden
+   * blank sessions. A configured directory is part of the reuse boundary: a
+   * blank session created under an earlier setting must not capture the click.
+   */
   connectDefaultSession(): Promise<SessionId> {
-    return this.sessions.create(this.defaultStoragePath === undefined
+    const cwd = this.defaultStoragePath
+    const inflight = this.connectingDefault.get(cwd)
+    if (inflight !== undefined) return inflight
+
+    const workspace = this.list.getSnapshot()
+    const sessions = this.sessions.list.getSnapshot()
+    const current = sessions.current
+    if (current !== undefined) {
+      const summary = sessions.byId[current]
+      const grouped = workspace.items.some(item => item.sessionIds.includes(current))
+      if (summary?.blank === true
+        && !grouped
+        && !workspace.archivedSessionIds.includes(current)
+        && (cwd === undefined || summary.cwd === cwd)) return Promise.resolve(current)
+    }
+
+    const attempt = this.sessions.create(cwd === undefined
       ? {}
-      : { cwd: this.defaultStoragePath })
+      : { cwd })
+      .finally(() => { this.connectingDefault.delete(cwd) })
+    this.connectingDefault.set(cwd, attempt)
+    return attempt
   }
 
   /** Set the directory used by future ordinary chat sessions. */
