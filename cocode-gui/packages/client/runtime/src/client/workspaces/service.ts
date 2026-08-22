@@ -47,6 +47,13 @@ export class DirectoryBrowseError extends Error {
   }
 }
 
+/** Canonical per-session directory below an ordinary-chat storage root. */
+function ordinarySessionCwd(root: string, sessionId: SessionId): string {
+  const base = root.replace(/[/\\]+$/, '')
+  const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  return `${base}${separator}${sessionId}`
+}
+
 /** Real Workspace object layer and Host actions. */
 export class WorkspaceRuntime implements IWorkspaces {
   /** UI-facing immutable projection; the manager remains wire truth. */
@@ -55,6 +62,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly manager: WorkspaceManager
   /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  /** In-flight ordinary-chat creates keyed by their configured storage directory. */
+  private readonly connectingDefault = new Map<string | undefined, Promise<SessionId>>()
   /** User-configured directory for sessions that do not belong to a project. */
   private defaultStoragePath: string | undefined
   /** Guards the runtime-owned one-shot initial-selection subscription. */
@@ -128,25 +137,50 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * Create one ordinary chat session without attaching it to a project
-   * Workspace. Its working directory is isolated below the configured (or
-   * Host-default) storage root by the same preallocated session id used on
-   * the wire. The Host ensures the directory exists during session.create.
+   * Reuse an eligible blank ordinary chat, or create one without attaching it
+   * to a project Workspace. Ordinary chats remain isolated below the configured
+   * (or Host-default) storage root by their session id. Concurrent connects for
+   * one storage setting share the root lookup, reuse scan, and Host create.
    */
-  async connectDefaultSession(): Promise<SessionId> {
-    const sessionId = `session-${crypto.randomUUID()}` as SessionId
-    let root = this.defaultStoragePath
-    if (root === undefined) {
-      const description = await this.api.host.describe({})
-      if (!description.result.ok) {
-        throw new Error(`host describe failed: ${description.result.error.message}`)
+  connectDefaultSession(): Promise<SessionId> {
+    const configuredRoot = this.defaultStoragePath
+    const inflight = this.connectingDefault.get(configuredRoot)
+    if (inflight !== undefined) return inflight
+
+    const attempt = (async (): Promise<SessionId> => {
+      let root = configuredRoot
+      if (root === undefined) {
+        const description = await this.api.host.describe({})
+        if (!description.result.ok) {
+          throw new Error(`host describe failed: ${description.result.error.message}`)
+        }
+        root = description.result.value.cwd
       }
-      root = description.result.value.cwd
-    }
-    const base = root.replace(/[/\\]+$/, '')
-    const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
-    const cwd = `${base}${separator}${sessionId}`
-    return this.sessions.create({ sessionId, cwd })
+      const storageRoot = root
+
+      const workspace = this.list.getSnapshot()
+      const grouped = new Set(workspace.items.flatMap(item => item.sessionIds))
+      const archived = new Set(workspace.archivedSessionIds)
+      const sessions = this.sessions.list.getSnapshot()
+      const reusable = (id: SessionId): boolean => {
+        const summary = sessions.byId[id]
+        return summary?.blank === true
+          && !grouped.has(id)
+          && !archived.has(id)
+          && summary.cwd === ordinarySessionCwd(storageRoot, id)
+      }
+
+      const current = sessions.current
+      if (current !== undefined && reusable(current)) return current
+      for (const id of sessions.ids) {
+        if (id !== current && reusable(id)) return id
+      }
+
+      const sessionId = `session-${crypto.randomUUID()}` as SessionId
+      return this.sessions.create({ sessionId, cwd: ordinarySessionCwd(storageRoot, sessionId) })
+    })().finally(() => { this.connectingDefault.delete(configuredRoot) })
+    this.connectingDefault.set(configuredRoot, attempt)
+    return attempt
   }
 
   /** Set the directory used by future ordinary chat sessions. */
