@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { spawn } from "node:child_process"
 // Paths here end up in shell command strings and escaping, so keep OS separators.
@@ -75,21 +75,100 @@ export class TuiLauncher {
 	}
 
 	public getCommandLineToolStatus(): Promise<TuiCommandLineToolStatus> {
+		if (isLinuxInstallerManagedCli()) return this.getLinuxInstallerStatus()
 		return this.registration.getStatus()
 	}
 
 	public ensureCommandLineTool(
 		source: TuiCommandLineToolRegistrationSource = "desktop-startup",
 	): Promise<TuiCommandLineToolResult> {
+		if (isLinuxInstallerManagedCli()) return this.installerManagedResult()
 		return this.registration.ensure(source)
 	}
 
 	public repairCommandLineTool(): Promise<TuiCommandLineToolResult> {
+		if (isLinuxInstallerManagedCli()) return this.installerManagedResult()
 		return this.registration.repair("manual")
 	}
 
 	public uninstallCommandLineTool(): Promise<TuiCommandLineToolResult> {
+		if (isLinuxInstallerManagedCli()) return this.installerManagedResult()
 		return this.registration.uninstall()
+	}
+
+	private async installerManagedResult(): Promise<TuiCommandLineToolResult> {
+		return { changed: false, status: await this.getLinuxInstallerStatus() }
+	}
+
+	private async getLinuxInstallerStatus(): Promise<TuiCommandLineToolStatus> {
+		const shimPath = resolveLinuxInstallerCommandPath()
+		const directory = path.dirname(shimPath)
+		let metadata: DesktopCliRuntimeMetadata = { runtimeValid: false }
+		try {
+			metadata = await this.getRuntimeMetadata()
+		} catch {
+			// The wrapper can still be diagnosed when the packaged runtime metadata
+			// is unavailable; the status below will report it as stale.
+		}
+		try {
+			const contents = await readFile(shimPath, "utf8")
+			const fileStat = await stat(shimPath)
+			const managed = contents.includes(LINUX_INSTALLER_TUI_MARKER)
+			const executable = (fileStat.mode & 0o111) !== 0
+			if (!managed) {
+				return {
+					state: "conflict",
+					path: shimPath,
+					directory,
+					managedByDesktop: false,
+					directoryOnPath: directoryOnPath(directory),
+					persistentPathConfigured: directoryOnPath(directory),
+					canRepair: false,
+					registrationSource: "installer",
+					runtimeValid: metadata.runtimeValid,
+					detail: "An unmanaged executable already exists at the installer-managed Cocode CLI path.",
+				}
+			}
+			const installed = executable && metadata.runtimeValid
+			return {
+				state: installed ? "installed" : "stale",
+				path: shimPath,
+				directory,
+				managedByDesktop: false,
+				directoryOnPath: directoryOnPath(directory),
+				persistentPathConfigured: directoryOnPath(directory),
+				canRepair: false,
+				registrationSource: "installer",
+				runtimeValid: metadata.runtimeValid,
+				...(metadata.runtimeVersion === undefined
+					? {}
+					: { runtimeVersion: metadata.runtimeVersion }),
+				...(metadata.tuiVersion === undefined ? {} : { tuiVersion: metadata.tuiVersion }),
+				...(metadata.supervisorVersion === undefined
+					? {}
+					: { supervisorVersion: metadata.supervisorVersion }),
+				...(metadata.manifestFingerprint === undefined
+					? {}
+					: { manifestFingerprint: metadata.manifestFingerprint }),
+				...(installed
+					? {}
+					: { detail: "The installer-managed TUI wrapper or bundled runtime is stale." }),
+			}
+		} catch (error) {
+			if (!isMissingFileError(error)) throw error
+			return {
+				state: "unavailable",
+				path: shimPath,
+				directory,
+				managedByDesktop: false,
+				directoryOnPath: directoryOnPath(directory),
+				persistentPathConfigured: directoryOnPath(directory),
+				canRepair: false,
+				registrationSource: "installer",
+				runtimeValid: metadata.runtimeValid,
+				detail: "The Linux TUI command is missing. Reinstall the Cocode package.",
+			}
+		}
 	}
 
 	public async openInTerminal(): Promise<void> {
@@ -194,6 +273,31 @@ function resolveResourcesRoot(): string {
 		return process.env.COCODE_TUI_RESOURCES_ROOT.trim()
 	if (app.isPackaged && typeof process.resourcesPath === "string") return process.resourcesPath
 	return path.resolve(app.getAppPath(), ".cache", "cocode")
+}
+
+const LINUX_INSTALLER_TUI_MARKER = "# cocode-linux-tui-wrapper:v1"
+
+function isLinuxInstallerManagedCli(): boolean {
+	return process.platform === "linux" && app.isPackaged && !process.env.COCODE_CLI_BIN_DIR?.trim()
+}
+
+function resolveLinuxInstallerCommandPath(): string {
+	return process.env.COCODE_LINUX_TUI_COMMAND?.trim() || "/usr/bin/cocode"
+}
+
+function directoryOnPath(directory: string): boolean {
+	const configuredPath = process.env.PATH ?? ""
+	return configuredPath
+		.split(path.delimiter)
+		.filter(Boolean)
+		.some(
+			(entry) =>
+				path.normalize(path.resolve(entry)) === path.normalize(path.resolve(directory)),
+		)
+}
+
+function isMissingFileError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT")
 }
 
 function resolveShimCandidates(): readonly {

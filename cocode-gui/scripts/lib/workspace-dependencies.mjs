@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, lstatSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import {
+	chmodSync,
+	existsSync,
+	lstatSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+} from "node:fs"
 import * as path from "pathe"
 import { shellCommandOptions } from "./child-process-options.mjs"
 
@@ -85,6 +92,7 @@ export function ensureLinuxNodePtyNatives({
 			env: { ...process.env, npm_config_arch: arch },
 		},
 	)
+	compileLinuxNodePtySpawnHelper(packageRoot, { run })
 
 	const missing = resolveLinuxNodePtyMissing(packageRoot, arch)
 	if (missing.length > 0) {
@@ -98,6 +106,18 @@ export function ensureLinuxNodePtyNatives({
 		)
 	}
 	return true
+}
+
+function compileLinuxNodePtySpawnHelper(packageRoot, { run }) {
+	const source = path.join(packageRoot, "src", "unix", "spawn-helper.cc")
+	const output = path.join(packageRoot, "build", "Release", "spawn-helper")
+	if (!existsSync(source) || existsSync(output)) return
+
+	console.log("[workspace-deps] compiling node-pty spawn-helper for linux")
+	run(process.env.CXX || "c++", ["-O2", "-std=c++17", source, "-o", output], {
+		...shellCommandOptions({ cwd: packageRoot, stdio: "inherit" }),
+	})
+	chmodSync(output, 0o755)
 }
 
 export function pruneIncompatibleNativePackages(

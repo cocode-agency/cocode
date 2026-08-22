@@ -90,32 +90,38 @@ test("writes isolated Windows updater metadata for each architecture", () => {
 	}
 })
 
-test("writes Linux AppImage updater metadata with electron-updater channel names", () => {
+test("writes Linux DEB and RPM updater metadata with electron-updater channel names", () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-linux-update-metadata-"))
 	try {
-		const appImage = path.join(root, "Cocode-1.2.3-x86_64.AppImage")
-		writeFileSync(appImage, "x64-appimage")
+		const deb = path.join(root, "Cocode-1.2.3-x86_64.deb")
+		const rpm = path.join(root, "Cocode-1.2.3-x86_64.rpm")
+		writeFileSync(deb, "x64-deb")
+		writeFileSync(rpm, "x64-rpm")
 		const x64Files = writeArchitectureUpdateMetadata({
 			outDir: root,
 			platform: "linux",
 			arch: "x64",
 			version: "1.2.3",
-			artifacts: [appImage],
+			artifacts: [deb, rpm],
+			updateArtifacts: [deb, rpm],
 		})
 		assert.deepEqual(x64Files, [path.join(root, "latest-linux.yml")])
-		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(x64Files[0] as string, appImage))
+		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(x64Files[0] as string, [deb, rpm]))
 
-		const armImage = path.join(root, "Cocode-1.2.3-arm64.AppImage")
-		writeFileSync(armImage, "arm64-appimage")
+		const armDeb = path.join(root, "Cocode-1.2.3-arm64.deb")
+		const armRpm = path.join(root, "Cocode-1.2.3-arm64.rpm")
+		writeFileSync(armDeb, "arm64-deb")
+		writeFileSync(armRpm, "arm64-rpm")
 		const armFiles = writeArchitectureUpdateMetadata({
 			outDir: root,
 			platform: "linux",
 			arch: "arm64",
 			version: "1.2.3",
-			artifacts: [armImage],
+			artifacts: [armDeb, armRpm],
+			updateArtifacts: [armDeb, armRpm],
 		})
 		assert.deepEqual(armFiles, [path.join(root, "latest-linux-arm64.yml")])
-		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(armFiles[0] as string, armImage))
+		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(armFiles[0] as string, [armDeb, armRpm]))
 	} finally {
 		rmSync(root, { recursive: true, force: true })
 	}

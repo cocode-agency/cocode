@@ -38,10 +38,12 @@ import {
 	verifyProductionDependencyClosure,
 } from "./runtime-dependency-closure"
 import {
-	verifyLinuxAppImage,
+	linuxPackageFiles,
+	verifyLinuxPackageArtifact,
 	verifyLinuxReleaseManifest,
 	writeLinuxReleaseManifest,
-} from "./verify-linux-appimage.mjs"
+} from "./verify-linux-packages.mjs"
+import { signLinuxPackages } from "./sign-linux-packages.mjs"
 
 interface WindowsSigningPolicy {
 	inspectAuthenticode(filePath: string): { Subject?: string; Thumbprint?: string }
@@ -126,10 +128,18 @@ export async function stageBuilderApplication(context: AfterPackContext): Promis
 		await signPackagedWindowsExecutables(resourcesRoot, signFile)
 	try {
 		await closePackagedAppStage(appStage)
+		if (target.platform === "linux") await hardenLinuxSandboxHelper(context.appOutDir)
 		verifyPackagedRuntimeLayout(context.appOutDir, target, appRoot)
 	} finally {
 		await cleanupPackagedAppStage(appStage)
 	}
+}
+
+async function hardenLinuxSandboxHelper(appOutDir: string): Promise<void> {
+	const sandboxHelper = path.join(appOutDir, "chrome-sandbox")
+	if (!existsSync(sandboxHelper))
+		throw new Error(`Packaged Linux sandbox helper is missing: ${sandboxHelper}`)
+	await fs.chmod(sandboxHelper, 0o4755)
 }
 
 interface PackagedAppStage {
@@ -287,6 +297,14 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		artifacts: finalizedArtifacts,
 	})
 
+	const linuxPackages = target.platform === "linux" ? linuxPackageFiles(finalizedArtifacts) : []
+	let linuxSignatures: string[] = []
+	if (target.platform === "linux") {
+		for (const artifact of linuxPackages) verifyLinuxPackageArtifact(artifact, target.arch)
+		linuxSignatures = signLinuxPackages(linuxPackages)
+		additional.push(...linuxSignatures)
+	}
+
 	let windowsSignature: { Subject?: string; Thumbprint?: string } | undefined
 	if (target.platform === "win32") {
 		const inspect =
@@ -310,14 +328,8 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		windowsSignature = inspect ? inspect(installer) : undefined
 	}
 	const updateArtifact = selectUpdateArtifact(target.platform, finalizedArtifacts)
-	if (target.platform === "linux") {
-		verifyLinuxAppImage({
-			appImage: updateArtifact,
-			arch: target.arch,
-			metadataFile: undefined,
-			extract: false,
-		})
-	}
+	const updateArtifacts =
+		target.platform === "linux" ? linuxPackages : [updateArtifact]
 
 	const updateMetadata = writeArchitectureUpdateMetadata({
 		outDir: context.outDir,
@@ -325,22 +337,24 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		arch: target.arch,
 		version: packageMetadata.version,
 		artifacts: [...artifacts, ...additional],
+		updateArtifacts,
 	})
 	additional.push(...updateMetadata)
 	for (const metadata of updateMetadata) {
-		verifyArchitectureUpdateMetadata(metadata, updateArtifact)
+		verifyArchitectureUpdateMetadata(metadata, updateArtifacts)
 	}
 	if (target.platform === "linux") {
 		const manifest = writeLinuxReleaseManifest({
-			appImage: updateArtifact,
+			packages: linuxPackages,
 			arch: target.arch,
 			version: packageMetadata.version,
 			metadataFiles: updateMetadata,
+			signatures: linuxSignatures,
 			outDir: context.outDir,
 			hostPlatform: process.platform,
 			hostArch: process.arch,
 		})
-		verifyLinuxReleaseManifest(manifest, updateArtifact, target.arch, updateMetadata)
+		verifyLinuxReleaseManifest(manifest, linuxPackages, target.arch, updateMetadata, linuxSignatures)
 		additional.push(manifest)
 	}
 	const checksum = appendChecksumManifest(
@@ -400,10 +414,15 @@ export function writeArchitectureUpdateMetadata(options: {
 	readonly arch: ReleaseArchitecture
 	readonly version: string
 	readonly artifacts: readonly string[]
+	readonly updateArtifacts?: readonly string[]
 }): string[] {
-	const artifact = selectUpdateArtifact(options.platform, options.artifacts)
-	const sha512 = createHash("sha512").update(readFileSync(artifact)).digest("base64")
-	const fileName = path.basename(artifact)
+	const updateArtifacts = options.updateArtifacts?.length
+		? [...options.updateArtifacts]
+		: [selectUpdateArtifact(options.platform, options.artifacts)]
+	const rows = updateArtifacts.map((artifact) => ({
+		fileName: path.basename(artifact),
+		sha512: createHash("sha512").update(readFileSync(artifact)).digest("base64"),
+	}))
 	const names =
 		options.platform === "linux"
 			? [options.arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml"]
@@ -416,10 +435,12 @@ export function writeArchitectureUpdateMetadata(options: {
 	const metadata = [
 		`version: ${options.version}`,
 		"files:",
-		`  - url: ${yamlString(fileName)}`,
-		`    sha512: ${yamlString(sha512)}`,
-		`path: ${yamlString(fileName)}`,
-		`sha512: ${yamlString(sha512)}`,
+		...rows.flatMap(({ fileName, sha512 }) => [
+			`  - url: ${yamlString(fileName)}`,
+			`    sha512: ${yamlString(sha512)}`,
+		]),
+		`path: ${yamlString(rows[0]?.fileName ?? "")}`,
+		`sha512: ${yamlString(rows[0]?.sha512 ?? "")}`,
 		`releaseName: ${yamlString(`Cocode ${options.version}`)}`,
 		`releaseDate: ${yamlString(new Date().toISOString())}`,
 		"",
@@ -430,20 +451,29 @@ export function writeArchitectureUpdateMetadata(options: {
 	return files
 }
 
-export function verifyArchitectureUpdateMetadata(metadataFile: string, artifact: string): void {
+export function verifyArchitectureUpdateMetadata(
+	metadataFile: string,
+	artifacts: string | readonly string[],
+): void {
 	const metadata = parseYaml(readFileSync(metadataFile, "utf8")) as {
 		files?: Array<{ url?: string; sha512?: string }>
 		path?: string
 		sha512?: string
 	}
-	const expectedFile = path.basename(artifact)
-	const expectedSha512 = createHash("sha512").update(readFileSync(artifact)).digest("base64")
+	const expectedArtifacts = typeof artifacts === "string" ? [artifacts] : [...artifacts]
+	const expected = new Map(
+		expectedArtifacts.map((artifact) => [
+			path.basename(artifact),
+			createHash("sha512").update(readFileSync(artifact)).digest("base64"),
+		]),
+	)
 	const firstFile = metadata.files?.[0]
 	if (
-		metadata.path !== expectedFile ||
-		firstFile?.url !== expectedFile ||
-		metadata.sha512 !== expectedSha512 ||
-		firstFile?.sha512 !== expectedSha512
+		metadata.path !== firstFile?.url ||
+		metadata.sha512 !== firstFile?.sha512 ||
+		!Array.isArray(metadata.files) ||
+		metadata.files.length !== expected.size ||
+		metadata.files.some((file) => expected.get(file.url ?? "") !== file.sha512)
 	) {
 		throw new Error(
 			`Updater metadata does not match the final signed artifact: ${metadataFile}`,
@@ -831,11 +861,14 @@ function selectUpdateArtifact(
 	platform: ReleasePlatform,
 	artifacts: readonly string[],
 ): string {
-	const extension = platform === "darwin" ? ".zip" : platform === "win32" ? ".exe" : ".appimage"
-	const artifact = artifacts.find((candidate) => candidate.toLowerCase().endsWith(extension))
+	const extensions =
+		platform === "darwin" ? [".zip"] : platform === "win32" ? [".exe"] : [".deb", ".rpm"]
+	const artifact = artifacts.find((candidate) =>
+		extensions.some((extension) => candidate.toLowerCase().endsWith(extension)),
+	)
 	if (!artifact)
 		throw new Error(
-			`No ${platform === "darwin" ? "ZIP" : platform === "win32" ? "NSIS" : "AppImage"} update artifact was generated.`,
+			`No ${platform === "darwin" ? "ZIP" : platform === "win32" ? "NSIS" : "DEB/RPM"} update artifact was generated.`,
 		)
 	return artifact
 }

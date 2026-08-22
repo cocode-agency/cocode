@@ -16,8 +16,8 @@ test("accepts both Linux architectures and their updater metadata", () => {
 		const arm64 = path.join(root, "arm64")
 		mkdirSync(x64, { recursive: true })
 		mkdirSync(arm64, { recursive: true })
-		const x64Fixture = writeFixture(x64, "Cocode-1.0.1-x86_64.AppImage", "latest-linux.yml")
-		const arm64Fixture = writeFixture(arm64, "Cocode-1.0.1-arm64.AppImage", "latest-linux-arm64.yml")
+		const x64Fixture = writeFixture(x64, "x86_64", "latest-linux.yml")
+		const arm64Fixture = writeFixture(arm64, "arm64", "latest-linux-arm64.yml")
 		writeEvidence(x64, "x64", x64Fixture)
 		writeEvidence(arm64, "arm64", arm64Fixture)
 		assert.doesNotThrow(() =>
@@ -33,7 +33,7 @@ test("accepts both Linux architectures and their updater metadata", () => {
 test("rejects a release asset set with a missing architecture", () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-release-assets-test-"))
 	try {
-		writeFixture(root, "Cocode-1.0.1-x86_64.AppImage", "latest-linux.yml")
+		writeFixture(root, "x86_64", "latest-linux.yml")
 		assert.throws(
 			() => verifyLocalGitHubReleaseAssets("v1.0.1", root, { packageVersion: "1.0.1" }),
 			/missing Linux release assets.*arm64/i,
@@ -45,8 +45,14 @@ test("rejects a release asset set with a missing architecture", () => {
 
 test("requires the architecture-scoped assets in the remote GitHub Release", () => {
 	const assets = [
-		"Cocode-1.0.1-x86_64.AppImage",
-		"Cocode-1.0.1-arm64.AppImage",
+		"Cocode-1.0.1-x86_64.deb",
+		"Cocode-1.0.1-x86_64.rpm",
+		"Cocode-1.0.1-x86_64.deb.asc",
+		"Cocode-1.0.1-x86_64.rpm.asc",
+		"Cocode-1.0.1-arm64.deb",
+		"Cocode-1.0.1-arm64.rpm",
+		"Cocode-1.0.1-arm64.deb.asc",
+		"Cocode-1.0.1-arm64.rpm.asc",
 		"latest-linux.yml",
 		"latest-linux-arm64.yml",
 		"SHA256SUMS-x64",
@@ -65,53 +71,64 @@ test("requires the architecture-scoped assets in the remote GitHub Release", () 
 
 function writeFixture(
 	root: string,
-	appImageName: string,
+	archLabel: string,
 	metadataName: string,
-): { appImage: string; metadata: string } {
-	const appImage = path.join(root, appImageName)
-	writeFileSync(appImage, appImageName)
-	const sha512 = createHash("sha512").update(appImageName).digest("base64")
+	): { packages: string[]; metadata: string; signatures: string[] } {
+	const packages = [
+		path.join(root, `Cocode-1.0.1-${archLabel}.deb`),
+		path.join(root, `Cocode-1.0.1-${archLabel}.rpm`),
+	]
+	for (const file of packages) writeFileSync(file, path.basename(file))
+	const signatures = packages.map((file) => `${file}.asc`)
+	for (const file of signatures) writeFileSync(file, path.basename(file))
 	const metadata = path.join(root, metadataName)
+	const rows = packages
+		.map((file) => {
+			const name = path.basename(file)
+			const sha512 = createHash("sha512").update(name).digest("base64")
+			return [`  - url: "${name}"`, `    sha512: "${sha512}"`]
+		})
 	writeFileSync(
 		metadata,
 		[
 			"version: 1.0.1",
 			"files:",
-			`  - url: "${appImageName}"`,
-			`    sha512: "${sha512}"`,
-			`path: "${appImageName}"`,
-			`sha512: "${sha512}"`,
+			...rows.flat(),
+			`path: "${path.basename(packages[0])}"`,
+			`sha512: "${createHash("sha512").update(path.basename(packages[0])).digest("base64")}"`,
 			"",
 		].join("\n"),
 	)
-	return { appImage, metadata }
+	return { packages, metadata, signatures }
 }
 
 function writeEvidence(
 	root: string,
 	arch: "x64" | "arm64",
-	{ appImage, metadata }: { appImage: string; metadata: string },
+	{ packages, metadata, signatures }: { packages: string[]; metadata: string; signatures: string[] },
 ): void {
 	const manifest = path.join(root, `linux-release-manifest-${arch}.json`)
-	const appImageBytes = readFile(appImage)
+	const artifacts = packages.map((file) => ({
+		file: path.basename(file),
+		format: path.extname(file).slice(1),
+		sha256: createHash("sha256").update(readFile(file)).digest("hex"),
+		sha512: createHash("sha512").update(readFile(file)).digest("base64"),
+	}))
 	writeFileSync(
 		manifest,
 		`${JSON.stringify(
 			{
-				schemaVersion: 1,
+				schemaVersion: 2,
 				target: { platform: "linux", arch },
-				artifact: {
-					file: path.basename(appImage),
-					sha256: createHash("sha256").update(appImageBytes).digest("hex"),
-					sha512: createHash("sha512").update(appImageBytes).digest("base64"),
-				},
+				artifacts,
+				signatures: signatures.map((file) => path.basename(file)),
 				metadata: [path.basename(metadata)],
 			},
 			null,
 		2,
 		)}\n`,
 	)
-	const rows = [appImage, metadata, manifest]
+	const rows = [...packages, metadata, ...signatures, manifest]
 		.map((file) => `${createHash("sha256").update(readFile(file)).digest("hex")}  ${path.basename(file)}`)
 		.join("\n")
 	writeFileSync(path.join(root, `SHA256SUMS-${arch}`), `${rows}\n`)

@@ -24,7 +24,7 @@ const environment: NodeJS.ProcessEnv = {
 	...process.env,
 	RELEASE_PLATFORM: platform,
 	RELEASE_ARCH: arch,
-	RELEASE_REQUIRE_SIGNING: platform === "linux" ? "0" : "1",
+	RELEASE_REQUIRE_SIGNING: process.env.RELEASE_REQUIRE_SIGNING ?? (platform === "linux" ? "0" : "1"),
 	RELEASE_REQUIRE_NATIVE_ARCH_MATCH: "1",
 	RELEASE_OUTPUT_DIR: process.env.RELEASE_OUTPUT_DIR ?? `release/${platform}/${arch}`,
 	COCODE_RUNTIME_ARTIFACT_ROOT: runtimeArtifactRoot,
@@ -42,6 +42,8 @@ assertNativeReleaseHost({
 	environment,
 })
 requireReleaseCredentials(target, environment)
+
+if (target.platform === "linux") assertLinuxPackagingTools()
 
 if (target.platform === "darwin") {
 	const iconStatus = runPnpm(["run", "generate:mac-icons"])
@@ -110,6 +112,22 @@ process.exitCode = runPnpm([
 function cleanNativeBuildOutputs(): void {
 	for (const relativePath of ["node_modules/better-sqlite3/build", "node_modules/keytar/build"]) {
 		rmSync(path.resolve(relativePath), { recursive: true, force: true })
+	}
+}
+
+function assertLinuxPackagingTools(): void {
+	const required = [
+		{ command: "dpkg-deb", packageName: "dpkg-dev" },
+		{ command: "rpmbuild", packageName: "rpm" },
+	]
+	const missing = required
+		.filter(({ command }) => spawnSync(command, ["--version"], { stdio: "ignore" }).status !== 0)
+		.map(({ command, packageName }) => `${command} (install ${packageName})`)
+	if (missing.length > 0) {
+		throw new Error(
+			`Linux DEB/RPM packaging tools are missing: ${missing.join(", ")}. ` +
+			"Install them before running the native Linux release command.",
+		)
 	}
 }
 

@@ -3,7 +3,6 @@ export type ApplicationUpdateDisabledReason =
 	| "disabled-by-environment"
 	| "unsupported-platform"
 	| "unsupported-architecture"
-	| "not-appimage"
 
 export type ApplicationUpdateChannel = "x64" | "arm64"
 export type ApplicationUpdatePlatform = "darwin" | "win32" | "linux"
@@ -26,7 +25,6 @@ export interface ResolveApplicationUpdateConfigOptions {
 	readonly platform: NodeJS.Platform
 	readonly architecture: string
 	readonly defaultRepository: string
-	readonly isAppImage?: boolean
 	readonly environment?: NodeJS.ProcessEnv
 }
 
@@ -35,7 +33,6 @@ export function resolveApplicationUpdateConfig({
 	platform,
 	architecture,
 	defaultRepository,
-	isAppImage = true,
 	environment = process.env,
 }: ResolveApplicationUpdateConfigOptions): ApplicationUpdateConfig {
 	if (!packaged) return { enabled: false, reason: "development" }
@@ -44,9 +41,6 @@ export function resolveApplicationUpdateConfig({
 	}
 	if (platform !== "darwin" && platform !== "win32" && platform !== "linux") {
 		return { enabled: false, reason: "unsupported-platform" }
-	}
-	if (platform === "linux" && !isAppImage) {
-		return { enabled: false, reason: "not-appimage" }
 	}
 	if (architecture !== "x64" && architecture !== "arm64") {
 		return { enabled: false, reason: "unsupported-architecture" }

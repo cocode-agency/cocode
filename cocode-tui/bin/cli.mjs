@@ -195,7 +195,7 @@ export function resolveGuiLaunch(env = process.env, platform = process.platform)
     if (executable) return { executable, args: [] }
     throw new Error('Cocode GUI was not found. Set COCODE_GUI_EXECUTABLE to its executable path.')
   }
-  const candidates = [env.COCODE_GUI_APPIMAGE?.trim(), join(homedir(), '.local', 'bin', 'cocode-gui'), '/usr/local/bin/cocode-gui', '/usr/bin/cocode-gui', '/opt/Cocode/cocode'].filter(Boolean)
+  const candidates = [env.COCODE_GUI_APPIMAGE?.trim(), join(homedir(), '.local', 'bin', 'cocode-gui'), '/usr/local/bin/cocode-gui', '/usr/bin/cocode-gui', '/opt/Cocode/cocode-gui', '/opt/Cocode/cocode'].filter(Boolean)
   const executable = candidates.find((candidate) => existsSync(candidate)) || findOnPath('cocode-gui', 'sh', env)
   if (executable) return { executable, args: [] }
   throw new Error('Cocode GUI was not found. Set COCODE_GUI_EXECUTABLE to its executable path.')

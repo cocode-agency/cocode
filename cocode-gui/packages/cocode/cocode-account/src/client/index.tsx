@@ -85,6 +85,8 @@ const COPY = {
     conflict: "本机已有同名 Provider 或凭证，请先在模型设置中处理冲突。",
     cleanupPending: "本地账号已退出，Cocode Nut 配置将在运行时恢复后继续清理。",
     reauthentication: "请在浏览器中重新认证 Cocode 账号（十分钟内完成），然后点击重试。",
+    accountBusy: "另一个 Cocode 客户端正在更新账号，请稍后重试。异常退出留下的账号锁会在下次操作时自动恢复。",
+    fileStorageUnavailable: "Cocode 账号文件不可用。请检查 COCODE_HOME 的权限和磁盘空间后重试。",
     accountUnavailable: "当前运行环境未连接 Cocode 账号服务，请重启桌面客户端后重试。",
     account: "Cocode 账号",
     accountPlan: "账户与计划",
@@ -138,6 +140,8 @@ const COPY = {
     conflict: "A provider or credential with the reserved Cocode name already exists. Resolve it in Models settings first.",
     cleanupPending: "The local account is signed out. Cloud configuration cleanup will resume when the runtime is available.",
     reauthentication: "Reauthenticate your Cocode account in the browser within ten minutes, then retry.",
+    accountBusy: "Another Cocode client is updating the account. Retry shortly; locks left by a crashed client recover automatically.",
+    fileStorageUnavailable: "Cocode account files are unavailable. Check COCODE_HOME permissions and free disk space, then retry.",
     accountUnavailable: "The Cocode account service is unavailable in this window. Restart the desktop client and try again.",
     account: "Cocode account",
     accountPlan: "Account & plan",
@@ -389,6 +393,8 @@ function accountError(snapshot: AccountSnapshot): string | undefined {
   if (snapshot.error?.code === "cloud-provider-conflict") return t.conflict
   if (snapshot.error?.code === "cleanup-pending") return t.cleanupPending
   if (snapshot.error?.code === "reauthentication-required") return t.reauthentication
+  if (snapshot.error?.code === "ACCOUNT_BUSY") return t.accountBusy
+  if (snapshot.error?.code === "FILE_STORAGE_UNAVAILABLE") return t.fileStorageUnavailable
   return snapshot.error?.message
 }
 

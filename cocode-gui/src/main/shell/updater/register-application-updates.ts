@@ -71,7 +71,6 @@ export function registerApplicationUpdates(
 			packaged: app.isPackaged,
 			platform: process.platform,
 			architecture: process.arch,
-			isAppImage: process.platform !== "linux" || Boolean(process.env.APPIMAGE),
 			defaultRepository: resolveGitHubRepositoryFromUrl(packageMetadata.repository.url),
 		})
 	} catch (error) {

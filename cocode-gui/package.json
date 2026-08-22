@@ -1,8 +1,13 @@
 {
 	"name": "@cocode/gui-root",
 	"productName": "Cocode",
+	"desktopName": "cocode",
 	"version": "1.0.1",
 	"description": "Cocode GUI Root",
+	"author": {
+		"name": "Cocode Contributors",
+		"email": "support@cocode.agency"
+	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/cocode-agency/cocode.git"
@@ -38,7 +43,9 @@
 		"build:runtime": "node scripts/build-runtime.mjs",
 		"generate:mac-icons": "node scripts/icons/generate-macos-icons.mjs",
 		"verify:runtime": "node scripts/verify-dsh-runtime.mjs --runtime-root .cache/cocode/release-runtime",
-		"verify:linux-appimage": "node scripts/release/verify-linux-appimage.mjs",
+		"verify:linux-packages": "node scripts/release/verify-linux-packages.mjs",
+		"verify:linux:arm64": "node scripts/release/verify-linux-arm64.mjs",
+		"sign:linux": "node scripts/release/sign-linux-packages.mjs",
 		"verify:mac-pkg": "node scripts/release/verify-mac-pkg.mjs",
 		"uninstall:mac-cli": "node scripts/release/uninstall-mac-cli.mjs",
 		"check:release-env": "node scripts/check-release-env.mjs",
@@ -53,6 +60,8 @@
 		"release:win:arm64": "tsx scripts/release/build-release.ts --platform win32 --arch arm64",
 		"release:linux:x64": "tsx scripts/release/build-release.ts --platform linux --arch x64",
 		"release:linux:arm64": "tsx scripts/release/build-release.ts --platform linux --arch arm64",
+		"build:linux:arm64": "corepack pnpm@10.34.5 run release:linux:arm64",
+		"release:linux:arm64:verified": "RELEASE_REQUIRE_SIGNING=1 corepack pnpm@10.34.5 run build:linux:arm64 && RELEASE_REQUIRE_SIGNING=1 corepack pnpm@10.34.5 run verify:linux:arm64",
 		"publish": "corepack pnpm@10.34.5 run prepare:release-assets && electron-vite build && electron-builder --config electron-builder.config.ts --publish always",
 		"test": "tsx --test \"tests/**/*.test.ts\"",
 		"lint": "oxlint --deny-warnings src scripts tests",
@@ -89,7 +98,6 @@
 		"electron-vite": "5.0.0",
 		"form-data": "4.0.6",
 		"husky": "9.1.7",
-		"keytar": "7.9.0",
 		"lightningcss": "1.32.0",
 		"lint-staged": "15.5.2",
 		"node-fetch": "2.7.0",

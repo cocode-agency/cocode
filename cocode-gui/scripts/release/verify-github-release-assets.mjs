@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
-import packageMetadata from "../../package.json" with { type: "json" }
-import { verifyLinuxUpdateMetadata } from "./verify-linux-appimage.mjs"
+import { verifyLinuxUpdateMetadata } from "./verify-linux-packages.mjs"
+
+const packageMetadata = createRequire(import.meta.url)("../../package.json")
 
 export function verifyLocalGitHubReleaseAssets(tag, root, { packageVersion = packageMetadata.version } = {}) {
 	assertTagVersion(tag, packageVersion)
@@ -16,22 +18,25 @@ export function verifyLocalGitHubReleaseAssets(tag, root, { packageVersion = pac
 		byName.set(name, file)
 	}
 	const architectureAssets = []
-	for (const [arch, appImageName, metadataName] of [
-		["x64", `Cocode-${packageVersion}-x86_64.AppImage`, "latest-linux.yml"],
-		["arm64", `Cocode-${packageVersion}-arm64.AppImage`, "latest-linux-arm64.yml"],
+	for (const [arch, metadataName] of [
+		["x64", "latest-linux.yml"],
+		["arm64", "latest-linux-arm64.yml"],
 	]) {
-		const appImage = byName.get(appImageName)
+		const packages = [...byName.values()].filter((file) => {
+			const name = path.basename(file).toLowerCase()
+			return [".deb", ".rpm"].some((extension) => name.endsWith(extension)) && packageMatchesArch(name, arch)
+		})
 		const metadata = byName.get(metadataName)
-		if (!appImage || !metadata) {
-			throw new Error(
-				`Missing Linux release assets for ${arch}: ${appImageName} and ${metadataName}.`,
-			)
+		if (packages.length !== 2 || !metadata) {
+			throw new Error(`Missing Linux release assets for ${arch}: one .deb, one .rpm and ${metadataName}.`)
 		}
-		verifyLinuxUpdateMetadata(metadata, appImage, arch)
-		architectureAssets.push({ arch, appImage, metadata })
+		const signatures = packages.map((file) => byName.get(`${path.basename(file)}.asc`))
+		if (signatures.some((file) => !file)) throw new Error(`Missing Linux package signature for ${arch}.`)
+		verifyLinuxUpdateMetadata(metadata, packages, arch)
+		architectureAssets.push({ arch, packages, metadata, signatures })
 	}
-	for (const { arch, appImage, metadata } of architectureAssets)
-		verifyLocalEvidence(arch, appImage, metadata)
+	for (const { arch, packages, metadata, signatures } of architectureAssets)
+		verifyLocalEvidence(arch, packages, metadata, signatures)
 	return [...byName.keys()].sort()
 }
 
@@ -46,8 +51,6 @@ export function verifyGitHubReleaseAssets(
 	const duplicates = names.filter((name, index) => names.indexOf(name) !== index)
 	if (duplicates.length > 0) throw new Error(`Duplicate GitHub release assets: ${duplicates.join(", ")}`)
 	const required = [
-		`Cocode-${packageVersion}-x86_64.AppImage`,
-		`Cocode-${packageVersion}-arm64.AppImage`,
 		"latest-linux.yml",
 		"latest-linux-arm64.yml",
 		"SHA256SUMS-x64",
@@ -57,6 +60,12 @@ export function verifyGitHubReleaseAssets(
 	]
 	const missing = required.filter((name) => !names.includes(name))
 	if (missing.length > 0) throw new Error(`GitHub Release is missing assets: ${missing.join(", ")}`)
+	for (const arch of ["x64", "arm64"]) {
+		const packages = names.filter((name) => [".deb", ".rpm"].some((extension) => name.toLowerCase().endsWith(extension)) && packageMatchesArch(name, arch))
+		if (packages.length !== 2) throw new Error(`GitHub Release must contain one .deb and one .rpm for ${arch}.`)
+		const missingSignatures = packages.map((name) => `${name}.asc`).filter((name) => !names.includes(name))
+		if (missingSignatures.length > 0) throw new Error(`GitHub Release is missing Linux signatures: ${missingSignatures.join(", ")}`)
+	}
 	return names.sort()
 }
 
@@ -66,12 +75,11 @@ function assertTagVersion(tag, packageVersion) {
 	}
 }
 
-function verifyLocalEvidence(arch, appImage, metadata) {
-	const appImageName = path.basename(appImage)
+function verifyLocalEvidence(arch, packages, metadata, signatures) {
 	const metadataName = path.basename(metadata)
 	const checksumName = `SHA256SUMS-${arch}`
 	const manifestName = `linux-release-manifest-${arch}.json`
-	const evidenceRoot = path.dirname(appImage)
+	const evidenceRoot = path.dirname(packages[0])
 	const checksumFile = path.join(evidenceRoot, checksumName)
 	const manifestFile = path.join(evidenceRoot, manifestName)
 	if (!existsSync(checksumFile))
@@ -90,7 +98,7 @@ function verifyLocalEvidence(arch, appImage, metadata) {
 				return [path.basename(match[2]), match[1].toLowerCase()]
 			}),
 	)
-	for (const file of [appImage, metadata, manifestFile]) {
+	for (const file of [...packages, metadata, ...signatures, manifestFile]) {
 		const expected = createSha256(file)
 		if (checksumRows.get(path.basename(file)) !== expected) {
 			throw new Error(`SHA256 manifest does not match ${path.basename(file)}: ${checksumFile}`)
@@ -99,16 +107,26 @@ function verifyLocalEvidence(arch, appImage, metadata) {
 
 	const manifest = JSON.parse(readFileSync(manifestFile, "utf8"))
 	if (
-		manifest.schemaVersion !== 1 ||
+		manifest.schemaVersion !== 2 ||
 		manifest.target?.platform !== "linux" ||
 		manifest.target?.arch !== arch ||
-		manifest.artifact?.file !== appImageName ||
-		manifest.artifact?.sha256 !== createSha256(appImage) ||
-		manifest.artifact?.sha512 !== createSha512(appImage) ||
+		JSON.stringify(manifest.artifacts?.map((item) => item.file).sort()) !== JSON.stringify(packages.map((file) => path.basename(file)).sort()) ||
+		JSON.stringify(manifest.signatures?.slice().sort()) !== JSON.stringify(signatures.map((file) => path.basename(file)).sort()) ||
 		!manifest.metadata?.includes(metadataName)
 	) {
-		throw new Error(`Linux release manifest does not match ${appImageName}: ${manifestFile}`)
+		throw new Error(`Linux release manifest does not match ${arch}: ${manifestFile}`)
 	}
+	for (const packageFile of packages) {
+		const entry = manifest.artifacts.find((item) => item.file === path.basename(packageFile))
+		if (entry?.sha256 !== createSha256(packageFile) || entry?.sha512 !== createSha512(packageFile))
+			throw new Error(`Linux release manifest hash does not match ${packageFile}: ${manifestFile}`)
+	}
+}
+
+function packageMatchesArch(name, arch) {
+	const normalized = name.toLowerCase()
+	if (arch === "x64") return /(?:x86_64|amd64|x64)(?:[._-]|\.)/.test(normalized)
+	return /(?:arm64|aarch64)(?:[._-]|\.)/.test(normalized)
 }
 
 function createSha256(file) {

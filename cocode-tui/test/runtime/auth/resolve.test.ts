@@ -45,6 +45,7 @@ describe('resolveAuth', () => {
     expect(result.auth.mode).toBe('byok')
     expect(result.auth.env.DEEPSEEK_API_KEY).toBe('sk-env')
     expect(result.auth.env.COCODE_HOME).toBe(join(homedir(), '.cocode'))
+    expect(result.auth.env.COCODE_DSH_HOME).toBe(join(homedir(), '.dsh'))
     expect(result.auth.env.DSH_HOME).toBe(join(homedir(), '.dsh'))
     expect(result.auth.env.DSH_PROFILE).toBe('cocode')
   })

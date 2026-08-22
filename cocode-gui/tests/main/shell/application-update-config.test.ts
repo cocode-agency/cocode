@@ -106,7 +106,7 @@ test("enables packaged Linux updates with the platform default channel", () => {
 			channel: null,
 		},
 	)
-	assert.equal(
+	assert.deepEqual(
 		resolveApplicationUpdateConfig({
 			...base,
 			platform: "linux",
@@ -116,15 +116,18 @@ test("enables packaged Linux updates with the platform default channel", () => {
 	)
 })
 
-test("disables Linux updates when the packaged app is not an AppImage", () => {
+test("keeps Linux updates enabled for native DEB and RPM packages", () => {
 	assert.deepEqual(
 		resolveApplicationUpdateConfig({
 			...base,
 			platform: "linux",
 			architecture: "x64",
-			isAppImage: false,
 		}),
-		{ enabled: false, reason: "not-appimage" },
+		resolveApplicationUpdateConfig({
+			...base,
+			platform: "linux",
+			architecture: "arm64",
+		}),
 	)
 })
 

@@ -23,7 +23,13 @@ import {
 } from "../infrastructure/agency-client"
 import { listenForCallback as createCallbackListener } from "../infrastructure/callback-server"
 import { CleanupPendingStore, type CleanupPendingState } from "../infrastructure/cleanup-pending"
-import { SecureVault } from "../infrastructure/secure-vault"
+import { AccountLockBusyError } from "../infrastructure/account-lock"
+import {
+	FileStorageUnavailableError,
+	FileVault,
+	resolveCocodeFile,
+} from "../infrastructure/file-vault"
+import { SecureStorageUnavailableError, SecureVault } from "../infrastructure/secure-vault"
 import { guiClientIdentity, harnessClientIdentity } from "../infrastructure/client-identity"
 import { SignInCancelledError } from "../infrastructure/sign-in-cancelled-error"
 import { SharedAccountStore } from "../infrastructure/shared-account-store"
@@ -77,6 +83,10 @@ type Vault<T> = {
 	write(value: T): Promise<void>
 	clear(): Promise<void>
 	withLock?<R>(operation: () => Promise<R>): Promise<R>
+	getStatus?: () => {
+		readonly state: "unknown" | "available" | "unavailable"
+		readonly reason?: string
+	}
 }
 
 type AccountAgency = {
@@ -346,7 +356,7 @@ export class AccountService {
 	) {
 		this.agency = agency
 		this.identity = dependencies.identity ?? new SharedAccountStore()
-		this.cloudKey = dependencies.cloudKey ?? new SecureVault<string>("cocode-nut-key.bin")
+		this.cloudKey = dependencies.cloudKey ?? createCloudKeyVault()
 		this.cleanupPending = dependencies.cleanupPending ?? new CleanupPendingStore()
 		this.listenForCallback = dependencies.listenForCallback ?? createCallbackListener
 		this.openExternal = dependencies.openExternal ?? shell.openExternal
@@ -361,7 +371,18 @@ export class AccountService {
 
 	async hydrate(): Promise<void> {
 		this.stage = "cleanup"
-		await this.ensureLoaded()
+		try {
+			await this.ensureLoaded()
+		} catch (error) {
+			this.logFailure("hydrate", error)
+			this.publish({
+				phase: "error",
+				profile: null,
+				cloud: { status: "error", providerId: CLOUD_PROVIDER },
+				error: safeError(error, "account-unavailable"),
+			})
+			return
+		}
 		try {
 			await this.migrateLegacyCloudSettings()
 		} catch {
@@ -584,13 +605,13 @@ export class AccountService {
 	}
 
 	private async performSignIn(): Promise<AccountSnapshot> {
-		await this.ensureLoaded()
-		this.publish({
-			phase: "signing-in",
-			profile: null,
-			cloud: { status: "absent", providerId: CLOUD_PROVIDER },
-		})
 		try {
+			await this.ensureLoaded()
+			this.publish({
+				phase: "signing-in",
+				profile: null,
+				cloud: { status: "absent", providerId: CLOUD_PROVIDER },
+			})
 			const pending = await this.cleanupPending.read()
 			if (pending !== undefined) {
 				this.stage = "cleanup"
@@ -1257,15 +1278,17 @@ export class AccountService {
 
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded) return
-		this.loaded = true
 		await this.identity.read()
-		const legacyVault = new SecureVault<string>("cocode-cloud-key.bin")
-		const legacyKey = await legacyVault.read()
-		if (legacyKey !== undefined && (await this.cloudKey.read()) === undefined) {
-			await this.cloudKey.write(legacyKey)
-			await legacyVault.clear()
+		if (process.platform !== "linux") {
+			const legacyVault = new SecureVault<string>("cocode-cloud-key.bin")
+			const legacyKey = await legacyVault.read()
+			if (legacyKey !== undefined && (await this.cloudKey.read()) === undefined) {
+				await this.cloudKey.write(legacyKey)
+				await legacyVault.clear()
+			}
 		}
 		await this.cloudKey.read()
+		this.loaded = !vaultNeedsRetry(this.identity) && !vaultNeedsRetry(this.cloudKey)
 	}
 
 	private async migrateLegacyCloudSettings(): Promise<void> {
@@ -1351,10 +1374,26 @@ function browserReauthenticationUrl(origin: string): string {
 	return url.href
 }
 
+function createCloudKeyVault(): Vault<string> {
+	return process.platform === "linux"
+		? new FileVault<string>(resolveCocodeFile("cocode-nut-key.yaml"))
+		: new SecureVault<string>("cocode-nut-key.bin")
+}
+
+function vaultNeedsRetry(vault: Pick<Vault<unknown>, "getStatus">): boolean {
+	const status = vault.getStatus?.()
+	return status?.state === "unavailable" && status.reason !== "corrupt"
+}
+
 function safeError(error: unknown, code: string): { code: string; message: string } {
 	const message = error instanceof Error ? error.message : String(error)
 	return {
-		code,
+		code:
+			error instanceof SecureStorageUnavailableError ||
+			error instanceof FileStorageUnavailableError ||
+			error instanceof AccountLockBusyError
+				? error.code
+				: code,
 		message: message
 			.replace(/ck_[A-Za-z0-9_-]+/g, "[redacted]")
 			.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")

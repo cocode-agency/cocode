@@ -14,7 +14,7 @@ const guiPackagePath = path.join(repoRoot, "cocode-gui/package.json")
 const oxlintConfigPath = path.join(repoRoot, "cocode-gui/.oxlintrc.json")
 const lintStagedConfigPath = path.join(repoRoot, "cocode-gui/lint-staged.config.cjs")
 
-test("exposes a Linux AppImage release workflow with native architecture jobs", () => {
+test("exposes signed Linux DEB/RPM release workflow with native architecture jobs", () => {
 	assert.equal(existsSync(releaseWorkflowPath), true)
 	const workflow = readFileSync(releaseWorkflowPath, "utf8")
 
@@ -25,6 +25,9 @@ test("exposes a Linux AppImage release workflow with native architecture jobs", 
 	assert.match(workflow, /release:linux:\$\{\{ matrix\.arch \}\}/)
 	assert.match(workflow, /arch: x64/)
 	assert.match(workflow, /arch: arm64/)
+	assert.match(workflow, /Build signed Linux packages/)
+	assert.match(workflow, /LINUX_GPG_PRIVATE_KEY/)
+	assert.match(workflow, /LINUX_SIGNING_KEY/)
 	assert.match(workflow, /verify-github-release-assets\.mjs/)
 	assert.match(workflow, /release-assets\/x64/)
 	assert.match(workflow, /release-assets\/arm64/)
@@ -99,13 +102,17 @@ test("publishing stages fresh runtime and TUI artifacts before electron-builder"
 	assert.ok(publish.indexOf("prepare:release-assets") < publish.indexOf("electron-builder"))
 })
 
-test("provides native Linux release scripts and AppImage verification", () => {
+test("provides native Linux release scripts and DEB/RPM verification", () => {
 	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
 		scripts?: Record<string, string>
 	}
 	assert.match(packageJson.scripts?.["release:linux:x64"] ?? "", /--platform linux --arch x64/)
 	assert.match(packageJson.scripts?.["release:linux:arm64"] ?? "", /--platform linux --arch arm64/)
-	assert.match(packageJson.scripts?.["verify:linux-appimage"] ?? "", /verify-linux-appimage/)
+	assert.match(packageJson.scripts?.["build:linux:arm64"] ?? "", /release:linux:arm64/)
+	assert.match(packageJson.scripts?.["verify:linux:arm64"] ?? "", /verify-linux-arm64/)
+	assert.match(packageJson.scripts?.["release:linux:arm64:verified"] ?? "", /build:linux:arm64/)
+	assert.match(packageJson.scripts?.["verify:linux-packages"] ?? "", /verify-linux-packages/)
+	assert.match(packageJson.scripts?.["sign:linux"] ?? "", /sign-linux-packages/)
 })
 
 test("builds mirrored DSH client bundles before fingerprinting the release runtime", () => {
@@ -163,6 +170,49 @@ test("configures signed Windows updates and the Cocode NSIS include", () => {
 	assert.match(builderConfig, /include:\s*path\.resolve\("resources\/installer\.nsh"\)/)
 	assert.match(builderConfig, /deleteAppDataOnUninstall:\s*false/)
 	assert.match(builderConfig, /windows-cli-installer\.ps1/)
-	assert.match(builderConfig, /linux:\s*\{[\s\S]+target:\s*\["AppImage"\]/)
+	assert.match(builderConfig, /linux:\s*\{[\s\S]+target:\s*\["deb", "rpm"\]/)
+	assert.match(builderConfig, /linux:\s*\{[\s\S]+executableName:\s*"cocode-gui"/)
+	assert.match(builderConfig, /recommends:\s*\["libappindicator3-1"\]/)
+	assert.doesNotMatch(builderConfig, /libsecret|gnome-keyring|dbus-user-session/)
+	assert.match(builderConfig, /linux-after-install\.sh/)
 	assert.match(builderConfig, /cocode\.png/)
+	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
+		devDependencies?: Record<string, string>
+	}
+	assert.equal(packageJson.devDependencies?.keytar, undefined)
+	const workspace = readFileSync(path.join(repoRoot, "cocode-gui/pnpm-workspace.yaml"), "utf8")
+	assert.doesNotMatch(workspace, /keytar/)
+})
+
+test("reserves cocode for the installer-managed Linux TUI and separates the GUI command", () => {
+	const builderConfig = readFileSync(
+		path.join(repoRoot, "cocode-gui/electron-builder.config.ts"),
+		"utf8",
+	)
+	const afterInstall = readFileSync(
+		path.join(repoRoot, "cocode-gui/resources/linux-after-install.sh"),
+		"utf8",
+	)
+	const afterRemove = readFileSync(
+		path.join(repoRoot, "cocode-gui/resources/linux-after-remove.sh"),
+		"utf8",
+	)
+	const tuiLauncher = readFileSync(
+		path.join(repoRoot, "cocode-gui/src/main/contexts/tui/infrastructure/tui-launcher.ts"),
+		"utf8",
+	)
+
+	assert.match(builderConfig, /executableName:\s*"cocode-gui"/)
+	assert.match(afterInstall, /cocode-linux-tui-wrapper:v1/)
+	assert.match(afterInstall, /TUI_COMMAND='\/usr\/bin\/cocode'/)
+	assert.match(afterInstall, /COCODE_TUI_CLIENT_KIND="standalone-tui"/)
+	assert.match(afterInstall, /COCODE_HOME=.*HOME\/\.cocode/)
+	assert.match(afterInstall, /COCODE_DSH_HOME=.*HOME\/\.dsh/)
+	assert.match(afterInstall, /COCODE_SUPERVISOR_SERVICE_ENTRY/)
+	assert.match(afterInstall, /refusing to replace unmanaged/)
+	assert.doesNotMatch(afterInstall, /export PATH=/)
+	assert.match(afterRemove, /cocode-linux-tui-wrapper:v1/)
+	assert.match(afterRemove, /update-alternatives --remove 'cocode'/)
+	assert.match(tuiLauncher, /isLinuxInstallerManagedCli/)
+	assert.match(tuiLauncher, /registrationSource: "installer"/)
 })

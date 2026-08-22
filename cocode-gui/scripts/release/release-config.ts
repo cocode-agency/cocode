@@ -84,6 +84,10 @@ const RELEASE_KEYS = new Set([
 	"WINDOWS_SIGN_CERTIFICATE_SUBJECT",
 	"WINDOWS_SIGN_CERTIFICATE_SHA1",
 	"WINDOWS_SIGN_LEDGER_DIR",
+	"LINUX_SIGNING_KEY",
+	"LINUX_SIGNING_PASSPHRASE",
+	"LINUX_GPG_HOME",
+	"LINUX_GPG_PRIVATE_KEY",
 	"RELEASE_ENV_FILE",
 	"RELEASE_PLATFORM",
 	"RELEASE_ARCH",
@@ -339,7 +343,11 @@ export function createWindowsSignOptions(
 
 export function requireReleaseCredentials(target: ReleaseTarget, environment = process.env): void {
 	if (!isReleaseSigningRequired(environment)) return
-	if (target.platform === "linux") return
+	if (target.platform === "linux") {
+		if (!environment.LINUX_SIGNING_KEY?.trim())
+			throw new Error("LINUX_SIGNING_KEY is required for a signed Linux release.")
+		return
+	}
 	if (target.platform === "darwin") {
 		if (!createMacSignOptions(environment))
 			throw new Error("MAC_SIGNING_IDENTITY is required for a signed macOS release.")

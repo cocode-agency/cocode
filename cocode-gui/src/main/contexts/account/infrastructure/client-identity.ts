@@ -14,10 +14,10 @@ export type CocodeClientIdentity = {
 	readonly installation_id: string
 }
 
-const installation = new SecureVault<string>("installation-id.bin")
+const installation = process.platform === "linux" ? undefined : new SecureVault<string>("installation-id.bin")
 
 export async function guiClientIdentity(): Promise<CocodeClientIdentity> {
-	let installationId = await installation.read()
+	let installationId = installation === undefined ? undefined : await installation.read()
 	if (installationId === undefined) {
 		try {
 			installationId = (
@@ -29,7 +29,8 @@ export async function guiClientIdentity(): Promise<CocodeClientIdentity> {
 		if (installationId === undefined || installationId === "") {
 			installationId = randomUUID()
 			try {
-				await installation.write(installationId)
+				if (installation !== undefined) await installation.write(installationId)
+				else throw new Error("Linux uses the file-backed installation identity")
 			} catch {
 				await writeFile(`${app.getPath("userData")}/installation-id.txt`, installationId, {
 					mode: 0o600,
