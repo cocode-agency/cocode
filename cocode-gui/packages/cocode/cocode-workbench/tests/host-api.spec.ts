@@ -1,8 +1,10 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "pathe"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import htmlToDocx from "html-to-docx"
+import { FileSearchEngine } from "../src/file-search-engine.ts"
+import type { FileSearchService } from "../src/file-search-service.ts"
 import { createWorkbenchApi } from "../src/host-api.ts"
 import type { SandboxMode, WorkbenchContext } from "../src/host-types.ts"
 
@@ -32,6 +34,23 @@ function detached(): WorkbenchContext {
   }
 }
 
+function createTestApi(ctx: WorkbenchContext, fileSearch = inlineFileSearch()) {
+  return createWorkbenchApi(ctx, fileSearch)
+}
+
+function inlineFileSearch(): FileSearchService {
+  const engine = new FileSearchEngine()
+  return {
+    async search(request, signal) {
+      const result = await engine.search(request, () => signal?.aborted === true)
+      if (result === undefined) throw Object.assign(new Error("file search canceled"), { name: "AbortError" })
+      return result
+    },
+    invalidate: cwd => { void engine.invalidate(cwd) },
+    dispose: () => engine.dispose(),
+  }
+}
+
 async function invoke(route: ReturnType<typeof createWorkbenchApi>, method: string, payload: unknown) {
   const body = Buffer.from(JSON.stringify(payload))
   let status = 0
@@ -47,7 +66,7 @@ describe("Cocode Workbench host API", () => {
   it("lists and reads files inside the session workspace", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     await writeFile(join(cwd, "note.txt"), "hello")
-    const route = createWorkbenchApi(context(cwd))
+    const route = createTestApi(context(cwd))
     const tree = await invoke(route, "fs.tree", { sessionId: "s1" })
     expect(tree.value?.value).toMatchObject({ path: cwd })
     const read = await invoke(route, "fs.read", { sessionId: "s1", path: "note.txt" })
@@ -58,7 +77,7 @@ describe("Cocode Workbench host API", () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     const outside = await mkdtemp(join(tmpdir(), "cocode-elsewhere-"))
     await writeFile(join(outside, "note.txt"), "hello")
-    const route = createWorkbenchApi(context(cwd))
+    const route = createTestApi(context(cwd))
     const result = await invoke(route, "fs.read", { sessionId: "s1", path: join(outside, "note.txt") })
     expect(result.status).toBe(200)
     expect(result.value?.value).toMatchObject({ kind: "text", content: "hello", writable: false })
@@ -67,7 +86,7 @@ describe("Cocode Workbench host API", () => {
   it("denies a write outside the writable roots of the current mode", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     const outside = await mkdtemp(join(tmpdir(), "cocode-elsewhere-"))
-    const route = createWorkbenchApi(context(cwd))
+    const route = createTestApi(context(cwd))
     const result = await invoke(route, "fs.write", { sessionId: "s1", path: join(outside, "note.txt"), content: "x" })
     expect(result.status).toBe(400)
     expect(result.value.error?.message).toMatch(/file access denied under read-only mode/)
@@ -75,7 +94,7 @@ describe("Cocode Workbench host API", () => {
 
   it("keeps the workspace writable even under read-only", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
-    const route = createWorkbenchApi(context(cwd, "read-only"))
+    const route = createTestApi(context(cwd, "read-only"))
     const result = await invoke(route, "fs.write", { sessionId: "s1", path: "note.txt", content: "x" })
     expect(result.value?.value).toMatchObject({ written: true })
   })
@@ -83,7 +102,7 @@ describe("Cocode Workbench host API", () => {
   it("lifts the write fence under danger-full-access", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     const outside = await mkdtemp(join(tmpdir(), "cocode-elsewhere-"))
-    const route = createWorkbenchApi(context(cwd, "danger-full-access"))
+    const route = createTestApi(context(cwd, "danger-full-access"))
     const result = await invoke(route, "fs.write", { sessionId: "s1", path: join(outside, "note.txt"), content: "x" })
     expect(result.value?.value).toMatchObject({ written: true })
   })
@@ -92,10 +111,13 @@ describe("Cocode Workbench host API", () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     const path = join(cwd, "note.txt")
     await writeFile(path, "old")
-    const route = createWorkbenchApi(context(cwd))
+    const fileSearch = inlineFileSearch()
+    const invalidate = vi.spyOn(fileSearch, "invalidate")
+    const route = createTestApi(context(cwd), fileSearch)
     const result = await invoke(route, "fs.write", { sessionId: "s1", path: "note.txt", content: "new" })
     expect(result.value?.value).toMatchObject({ written: true })
     await expect(readFile(path, "utf8")).resolves.toBe("new")
+    expect(invalidate).toHaveBeenCalledWith(cwd)
   })
 
   it("previews and edits a Word document without a remote service", async () => {
@@ -103,7 +125,7 @@ describe("Cocode Workbench host API", () => {
     const path = join(cwd, "report.docx")
     const fixture = await htmlToDocx("<h1>Weekly report</h1><table><tr><th>Team</th><th>Status</th></tr><tr><td>GUI</td><td>Ready</td></tr></table>")
     await writeFile(path, Buffer.isBuffer(fixture) ? fixture : Buffer.from(await fixture.arrayBuffer()))
-    const route = createWorkbenchApi(context(cwd))
+    const route = createTestApi(context(cwd))
 
     const preview = await invoke(route, "word.read", { sessionId: "s1", path: "report.docx" })
     expect(preview.status).toBe(200)
@@ -133,7 +155,7 @@ describe("Cocode Workbench host API", () => {
       { pageSize: { width: 11906, height: 16838 }, margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }, font: "Arial", fontSize: 21, lang: "zh-CN" },
     )
     await writeFile(path, Buffer.isBuffer(fixture) ? fixture : Buffer.from(await fixture.arrayBuffer()))
-    const route = createWorkbenchApi(context(cwd))
+    const route = createTestApi(context(cwd))
 
     const preview = await invoke(route, "word.read", { sessionId: "s1", path: "rich.docx" })
     const html = (preview.value?.value as { html?: string }).html ?? ""
@@ -164,7 +186,7 @@ describe("Cocode Workbench host API", () => {
   it("uses the caller-supplied cwd when the session is not live", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     await writeFile(join(cwd, "note.txt"), "hello")
-    const route = createWorkbenchApi(detached())
+    const route = createTestApi(detached())
     const result = await invoke(route, "fs.read", { sessionId: "s1", cwd, path: "note.txt" })
     expect(result.status).toBe(200)
     expect(result.value?.value).toMatchObject({ kind: "text", content: "hello" })
@@ -176,7 +198,7 @@ describe("Cocode Workbench host API", () => {
     await mkdir(join(cwd, "node_modules"))
     await writeFile(join(cwd, "src", "main.ts"), "export {}\n")
     await writeFile(join(cwd, "node_modules", "ignored.js"), "ignored\n")
-    const route = createWorkbenchApi(context(cwd))
+    const route = createTestApi(context(cwd))
     const result = await invoke(route, "fs.search", { sessionId: "s1" })
     const paths = (result.value?.value as { paths?: string[] }).paths ?? []
     expect(paths).toContain("src/")
@@ -184,10 +206,129 @@ describe("Cocode Workbench host API", () => {
     expect(paths).not.toContain("node_modules/ignored.js")
   })
 
+  it("keeps no-query traversal bounded and finds matches beyond the legacy index", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-large-search-"))
+    try {
+      const generated = join(cwd, "generated")
+      await mkdir(generated)
+      const names = Array.from({ length: 2_050 }, (_, index) => `file-${String(index).padStart(4, "0")}.ts`)
+      for (let offset = 0; offset < names.length; offset += 100) {
+        await Promise.all(names.slice(offset, offset + 100).map(name => writeFile(join(generated, name), "")))
+      }
+      await writeFile(join(cwd, "zzzz-needle-target.ts"), "export {}\n")
+      const route = createTestApi(context(cwd))
+
+      const legacy = await invoke(route, "fs.search", { sessionId: "s1" })
+      const legacyPaths = (legacy.value?.value as { paths?: string[] }).paths ?? []
+      expect(legacyPaths).toHaveLength(2_000)
+      expect(legacyPaths).not.toContain("zzzz-needle-target.ts")
+
+      const blankQuery = await invoke(route, "fs.search", { sessionId: "s1", query: "   " })
+      const blankPaths = (blankQuery.value?.value as { paths?: string[] }).paths ?? []
+      expect(blankPaths).toHaveLength(2_000)
+      expect(blankPaths).not.toContain("zzzz-needle-target.ts")
+
+      const result = await invoke(route, "fs.search", {
+        sessionId: "s1",
+        query: "needle-target",
+        limit: 20,
+      })
+      const paths = (result.value?.value as { paths?: string[] }).paths ?? []
+      expect(paths).toEqual(["zzzz-needle-target.ts"])
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it("keeps no-query fallback traversal depth bounded until an explicit search", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-deep-search-"))
+    try {
+      const segments = Array.from({ length: 10 }, (_, index) => `level-${index}`)
+      const targetPath = `${segments.join("/")}/deep-needle.ts`
+      const deepDirectory = join(cwd, ...segments)
+      await mkdir(deepDirectory, { recursive: true })
+      await writeFile(join(deepDirectory, "deep-needle.ts"), "export {}\n")
+      const route = createTestApi(context(cwd))
+
+      const legacy = await invoke(route, "fs.search", { sessionId: "s1" })
+      const legacyPaths = (legacy.value?.value as { paths?: string[] }).paths ?? []
+      expect(legacyPaths).not.toContain(targetPath)
+
+      const result = await invoke(route, "fs.search", { sessionId: "s1", query: "deep-needle" })
+      const paths = (result.value?.value as { paths?: string[] }).paths ?? []
+      expect(paths).toEqual([targetPath])
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it("does not turn a broken Git checkout into an unignored filesystem search", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-broken-git-"))
+    try {
+      await mkdir(join(cwd, ".git"))
+      await writeFile(join(cwd, ".env"), "SECRET=redacted\n")
+      const route = createTestApi(context(cwd))
+
+      const result = await invoke(route, "fs.search", {
+        sessionId: "s1",
+        query: "env",
+        searchId: "picker-1",
+        revision: 1,
+      })
+
+      expect(result.status).toBe(400)
+      expect(result.value.error?.message).toMatch(/not a git repository/i)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it("cancels Host search work when the response connection closes", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-cancel-search-"))
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const fileSearch: FileSearchService = {
+      search: async (_request, signal) => {
+        observedSignal = signal
+        markStarted()
+        await new Promise<void>(resolve => signal?.addEventListener("abort", () => resolve(), { once: true }))
+        return { paths: [], truncated: false }
+      },
+      invalidate: () => {},
+      dispose: () => {},
+    }
+    const route = createTestApi(context(cwd), fileSearch)
+    const body = Buffer.from(JSON.stringify({
+      sessionId: "s1",
+      query: "needle",
+      searchId: "picker-1",
+      revision: 1,
+    }))
+    let close: (() => void) | undefined
+    const handling = route.handler({
+      method: "POST",
+      url: "/cocode/workbench/api/fs.search",
+      async *[Symbol.asyncIterator]() { yield body },
+    }, {
+      writableEnded: false,
+      on: (_event, listener) => { close = listener },
+      off: () => {},
+      writeHead: () => {},
+      end: () => {},
+    })
+
+    await started
+    close?.()
+    await handling
+
+    expect(observedSignal?.aborted).toBe(true)
+  })
+
   it("does not fence a named session against process.cwd", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-"))
     await writeFile(join(cwd, "note.txt"), "hello")
-    const route = createWorkbenchApi(detached())
+    const route = createTestApi(detached())
     const result = await invoke(route, "fs.read", { sessionId: "s1", path: join(cwd, "note.txt") })
     expect(result.status).toBe(400)
     expect(result.value.error?.message).toMatch(/not ready/)
