@@ -12,6 +12,7 @@ const smokeScriptPath = path.join(
 	repoRoot,
 	"cocode-gui/scripts/release/verify-installed-linux-package.sh",
 )
+const readSmokeScript = () => readFileSync(smokeScriptPath, "utf8")
 
 test("resolves the default Linux package verification root without --root", () => {
 	assert.equal(
@@ -104,4 +105,20 @@ test("isolates installed runtime smoke and preserves requested diagnostics", () 
 	assert.match(script, /status" -eq 137|status" == "137/)
 	assert.match(script, /apt-get remove/)
 	assert.match(script, /dnf remove/)
+})
+
+test("does not short-circuit package listings under pipefail", () => {
+
+	assert.doesNotMatch(
+		readSmokeScript(),
+		/(?:dpkg -L|rpm -ql)[^\n]*\|\s*awk[^\n]*\bexit\b/,
+	)
+})
+
+test("restores host ownership for preserved container diagnostics", () => {
+
+	const script = readSmokeScript()
+	assert.match(script, /SMOKE_HOST_UID/)
+	assert.match(script, /SMOKE_HOST_GID/)
+	assert.match(script, /chown -R .*smoke_root/)
 })

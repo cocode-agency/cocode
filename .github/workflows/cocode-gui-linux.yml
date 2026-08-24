@@ -143,6 +143,9 @@ jobs:
           DOCKER_ARCH: ${{ matrix.docker_arch }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
+          host_uid="$(id -u)"
+          host_gid="$(id -g)"
+          mkdir -p ".tmp/cocode-rpm-smoke/${{ matrix.arch }}"
           rpm="$(find "release-assets/${{ matrix.arch }}" -type f -name '*.rpm' -print -quit)"
           test -n "$rpm"
           package_path="/workspace/${rpm#./}"
@@ -155,6 +158,8 @@ jobs:
               --env PACKAGE_FILE="$package_path" \
               --env ELECTRON_AUTO_UPDATE=off \
               --env SMOKE_PRESERVE_ARTIFACTS=1 \
+              --env SMOKE_HOST_UID="$host_uid" \
+              --env SMOKE_HOST_GID="$host_gid" \
               --env SMOKE_ARTIFACT_ROOT="/workspace/.tmp/cocode-rpm-smoke/${{ matrix.arch }}" \
               fedora:42 \
               bash -euc '
