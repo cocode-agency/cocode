@@ -131,7 +131,7 @@ test("diagnostic window query excludes the raw exception", () => {
 		new Error("cannot open C:\\Users\\alice\\secret.db Authorization: Bearer token"),
 	)
 	const query = createStartupFailureWindowQuery(failure, {
-		version: "1.0.1",
+		version: "1.0.2",
 		platform: "win32",
 		architecture: "x64",
 		logRoot: "%LOCALAPPDATA%\\Cocode\\Logs",

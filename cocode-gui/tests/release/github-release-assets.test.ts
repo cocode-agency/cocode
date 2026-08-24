@@ -22,7 +22,7 @@ test("accepts both Linux architectures and their updater metadata", () => {
 		writeEvidence(arm64, "arm64", arm64Fixture)
 		assert.doesNotThrow(() =>
 			verifyLocalGitHubReleaseAssets("v1.0.1", root, {
-				packageVersion: "1.0.1",
+				packageVersion: "1.0.2",
 			}),
 		)
 	} finally {
@@ -35,7 +35,7 @@ test("rejects a release asset set with a missing architecture", () => {
 	try {
 		writeFixture(root, "x86_64", "latest-linux.yml")
 		assert.throws(
-			() => verifyLocalGitHubReleaseAssets("v1.0.1", root, { packageVersion: "1.0.1" }),
+			() => verifyLocalGitHubReleaseAssets("v1.0.1", root, { packageVersion: "1.0.2" }),
 			/missing Linux release assets.*arm64/i,
 		)
 	} finally {
@@ -61,8 +61,8 @@ test("requires the architecture-scoped assets in the remote GitHub Release", () 
 		"linux-release-manifest-arm64.json",
 	]
 	assert.deepEqual(
-		verifyGitHubReleaseAssets("v1.0.1", {
-			packageVersion: "1.0.1",
+		verifyGitHubReleaseAssets("v1.0.2", {
+			packageVersion: "1.0.2",
 				run: () => JSON.stringify({ assets: assets.map((name) => ({ name })) }),
 		}),
 		[...assets].sort(),
