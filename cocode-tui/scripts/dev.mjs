@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -10,7 +10,14 @@ loadDotenv(resolve(packageRoot, '.env'))
 
 const result = spawnSync(
 	process.execPath,
-	['--import', 'tsx/esm', resolve(packageRoot, 'src/main.tsx'), ...process.argv.slice(2)],
+	[
+		'--import',
+		'tsx/esm',
+		'--import',
+		pathToFileURL(resolve(packageRoot, 'scripts/dev-define.mjs')).href,
+		resolve(packageRoot, 'src/main.tsx'),
+		...process.argv.slice(2),
+	],
 	{ cwd: packageRoot, env: process.env, stdio: 'inherit' },
 )
 
