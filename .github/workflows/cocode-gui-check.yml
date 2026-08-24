@@ -11,16 +11,13 @@ on:
       - "cocode-gui/**"
       - "cocode-tui/**"
       - "cocode-host-supervisor/**"
-      - ".github/workflows/cocode-gui-check.yml"
+      - ".github/workflows/**"
   push:
-    branches:
-      - main
-      - feature/*
     paths:
       - "cocode-gui/**"
       - "cocode-tui/**"
       - "cocode-host-supervisor/**"
-      - ".github/workflows/cocode-gui-check.yml"
+      - ".github/workflows/**"
 
 permissions:
   contents: read
@@ -30,18 +27,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
-    name: GUI checks / ${{ matrix.platform }}
-    runs-on: ${{ matrix.runner }}
+  common:
+    name: GUI common checks
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows
-            runner: windows-2022
-          - platform: macos
-            runner: macos-14
 
     defaults:
       run:
@@ -102,17 +91,17 @@ jobs:
       - name: Lint GUI source
         run: corepack pnpm@10.34.5 run lint:ci
 
-      - name: Test GUI source
-        run: corepack pnpm@10.34.5 run test
+      - name: Test GUI common source
+        run: corepack pnpm@10.34.5 run test:common
 
       - name: Build Cocode plugins
         run: corepack pnpm@10.34.5 run build:cocode-plugins
 
       - name: Typecheck Cocode plugins
-        run: node scripts/cocode-plugins.mjs typecheck
+        run: corepack pnpm@10.34.5 run typecheck:cocode-plugins
 
       - name: Test Cocode plugins
-        run: node scripts/cocode-plugins.mjs test
+        run: corepack pnpm@10.34.5 run test:cocode-plugins
 
       - name: Typecheck Host Supervisor
         working-directory: cocode-host-supervisor
@@ -120,7 +109,96 @@ jobs:
 
       - name: Test Host Supervisor
         working-directory: cocode-host-supervisor
-        run: corepack pnpm@10.34.5 test
+        run: corepack pnpm@10.34.5 run test
+
+      - name: Upload common CI manifests on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-gui-ci-manifests-common-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            cocode-gui/.cache/cocode/supervisor-build-manifest.json
+            cocode-gui/.cache/cocode/release-runtime/runtime-manifest.json
+            cocode-gui/.cache/cocode/tui/manifest.json
+            cocode-host-supervisor/runtime/plugins.json
+
+  platform:
+    name: GUI platform checks / ${{ matrix.platform }}
+    needs: common
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+          - platform: macos
+            runner: macos-14
+          - platform: linux
+            runner: ubuntu-24.04
+
+    defaults:
+      run:
+        working-directory: cocode-gui
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: |
+            cocode-gui/pnpm-lock.yaml
+            cocode-tui/pnpm-lock.yaml
+            cocode-host-supervisor/pnpm-lock.yaml
+
+      - name: Check build environment
+        run: corepack pnpm@10.34.5 run check:env
+
+      - name: Install Host Supervisor dependencies
+        working-directory: cocode-host-supervisor
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+
+      - name: Build Host Supervisor package
+        working-directory: cocode-host-supervisor
+        run: corepack pnpm@10.34.5 run build
+
+      - name: Install TUI dependencies
+        working-directory: cocode-tui
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+
+      - name: Install GUI dependencies
+        run: corepack pnpm@10.34.5 install --frozen-lockfile
+
+      - name: Build Cocode plugins
+        run: corepack pnpm@10.34.5 run build:cocode-plugins
+
+      - name: Test GUI host behavior
+        run: corepack pnpm@10.34.5 run test:host
+
+      - name: Test GUI Windows source
+        if: matrix.platform == 'windows'
+        run: corepack pnpm@10.34.5 run test:windows
+
+      - name: Test GUI macOS source
+        if: matrix.platform == 'macos'
+        run: corepack pnpm@10.34.5 run test:macos
+
+      - name: Test GUI Linux source
+        if: matrix.platform == 'linux'
+        run: corepack pnpm@10.34.5 run test:linux
 
       - name: Build Host Supervisor with GUI plugins
         run: corepack pnpm@10.34.5 run build:supervisor

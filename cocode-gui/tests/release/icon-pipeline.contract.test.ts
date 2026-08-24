@@ -1,6 +1,5 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
-import { readFileSync, readdirSync, rmSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 import path from "node:path"
 import {
@@ -12,7 +11,6 @@ import {
 	MAC_ICONSET_ENTRIES,
 	DOCK_PATH,
 	GENERATED_ROOT,
-	ICNS_PATH,
 	SOURCE_PATH,
 	makeDockImage,
 	validateCanonicalSource,
@@ -73,17 +71,6 @@ test("flattened macOS artwork has opaque square corners without a baked rounded 
 	for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]]) {
 		const offset = (y * flat.width + x) * 4
 		assert.equal(flat.data[offset + 3], 255)
-	}
-})
-
-test("generated ICNS round-trips to the complete legacy iconset", () => {
-	const destination = path.join(process.env.TMPDIR ?? "/tmp", `cocode-icon-test-${process.pid}.iconset`)
-	try {
-		execFileSync("iconutil", ["-c", "iconset", ICNS_PATH, "-o", destination])
-		const actual = readdirSync(destination).filter((name) => name.endsWith(".png")).sort()
-		assert.deepEqual(actual, MAC_ICONSET_ENTRIES.map(([name]) => name).sort())
-	} finally {
-		rmSync(destination, { recursive: true, force: true })
 	}
 })
 

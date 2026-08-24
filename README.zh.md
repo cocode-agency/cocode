@@ -172,8 +172,14 @@ DSH_DISABLE_RUNTIME_CACHE=1 make dev gui  # 隔离运行时，不走缓存
 make gui-build      # 当前平台的 Electron Forge 安装包
 ```
 
-分平台的发布构建在 `cocode-gui` 里，脚本为 `release:mac:x64`、`release:mac:arm64`、
-`release:win:x64`、`release:win:arm64`。
+GUI 的发布构建统一使用平台和架构参数：
+
+```sh
+cd cocode-gui
+corepack pnpm@10.34.5 run release -- --platform darwin --arch arm64
+```
+
+原有的 `release:<platform>:<arch>` 命令暂时保留为兼容别名，供已有自动化流程使用。
 
 GUI 是私有的 Electron workspace，而不是 npm 应用包。TUI 和 Host Supervisor 已配置公开
 发布流程，但从 registry 安装前，应只使用同一个 GitHub Release 和 npm 发布中的匹配版本。

@@ -22,7 +22,7 @@ test("exposes signed Linux DEB/RPM release workflow with native architecture job
 	assert.match(workflow, /ubuntu-24\.04-arm/)
 	assert.match(workflow, /fail-fast:\s*false/)
 	assert.match(workflow, /assert-native-release-host\.mjs/)
-	assert.match(workflow, /release:linux:\$\{\{ matrix\.arch \}\}/)
+	assert.match(workflow, /run release -- --platform linux --arch "\$\{\{ matrix\.arch \}\}"/)
 	assert.match(workflow, /arch: x64/)
 	assert.match(workflow, /arch: arm64/)
 	assert.match(workflow, /Build signed Linux packages/)
@@ -48,7 +48,7 @@ test("keeps the public GUI workflow limited to checks and rebuildability", () =>
 	const workflow = readFileSync(checkWorkflowPath, "utf8")
 
 	assert.match(workflow, /pull_request:/)
-	assert.match(workflow, /push:[\s\S]+branches:\s+- main/)
+	assert.match(workflow, /push:\n\s+paths:/)
 	assert.match(workflow, /typecheck:ci/)
 	assert.match(workflow, /lint:ci/)
 	assert.match(workflow, /build:cocode-plugins/)
@@ -65,6 +65,36 @@ test("keeps the public GUI workflow limited to checks and rebuildability", () =>
 	assert.doesNotMatch(workflow, /CSC_LINK|WIN_CSC_LINK|AZURE_KEY_VAULT/)
 	assert.doesNotMatch(workflow, /electron-forge (make|publish)|pnpm run (make|publish)/)
 	assert.doesNotMatch(workflow, /create-release|upload-release-asset|softprops\/action-gh-release/)
+})
+
+test("splits GUI tests into common, host, and native platform dimensions", () => {
+	const workflow = readFileSync(checkWorkflowPath, "utf8")
+	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
+		scripts?: Record<string, string>
+	}
+	const scripts = packageJson.scripts ?? {}
+
+	for (const name of ["test:common", "test:host", "test:windows", "test:macos", "test:linux"]) {
+		assert.match(scripts[name] ?? "", /run-gui-tests\.mjs/)
+	}
+	assert.equal(scripts.test, "node scripts/run-gui-tests.mjs all")
+	assert.equal(scripts["test:all"], undefined)
+
+	assert.match(workflow, /platform: windows/)
+	assert.match(workflow, /platform: macos/)
+	assert.match(workflow, /platform: linux/)
+	assert.match(workflow, /Test GUI common source/)
+	assert.match(workflow, /Test GUI host behavior/)
+	assert.match(workflow, /Test GUI Windows source/)
+	assert.match(workflow, /Test GUI macOS source/)
+	assert.match(workflow, /Test GUI Linux source/)
+	assert.match(workflow, /matrix\.platform == 'windows'/)
+	assert.match(workflow, /matrix\.platform == 'macos'/)
+	assert.match(workflow, /matrix\.platform == 'linux'/)
+	assert.doesNotMatch(workflow, /- name: Test GUI source\n[\s\S]+run: [^\n]+ run test\s*$/m)
+
+	const pushBlock = workflow.match(/\n  push:\n([\s\S]*?)(?=\n\S|$)/)?.[1] ?? ""
+	assert.doesNotMatch(pushBlock, /branches:/)
 })
 
 test("uses oxlint as the GUI lint engine", () => {
@@ -89,6 +119,7 @@ test("publishing stages fresh runtime and TUI artifacts before electron-builder"
 	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
 		scripts?: Record<string, string>
 	}
+	const buildElectron = packageJson.scripts?.["build:electron"] ?? ""
 	const publish = packageJson.scripts?.publish ?? ""
 	const prepare = packageJson.scripts?.["prepare:release-assets"] ?? ""
 
@@ -97,20 +128,55 @@ test("publishing stages fresh runtime and TUI artifacts before electron-builder"
 	assert.match(prepare, /build:runtime/)
 	assert.match(prepare, /--clean/)
 	assert.match(prepare, /build:tui/)
-	assert.match(publish, /electron-vite build/)
+	assert.equal(buildElectron, "electron-vite build")
+	assert.match(publish, /pnpm run build:electron/)
 	assert.match(publish, /electron-builder/)
 	assert.ok(publish.indexOf("prepare:release-assets") < publish.indexOf("electron-builder"))
+})
+
+test("keeps package scripts focused while preserving Host Supervisor checks", () => {
+	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
+		scripts?: Record<string, string>
+	}
+	const scripts = packageJson.scripts ?? {}
+
+	assert.equal(scripts.dev, "node scripts/start-with-dsh-runtime.mjs")
+	assert.equal(scripts["test:cocode-plugins"], "node scripts/cocode-plugins.mjs test")
+	assert.equal(scripts["typecheck:cocode-plugins"], "node scripts/cocode-plugins.mjs typecheck")
+	assert.equal(
+		scripts["test:host-supervisor"],
+		"pnpm --dir ../cocode-host-supervisor run test",
+	)
+	assert.equal(
+		scripts["typecheck:host-supervisor"],
+		"pnpm --dir ../cocode-host-supervisor run typecheck",
+	)
+	assert.match(scripts.package ?? "", /pnpm run build:electron/)
+	assert.match(scripts.make ?? "", /pnpm run build:electron/)
+	assert.equal(scripts.release, "tsx scripts/release/build-release.ts")
+	const pluginCheck = scripts["check:cocode-plugins"] ?? ""
+	assert.ok(pluginCheck.indexOf("build:cocode-plugins") < pluginCheck.indexOf("typecheck:cocode-plugins"))
+	assert.ok(pluginCheck.indexOf("typecheck:cocode-plugins") < pluginCheck.indexOf("test:cocode-plugins"))
+	const supervisorCheck = scripts["check:host-supervisor"] ?? ""
+	assert.ok(
+		supervisorCheck.indexOf("typecheck:host-supervisor") <
+			supervisorCheck.indexOf("test:host-supervisor"),
+	)
+	for (const [name, command] of Object.entries(scripts)) {
+		assert.doesNotMatch(command, /corepack pnpm@10\.34\.5/, name)
+	}
 })
 
 test("provides native Linux release scripts and DEB/RPM verification", () => {
 	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
 		scripts?: Record<string, string>
 	}
+	assert.equal(packageJson.scripts?.release, "tsx scripts/release/build-release.ts")
 	assert.match(packageJson.scripts?.["release:linux:x64"] ?? "", /--platform linux --arch x64/)
 	assert.match(packageJson.scripts?.["release:linux:arm64"] ?? "", /--platform linux --arch arm64/)
-	assert.match(packageJson.scripts?.["build:linux:arm64"] ?? "", /release:linux:arm64/)
+	assert.equal(packageJson.scripts?.["build:linux:arm64"], undefined)
 	assert.match(packageJson.scripts?.["verify:linux:arm64"] ?? "", /verify-linux-arm64/)
-	assert.match(packageJson.scripts?.["release:linux:arm64:verified"] ?? "", /build:linux:arm64/)
+	assert.equal(packageJson.scripts?.["release:linux:arm64:verified"], undefined)
 	assert.match(packageJson.scripts?.["verify:linux-packages"] ?? "", /verify-linux-packages/)
 	assert.match(packageJson.scripts?.["sign:linux"] ?? "", /sign-linux-packages/)
 })
