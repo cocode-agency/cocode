@@ -137,6 +137,14 @@ export const zh = {
 
   "dock.emptyTitle": "打开一个面板",
   "dock.emptyHint": "选一个面板停靠在这里，之后也可以用右上角的 + 添加。",
+  "tabMenu.close": "关闭",
+  "tabMenu.closeOthers": "关闭其他标签页",
+  "tabMenu.closeRight": "关闭右侧标签页",
+  "tabMenu.closeAll": "关闭全部标签页",
+  "tabMenu.splitRight": "向右拆分",
+  "tabMenu.splitDown": "向下拆分",
+  "tabMenu.moveBottom": "移至底部面板",
+  "tabMenu.moveRight": "移至右侧面板",
 
   "git.refresh": "刷新",
   "git.detached": "游离 HEAD",
@@ -441,6 +449,14 @@ export const en: Record<WorkbenchKey, string> = {
 
   "dock.emptyTitle": "Open a panel",
   "dock.emptyHint": "Pick a panel to dock here, or add one later from the + above.",
+  "tabMenu.close": "Close",
+  "tabMenu.closeOthers": "Close Others",
+  "tabMenu.closeRight": "Close to the Right",
+  "tabMenu.closeAll": "Close All",
+  "tabMenu.splitRight": "Split Right",
+  "tabMenu.splitDown": "Split Down",
+  "tabMenu.moveBottom": "Move to Bottom Panel",
+  "tabMenu.moveRight": "Move to Right Panel",
 
   "git.refresh": "Refresh",
   "git.detached": "Detached HEAD",
