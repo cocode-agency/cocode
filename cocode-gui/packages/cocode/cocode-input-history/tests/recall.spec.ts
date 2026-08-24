@@ -183,6 +183,24 @@ describe("cocode-input-history client", () => {
     expect(ev.prevented).toBe(true)
   })
 
+  it("deduplicates identical history entries while keeping the newest occurrence", () => {
+    const h = makeHarness([
+      { kind: "user", content: [{ type: "text", text: "same" }] },
+      { kind: "user", content: [{ type: "text", text: "middle" }] },
+      { kind: "steering", content: [{ type: "text", text: "same" }] },
+      { kind: "user", content: [{ type: "text", text: "same" }] },
+    ])
+
+    h.up()
+    expect(h.draft).toBe("same")
+    h.up()
+    expect(h.draft).toBe("middle")
+    h.up()
+    expect(h.draft).toBe("middle")
+    h.down()
+    expect(h.draft).toBe("same")
+  })
+
   it("empty draft re-enters recall mode from the newest entry", () => {
     const h = makeHarness(HISTORY)
     h.up()

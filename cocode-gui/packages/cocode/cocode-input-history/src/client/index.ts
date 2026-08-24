@@ -46,7 +46,15 @@ function userTexts(sessions: ISessions, sessionId: SessionId): string[] {
       .join("")
     if (text !== "") texts.push(text)
   }
-  return texts
+  const seen = new Set<string>()
+  const uniqueNewestFirst: string[] = []
+  for (let index = texts.length - 1; index >= 0; index -= 1) {
+    const text = texts[index]
+    if (text === undefined || seen.has(text)) continue
+    seen.add(text)
+    uniqueNewestFirst.push(text)
+  }
+  return uniqueNewestFirst.reverse()
 }
 
 export function apply(ctx: ClientContext): void {
