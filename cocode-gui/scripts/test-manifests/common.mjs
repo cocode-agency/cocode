@@ -15,6 +15,10 @@ export const patterns = [
 	"tests/release/release-config.test.ts",
 	"tests/release/release-hooks.test.ts",
 	"tests/release/release-workflow.test.ts",
+	"tests/release/finalize-linux-release-assets.test.ts",
+	"tests/release/linux-repository.test.ts",
+	"tests/release/sign-linux-packages.test.ts",
+	"tests/release/verify-linux-repository.test.ts",
 	"tests/release/vite-main-config.test.ts",
 	"tests/release/icon-pipeline.contract.test.ts",
 ]
