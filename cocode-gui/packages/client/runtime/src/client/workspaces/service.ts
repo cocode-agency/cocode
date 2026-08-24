@@ -127,11 +127,26 @@ export class WorkspaceRuntime implements IWorkspaces {
     return attempt
   }
 
-  /** Create one ordinary chat session without attaching it to a project Workspace. */
-  connectDefaultSession(): Promise<SessionId> {
-    return this.sessions.create(this.defaultStoragePath === undefined
-      ? {}
-      : { cwd: this.defaultStoragePath })
+  /**
+   * Create one ordinary chat session without attaching it to a project
+   * Workspace. Its working directory is isolated below the configured (or
+   * Host-default) storage root by the same preallocated session id used on
+   * the wire. The Host ensures the directory exists during session.create.
+   */
+  async connectDefaultSession(): Promise<SessionId> {
+    const sessionId = `session-${crypto.randomUUID()}` as SessionId
+    let root = this.defaultStoragePath
+    if (root === undefined) {
+      const description = await this.api.host.describe({})
+      if (!description.result.ok) {
+        throw new Error(`host describe failed: ${description.result.error.message}`)
+      }
+      root = description.result.value.cwd
+    }
+    const base = root.replace(/[/\\]+$/, '')
+    const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+    const cwd = `${base}${separator}${sessionId}`
+    return this.sessions.create({ sessionId, cwd })
   }
 
   /** Set the directory used by future ordinary chat sessions. */

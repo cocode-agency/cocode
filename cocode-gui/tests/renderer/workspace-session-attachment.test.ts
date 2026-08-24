@@ -71,6 +71,19 @@ test("new sessions stay in the selected workspace before host frames arrive", as
 
 test("new session without a project workspace creates an ungrouped chat", async () => {
 	const api = {
+		host: {
+			describe: async () => ({
+				result: {
+					ok: true as const,
+					value: {
+						version: "test",
+						cwd: "/tmp/cocode-default",
+						attachedSessions: 0,
+						canOpenPath: false,
+					},
+				},
+			}),
+		},
 		workspace: {
 			list: async () => ({
 				result: {
@@ -89,14 +102,15 @@ test("new session without a project workspace creates an ungrouped chat", async 
 	let opened: string | undefined
 	const sessions: SessionsPort = {
 		list: sessionsList,
-		async create({ workspaceId }) {
+		async create({ workspaceId, cwd, sessionId }) {
 			assert.equal(workspaceId, undefined)
-			const sessionId = "session-ungrouped"
+			assert.match(sessionId ?? "", /^session-[0-9a-f-]{36}$/)
+			assert.equal(cwd, `/tmp/cocode-default/${sessionId}`)
 			sessionsList.update((draft) => {
-				draft.ids = [sessionId]
-				draft.byId[sessionId] = { id: sessionId, blank: true, updatedAt: Date.now() }
+				draft.ids = [sessionId!]
+				draft.byId[sessionId!] = { id: sessionId!, blank: true, updatedAt: Date.now() }
 			})
-			return sessionId
+			return sessionId!
 		},
 		open: (sessionId) => {
 			opened = sessionId
@@ -109,11 +123,16 @@ test("new session without a project workspace creates an ungrouped chat", async 
 	runtime.startSession()
 	await new Promise((resolve) => setImmediate(resolve))
 
-	assert.equal(opened, "session-ungrouped")
+	assert.match(opened ?? "", /^session-[0-9a-f-]{36}$/)
 })
 
 test("ordinary chats use the configured default storage path", async () => {
 	const api = {
+		host: {
+			describe: async () => {
+				throw new Error("configured storage must not query the Host default")
+			},
+		},
 		workspace: {
 			list: async () => ({
 				result: {
@@ -130,11 +149,13 @@ test("ordinary chats use the configured default storage path", async () => {
 		phase: "ready" as const,
 	})
 	let receivedCwd: string | undefined
+	let receivedSessionId: string | undefined
 	const sessions: SessionsPort = {
 		list: sessionsList,
-		async create({ cwd }) {
+		async create({ cwd, sessionId }) {
 			receivedCwd = cwd
-			return "session-default"
+			receivedSessionId = sessionId
+			return sessionId!
 		},
 		open: () => {},
 		clear: () => {},
@@ -142,6 +163,8 @@ test("ordinary chats use the configured default storage path", async () => {
 	const runtime = new WorkspaceRuntime(new Context(), api as never, sessions)
 
 	runtime.configureDefaultStorage("/tmp/recent-cocode")
-	assert.equal(await runtime.connectDefaultSession(), "session-default")
-	assert.equal(receivedCwd, "/tmp/recent-cocode")
+	const sessionId = await runtime.connectDefaultSession()
+	assert.equal(receivedSessionId, sessionId)
+	assert.match(sessionId, /^session-[0-9a-f-]{36}$/)
+	assert.equal(receivedCwd, `/tmp/recent-cocode/${sessionId}`)
 })

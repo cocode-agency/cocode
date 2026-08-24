@@ -35,6 +35,7 @@ import css from './InputBar.module.css'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
+const FILE_MENTION_DRAG_TYPE = 'application/x-cocode-file-mention'
 
 /** Hit-test the backdrop mark under the caret layer (temporarily click-through). */
 function filePathAtPoint(textarea: HTMLTextAreaElement, clientX: number, clientY: number): string | undefined {
@@ -438,7 +439,7 @@ export function InputBar({
   })
   /* oxlint-enable typescript/no-unnecessary-condition */
 
-  useEffect(() => bindDraftInsertion?.((text) => {
+  const insertDraftText = useCallback((text: string): boolean => {
     if (keyboard === undefined || locked || machineBusy || text === '') return false
     const el = inputRef.current
     const selection = rememberedSelectionRef.current ?? (el === null ? { start: 0, end: 0 } : selectionOf(el))
@@ -452,7 +453,9 @@ export function InputBar({
     }
     keyboard.track(keyboard.snapshot.draft, caret)
     return true
-  }), [bindDraftInsertion, draft, keyboard, locked, machineBusy])
+  }, [draft, keyboard, locked, machineBusy])
+
+  useEffect(() => bindDraftInsertion?.(insertDraftText), [bindDraftInsertion, insertDraftText])
 
   const onCopyOrCut = (e: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean): void => {
     if (input === undefined || keyboard === undefined) return // absent machine: no draft can be copied or cut
@@ -574,22 +577,38 @@ export function InputBar({
   useEffect(() => {
     const hasFiles = (event: globalThis.DragEvent): boolean =>
       event.dataTransfer?.types.includes('Files') ?? false
+    const hasFileMention = (event: globalThis.DragEvent): boolean =>
+      event.dataTransfer?.types.includes(FILE_MENTION_DRAG_TYPE) ?? false
+    const fileMention = (event: globalThis.DragEvent): string | undefined => {
+      const value = event.dataTransfer?.getData(FILE_MENTION_DRAG_TYPE)
+      return value === undefined || value === '' ? undefined : value
+    }
     const reset = (): void => {
       dragDepthRef.current = 0
       setDragActive(false)
     }
     const onDragEnter = (event: globalThis.DragEvent): void => {
+      if (hasFileMention(event)) {
+        event.preventDefault()
+        return
+      }
       if (!hasFiles(event)) return
       event.preventDefault()
       dragDepthRef.current += 1
       setDragActive(true)
     }
     const onDragOver = (event: globalThis.DragEvent): void => {
+      if (hasFileMention(event)) {
+        event.preventDefault()
+        if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy'
+        return
+      }
       if (!hasFiles(event) || event.dataTransfer === null) return
       event.preventDefault()
       event.dataTransfer.dropEffect = canAcceptDrop ? 'copy' : 'none'
     }
     const onDragLeave = (event: globalThis.DragEvent): void => {
+      if (hasFileMention(event)) return
       if (!hasFiles(event)) return
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
       if (dragDepthRef.current === 0) setDragActive(false)
@@ -600,6 +619,12 @@ export function InputBar({
       if ((event.target === document.documentElement || event.target === document.body) && leavingViewport) reset()
     }
     const onDrop = (event: globalThis.DragEvent): void => {
+      const mention = hasFileMention(event) ? fileMention(event) : undefined
+      if (mention !== undefined) {
+        event.preventDefault()
+        insertDraftText(mention)
+        return
+      }
       if (!hasFiles(event)) return
       event.preventDefault()
       reset()
@@ -618,7 +643,7 @@ export function InputBar({
       document.removeEventListener('drop', onDrop)
       window.removeEventListener('dragend', reset)
     }
-  }, [canAcceptDrop, intakeImages])
+  }, [canAcceptDrop, insertDraftText, intakeImages])
 
   const closePreview = useCallback(() => { setPreview(null) }, [])
 

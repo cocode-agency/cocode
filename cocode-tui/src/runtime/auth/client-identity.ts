@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { arch, platform } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { readYamlUnknown, writeYamlFile } from './io.ts'
 
-declare const __COCODE_TUI_VERSION__: string
-
-const manifest = { version: __COCODE_TUI_VERSION__ }
+const packageVersion = resolvePackageVersion(import.meta.url)
 
 export type CocodeClientIdentity = {
   product: 'cocode'
@@ -41,7 +41,7 @@ export async function tuiClientIdentity(
   return {
     product: 'cocode',
     surface: 'tui',
-    version: manifest.version?.trim() || '0.0.0-dev',
+    version: packageVersion,
     build: env.COCODE_BUILD_ID?.trim().slice(0, 64) || 'dev',
     os: currentPlatform === 'win32' ? 'windows' : currentPlatform === 'linux' ? 'linux' : 'darwin',
     arch: arch() === 'arm64' ? 'arm64' : 'x64',
@@ -63,4 +63,22 @@ export function harnessClientIdentity(identity: CocodeClientIdentity) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function resolvePackageVersion(moduleUrl: string): string {
+  let directory = dirname(fileURLToPath(moduleUrl))
+  for (;;) {
+    const manifestPath = join(directory, 'package.json')
+    if (existsSync(manifestPath)) {
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: unknown }
+        if (typeof manifest.version === 'string' && manifest.version.trim() !== '') return manifest.version.trim()
+      } catch {
+        return '0.0.0-dev'
+      }
+    }
+    const parent = dirname(directory)
+    if (parent === directory) return '0.0.0-dev'
+    directory = parent
+  }
 }

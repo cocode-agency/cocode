@@ -19,6 +19,7 @@ const failures = []
 const releaseFiles = [
   'bin/cocode-tui.mjs',
   'bin/cli.mjs',
+  'bin/headless-run.mjs',
   'dist/cocode-tui.mjs',
   'dist/cocode-tui.meta.json',
 ]

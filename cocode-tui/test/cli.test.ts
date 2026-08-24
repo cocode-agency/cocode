@@ -18,6 +18,10 @@ describe('cocode CLI', () => {
       commandArgs: ['--workspace', '/tmp/project'],
     })
     expect(parseCliArgs(['--tui'])).toMatchObject({ command: 'tui', commandArgs: [] })
+    expect(parseCliArgs(['run', '--model', 'm1', 'fix the test'])).toMatchObject({
+      command: 'run',
+      commandArgs: ['--model', 'm1', 'fix the test'],
+    })
   })
 
   it('distinguishes the detailed version command from the script flag', () => {

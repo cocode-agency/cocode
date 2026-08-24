@@ -43,6 +43,7 @@ export function parseCliArgs(args) {
     }
     if (value === '--gui' || value === 'gui') { options.command = 'gui'; options.commandArgs = remaining; break }
     if (value === '--tui' || value === 'tui') { options.command = 'tui'; options.commandArgs = remaining; break }
+    if (value === 'run') { options.command = 'run'; options.commandArgs = remaining; break }
     if (value === 'web') throw new Error('The `cocode web` command is disabled. Use `cocode gui` or `cocode tui`.')
     if (value === 'dsh') throw new Error('The `cocode dsh ...` form is no longer supported. Use `cocode plugin ...`.')
     if (value === '--doctor' || value === 'doctor') { options.command = 'doctor'; options.commandArgs = remaining; break }
@@ -231,6 +232,7 @@ export function usage(version) {
     'Commands:',
     '  gui [args...]              Open Cocode GUI',
     '  tui [args...]              Open Cocode TUI (default)',
+    '  run [options] [prompt]     Run one non-interactive agent turn',
     '  plugin [args...]           Manage bundled DSH profile plugins',
     '  host status [--json]       Show the shared Host status',
     '  host stop [--force]        Stop the Host and Supervisor',

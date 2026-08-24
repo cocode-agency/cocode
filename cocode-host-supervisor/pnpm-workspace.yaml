@@ -20,3 +20,5 @@ minimumReleaseAgeExclude:
   - '@smithy/signature-v4@5.7.2'
   - '@smithy/types@4.17.2'
   - 'jose@6.2.9'
+patchedDependencies:
+  '@earendil-works/pi-ai@0.82.1': patches/@earendil-works__pi-ai@0.82.1.patch

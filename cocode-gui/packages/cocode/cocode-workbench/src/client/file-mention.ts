@@ -7,7 +7,9 @@ const SOURCE_NAME = "file"
 const SOURCE_ORDER = -10
 const CACHE_TTL_MS = 8_000
 const CANDIDATE_LIMIT = 20
-const PLAIN_PATH = /^[\w./:@+~-]+$/u
+// Keep every non-whitespace Unicode filename plain. Quotes are only needed
+// when the mention parser would otherwise terminate or misread the path.
+const PLAIN_PATH = /^[^\s"\\]+$/u
 
 interface PathIndex {
   readonly paths: readonly string[]

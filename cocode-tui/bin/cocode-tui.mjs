@@ -17,6 +17,13 @@ import {
   stagedPaths,
   usage,
 } from './cli.mjs'
+import {
+  formatRunResult,
+  parseRunArgs,
+  readRunPrompt,
+  runHeadless,
+  runUsage,
+} from './headless-run.mjs'
 
 const require = createRequire(import.meta.url)
 const paths = stagedPaths(import.meta.url)
@@ -30,6 +37,10 @@ try {
   process.exit(2)
 }
 
+if (options.help && options.command === 'run') {
+  process.stdout.write(runUsage())
+  process.exit(0)
+}
 if (options.help) {
   process.stdout.write(usage(paths.packageJson.version))
   process.exit(0)
@@ -65,6 +76,24 @@ if (options.command === 'dsh') {
   } catch (error) {
     process.stderr.write(`cocode dsh: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exit(1)
+  }
+}
+
+if (options.command === 'run') {
+  try {
+    await configureRuntimeEnvironment(paths, options)
+    const runOptions = parseRunArgs([
+      ...(options.json ? ['--json'] : []),
+      ...options.commandArgs,
+    ])
+    runOptions.prompt = await readRunPrompt(runOptions)
+    const supervisor = await loadSupervisor(paths)
+    const result = await runHeadless(runOptions, { supervisor, env: process.env })
+    process.stdout.write(formatRunResult(result, runOptions.json))
+    process.exit(0)
+  } catch (error) {
+    process.stderr.write(`cocode run: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(error && typeof error === 'object' && error.code === 'COCODE_RUN_TIMEOUT' ? 124 : 1)
   }
 }
 
