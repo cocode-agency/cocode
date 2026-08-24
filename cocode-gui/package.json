@@ -2,7 +2,7 @@
 	"name": "@cocode/gui-root",
 	"productName": "Cocode",
 	"desktopName": "cocode",
-	"version": "1.0.1",
+	"version": "1.1.0",
 	"description": "Cocode GUI Root",
 	"author": {
 		"name": "Cocode Contributors",
