@@ -1,8 +1,12 @@
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { patchCredential, readCredentials } from '../../../src/runtime/auth/credentials.ts'
+import {
+  patchCredential,
+  readCredentials,
+  readCredentialsRecovering,
+} from '../../../src/runtime/auth/credentials.ts'
 import { withFileLock } from '../../../src/runtime/auth/file-lock.ts'
 import { credentialsPath } from '../../../src/runtime/auth/paths.ts'
 
@@ -108,6 +112,18 @@ describe('credentials', () => {
       mode: 0o600,
     })
     await expect(readCredentials(home)).rejects.toThrow(/IO_PARSE/)
+  })
+
+  it('quarantines an invalid document so interactive login can recover', async () => {
+    const home = await tempHome()
+    const path = credentialsPath(home)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, 'DEEPSEEK_API_KEY: []\n', { mode: 0o600 })
+
+    await expect(readCredentialsRecovering(home)).resolves.toEqual({})
+    await expect(access(path)).rejects.toThrow()
+    const files = await readdir(dirname(path))
+    expect(files.filter((file) => file.startsWith('.credentials.yaml.invalid-'))).toHaveLength(1)
   })
 
   it('rejects empty values and illegal refs', async () => {

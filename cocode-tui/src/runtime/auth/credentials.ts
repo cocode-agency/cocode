@@ -6,6 +6,8 @@ import { credentialsPath } from './paths.ts'
 import { readYamlUnknown, writeYamlFile } from './io.ts'
 import { withFileLock } from './file-lock.ts'
 import { TuiError } from '../errors/index.ts'
+import { randomUUID } from 'node:crypto'
+import { rename } from 'node:fs/promises'
 
 const REF = /^[A-Za-z_][A-Za-z0-9_]*$/
 
@@ -22,6 +24,26 @@ export async function readCredentials(home: string): Promise<Record<string, stri
       delete credentials.COCODE_CLOUD_API_KEY
     }
     return credentials
+  })
+}
+
+/**
+ * Read credentials for an interactive channel transition.
+ *
+ * A stale or hand-edited credentials document must not prevent a user from
+ * signing in again. Preserve the invalid secret file under a private backup
+ * name, then let the next write create a clean document.
+ */
+export async function readCredentialsRecovering(home: string): Promise<Record<string, string>> {
+  return withCredentialsLock(home, async () => {
+    try {
+      return await readCredentials(home)
+    } catch (error) {
+      if (!isRecoverableCredentialError(error)) throw error
+      const path = credentialsPath(home)
+      await rename(path, `${path}.invalid-${Date.now()}-${randomUUID()}`)
+      return {}
+    }
   })
 }
 
@@ -78,4 +100,8 @@ function asCredentialDocument(value: unknown): CredentialDocument {
     out[key] = item
   }
   return { ...(version === undefined ? {} : { version }), refs: out, raw }
+}
+
+function isRecoverableCredentialError(error: unknown): boolean {
+  return error instanceof TuiError && (error.code === 'AUTH_CREDENTIALS_PARSE' || error.code === 'IO_PARSE')
 }

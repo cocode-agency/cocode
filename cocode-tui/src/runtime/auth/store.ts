@@ -5,7 +5,7 @@
 import { deleteAccount, readAccount, writeAccount } from './account.ts'
 import { join } from 'node:path'
 import { withAccountLock } from './account-lock.ts'
-import { patchCredential, readCredentials } from './credentials.ts'
+import { patchCredential, readCredentialsRecovering } from './credentials.ts'
 import {
   listHostedModels,
   loadProfile,
@@ -141,7 +141,7 @@ class AuthStoreImpl implements AuthStore {
       await this.refreshCloudAccount(signal)
       if (signal?.aborted) return
       const account = await readAccount(this.accountHome)
-      const credentials = await readCredentials(this.dshHome)
+      const credentials = await readCredentialsRecovering(this.dshHome)
       const cloudKey = nonempty(credentials[CLOUD_KEY_REF])
       if (
         account !== undefined &&
@@ -179,7 +179,7 @@ class AuthStoreImpl implements AuthStore {
       if (signal?.aborted) return
       if (resolved.status === 'ready') {
         this.auth = resolved.auth
-        const currentCredentials = await readCredentials(this.dshHome)
+        const currentCredentials = await readCredentialsRecovering(this.dshHome)
         const currentSettings = await readSettings(this.dshHome)
         this.snap = {
           phase: 'ready',
@@ -265,7 +265,7 @@ class AuthStoreImpl implements AuthStore {
     }
     if (await this.homeIsBusy()) return { status: 'home-busy' }
     const settings = await readSettings(this.dshHome)
-    const credentials = await readCredentials(this.dshHome)
+    const credentials = await readCredentialsRecovering(this.dshHome)
     if (mode === 'byok') {
       const has =
         nonempty(this.env[DEEPSEEK_KEY_REF]) !== undefined ||
@@ -384,7 +384,7 @@ class AuthStoreImpl implements AuthStore {
     let didWrite = false
     try {
       this.ensureCurrent(operation)
-      previousKey = (await readCredentials(this.dshHome)).DEEPSEEK_API_KEY
+      previousKey = (await readCredentialsRecovering(this.dshHome)).DEEPSEEK_API_KEY
       this.ensureCurrent(operation)
       await saveByokKey(this.dshHome, trimmed)
       didWrite = true
@@ -472,7 +472,7 @@ class AuthStoreImpl implements AuthStore {
       this.ensureCurrent(operation)
       await withAccountLock(this.accountHome, async () => {
         const existing = await readAccount(this.accountHome)
-        const credentials = await readCredentials(this.dshHome)
+        const credentials = await readCredentialsRecovering(this.dshHome)
         const stored = credentials[CLOUD_KEY_REF]?.trim()
         const reusable =
           existing !== undefined &&
@@ -606,7 +606,7 @@ class AuthStoreImpl implements AuthStore {
   private async doRefreshCloudAccount(signal?: AbortSignal): Promise<void> {
     const account = await readAccount(this.accountHome)
     if (account === undefined || account.accessExpiresAt > Date.now() + 30_000) return
-    const credentials = await readCredentials(this.dshHome)
+    const credentials = await readCredentialsRecovering(this.dshHome)
     if (nonempty(credentials[CLOUD_KEY_REF]) === undefined) return
     try {
       const refreshed = await refreshAccess(
