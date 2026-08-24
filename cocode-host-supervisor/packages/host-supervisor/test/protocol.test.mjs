@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import {
   canReuseOlderSupervisor,
   canonicalizeScope,
@@ -105,22 +105,17 @@ test('resolveCocodeHostScope defaults to cocode when no profile is provided', ()
   assert.equal(resolveCocodeHostScope({}).profile, 'cocode')
 })
 
-test('resolveHostRuntimeEnv expands tilde-prefixed vision paths', () => {
+test('resolveHostRuntimeEnv ignores removed vision configuration', () => {
   assert.deepEqual(
-    resolveHostRuntimeEnv({ COCODE_DSH_HOME: '~/.dsh' }),
-    { COCODE_VISION_CONFIG: join(homedir(), '.dsh', 'vision.yaml') },
-  )
-  assert.deepEqual(
-    resolveHostRuntimeEnv({ DSH_HOME: '~/.alternate-dsh' }),
-    { COCODE_VISION_CONFIG: join(homedir(), '.alternate-dsh', 'vision.yaml') },
-  )
-  assert.deepEqual(
-    resolveHostRuntimeEnv({ COCODE_VISION_CONFIG: '~/.cocode/vision.yaml' }),
-    { COCODE_VISION_CONFIG: join(homedir(), '.cocode', 'vision.yaml') },
+    resolveHostRuntimeEnv({
+      COCODE_DSH_HOME: '~/.dsh',
+      COCODE_VISION_CONFIG: '~/.cocode/vision.yaml',
+    }),
+    {},
   )
 })
 
-test('resolveHostScope ignores blank routes and secrets while retaining the shared vision path', () => {
+test('resolveHostScope ignores blank routes and secrets', () => {
   const scope = resolveHostScope({
     DSH_HOME: '/tmp/cocode-dsh',
     COCODE_LLM_PROVIDERS: '  ',
