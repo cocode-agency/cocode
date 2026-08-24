@@ -106,6 +106,7 @@ test("writes Linux DEB and RPM updater metadata with electron-updater channel na
 			updateArtifacts: [deb, rpm],
 		})
 		assert.deepEqual(x64Files, [path.join(root, "latest-linux.yml")])
+		assert.match(readFileSync(x64Files[0] as string, "utf8"), /^version: 1\.2\.3$/m)
 		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(x64Files[0] as string, [deb, rpm]))
 
 		const armDeb = path.join(root, "Cocode-1.2.3-arm64.deb")
@@ -121,6 +122,7 @@ test("writes Linux DEB and RPM updater metadata with electron-updater channel na
 			updateArtifacts: [armDeb, armRpm],
 		})
 		assert.deepEqual(armFiles, [path.join(root, "latest-linux-arm64.yml")])
+		assert.match(readFileSync(armFiles[0] as string, "utf8"), /^version: 1\.2\.3$/m)
 		assert.doesNotThrow(() => verifyArchitectureUpdateMetadata(armFiles[0] as string, [armDeb, armRpm]))
 	} finally {
 		rmSync(root, { recursive: true, force: true })

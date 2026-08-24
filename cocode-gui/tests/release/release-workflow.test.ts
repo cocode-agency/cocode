@@ -5,6 +5,7 @@ import test from "node:test"
 
 const repoRoot = path.resolve("..")
 const releaseWorkflowPath = path.join(repoRoot, ".github/workflows/cocode-gui-release.yml")
+const linuxBranchWorkflowPath = path.join(repoRoot, ".github/workflows/cocode-gui-linux.yml")
 const releaseAssetVerifierPath = path.join(
 	repoRoot,
 	"cocode-gui/scripts/release/verify-github-release-assets.mjs",
@@ -37,11 +38,44 @@ test("exposes signed Linux DEB/RPM release workflow with native architecture job
 	assert.match(workflow, /contents:\s*write/)
 	assert.match(workflow, /gh release upload/)
 	assert.match(workflow, /gh release edit.*draft=false/)
+	assert.match(workflow, /smoke-deb:/)
+	assert.match(workflow, /smoke-rpm:/)
+	assert.match(workflow, /verify-installed-linux-package\.sh/)
+	assert.match(workflow, /ELECTRON_AUTO_UPDATE:\s*["']off["']/)
+	assert.match(workflow, /SMOKE_PRESERVE_ARTIFACTS:\s*["']1["']/)
+	assert.match(workflow, /SMOKE_ARTIFACT_ROOT:/)
+	assert.match(workflow, /cocode-linux-deb-smoke-/)
+	assert.match(workflow, /cocode-linux-rpm-smoke-/)
+	assert.match(workflow, /needs:\s*\[build, smoke-deb, smoke-rpm\]/)
+	assert.match(workflow, /verify:linux:arm64 -- --skip-smoke/)
+	assert.doesNotMatch(workflow, /--no-sandbox/)
 	assert.doesNotMatch(workflow, /electron-builder[^\n]+--publish always/)
 
 	const verifier = readFileSync(releaseAssetVerifierPath, "utf8")
 	assert.match(verifier, /SHA256SUMS-x64/)
 	assert.match(verifier, /linux-release-manifest-arm64\.json/)
+})
+
+test("updates the os-linux draft release only after installed DEB and RPM smoke", () => {
+	assert.equal(existsSync(linuxBranchWorkflowPath), true)
+	const workflow = readFileSync(linuxBranchWorkflowPath, "utf8")
+
+	assert.match(workflow, /push:\s*\n\s+branches:\s*\n\s+- ["']?os\/linux["']?/)
+	assert.doesNotMatch(workflow, /tags:/)
+	assert.match(workflow, /smoke-deb:/)
+	assert.match(workflow, /smoke-rpm:/)
+	assert.match(workflow, /verify-installed-linux-package\.sh/)
+	assert.match(workflow, /ELECTRON_AUTO_UPDATE:\s*["']off["']/)
+	assert.match(workflow, /SMOKE_PRESERVE_ARTIFACTS:\s*["']1["']/)
+	assert.match(workflow, /SMOKE_ARTIFACT_ROOT:/)
+	assert.match(workflow, /cocode-linux-deb-smoke-/)
+	assert.match(workflow, /cocode-linux-rpm-smoke-/)
+	assert.match(workflow, /verify:linux:arm64 -- --skip-smoke/)
+	assert.match(workflow, /needs:\s*\[build, smoke-deb, smoke-rpm\]/)
+	assert.match(workflow, /RELEASE_TAG:\s*["']?os-linux["']?/)
+	assert.match(workflow, /gh release create "\$RELEASE_TAG"[\s\\]+--draft/)
+	assert.doesNotMatch(workflow, /draft=false/)
+	assert.doesNotMatch(workflow, /--no-sandbox/)
 })
 
 test("keeps the public GUI workflow limited to checks and rebuildability", () => {

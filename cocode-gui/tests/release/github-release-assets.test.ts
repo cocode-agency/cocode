@@ -10,20 +10,19 @@ import {
 } from "../../scripts/release/verify-github-release-assets.mjs"
 
 test("accepts both Linux architectures and their updater metadata", () => {
+	const VERSION = "1.0.2"
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-release-assets-test-"))
 	try {
 		const x64 = path.join(root, "x64")
 		const arm64 = path.join(root, "arm64")
 		mkdirSync(x64, { recursive: true })
 		mkdirSync(arm64, { recursive: true })
-		const x64Fixture = writeFixture(x64, "x86_64", "latest-linux.yml")
-		const arm64Fixture = writeFixture(arm64, "arm64", "latest-linux-arm64.yml")
-		writeEvidence(x64, "x64", x64Fixture)
-		writeEvidence(arm64, "arm64", arm64Fixture)
+		const x64Fixture = writeFixture(x64, "x86_64", "latest-linux.yml", VERSION)
+		const arm64Fixture = writeFixture(arm64, "arm64", "latest-linux-arm64.yml", VERSION)
+		writeEvidence(x64, "x64", x64Fixture, VERSION)
+		writeEvidence(arm64, "arm64", arm64Fixture, VERSION)
 		assert.doesNotThrow(() =>
-			verifyLocalGitHubReleaseAssets("v1.0.1", root, {
-				packageVersion: "1.0.2",
-			}),
+			verifyLocalGitHubReleaseAssets(`v${VERSION}`, root, { packageVersion: VERSION }),
 		)
 	} finally {
 		rmSync(root, { recursive: true, force: true })
@@ -31,11 +30,12 @@ test("accepts both Linux architectures and their updater metadata", () => {
 })
 
 test("rejects a release asset set with a missing architecture", () => {
+	const VERSION = "1.0.2"
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-release-assets-test-"))
 	try {
-		writeFixture(root, "x86_64", "latest-linux.yml")
+		writeFixture(root, "x86_64", "latest-linux.yml", VERSION)
 		assert.throws(
-			() => verifyLocalGitHubReleaseAssets("v1.0.1", root, { packageVersion: "1.0.2" }),
+			() => verifyLocalGitHubReleaseAssets(`v${VERSION}`, root, { packageVersion: VERSION }),
 			/missing Linux release assets.*arm64/i,
 		)
 	} finally {
@@ -45,14 +45,14 @@ test("rejects a release asset set with a missing architecture", () => {
 
 test("requires the architecture-scoped assets in the remote GitHub Release", () => {
 	const assets = [
-		"Cocode-1.0.1-x86_64.deb",
-		"Cocode-1.0.1-x86_64.rpm",
-		"Cocode-1.0.1-x86_64.deb.asc",
-		"Cocode-1.0.1-x86_64.rpm.asc",
-		"Cocode-1.0.1-arm64.deb",
-		"Cocode-1.0.1-arm64.rpm",
-		"Cocode-1.0.1-arm64.deb.asc",
-		"Cocode-1.0.1-arm64.rpm.asc",
+		"Cocode-1.0.2-x86_64.deb",
+		"Cocode-1.0.2-x86_64.rpm",
+		"Cocode-1.0.2-x86_64.deb.asc",
+		"Cocode-1.0.2-x86_64.rpm.asc",
+		"Cocode-1.0.2-arm64.deb",
+		"Cocode-1.0.2-arm64.rpm",
+		"Cocode-1.0.2-arm64.deb.asc",
+		"Cocode-1.0.2-arm64.rpm.asc",
 		"latest-linux.yml",
 		"latest-linux-arm64.yml",
 		"SHA256SUMS-x64",
@@ -69,14 +69,56 @@ test("requires the architecture-scoped assets in the remote GitHub Release", () 
 	)
 })
 
+test("rejects Linux metadata whose version differs from the release package version", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-release-version-test-"))
+	try {
+		const x64 = path.join(root, "x64")
+		const arm64 = path.join(root, "arm64")
+		mkdirSync(x64, { recursive: true })
+		mkdirSync(arm64, { recursive: true })
+		const x64Fixture = writeFixture(x64, "x86_64", "latest-linux.yml", "1.0.2", "1.0.1")
+		const arm64Fixture = writeFixture(arm64, "arm64", "latest-linux-arm64.yml", "1.0.2", "1.0.1")
+		writeEvidence(x64, "x64", x64Fixture, "1.0.2")
+		writeEvidence(arm64, "arm64", arm64Fixture, "1.0.2")
+		assert.throws(
+			() => verifyLocalGitHubReleaseAssets("v1.0.2", root, { packageVersion: "1.0.2" }),
+			/metadata version.*1\.0\.1.*1\.0\.2/i,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("rejects a Linux evidence manifest whose version differs from the release package version", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-release-version-test-"))
+	try {
+		const x64 = path.join(root, "x64")
+		const arm64 = path.join(root, "arm64")
+		mkdirSync(x64, { recursive: true })
+		mkdirSync(arm64, { recursive: true })
+		const x64Fixture = writeFixture(x64, "x86_64", "latest-linux.yml", "1.0.2")
+		const arm64Fixture = writeFixture(arm64, "arm64", "latest-linux-arm64.yml", "1.0.2")
+		writeEvidence(x64, "x64", x64Fixture, "1.0.1")
+		writeEvidence(arm64, "arm64", arm64Fixture, "1.0.1")
+		assert.throws(
+			() => verifyLocalGitHubReleaseAssets("v1.0.2", root, { packageVersion: "1.0.2" }),
+			/manifest version.*1\.0\.1.*1\.0\.2/i,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
 function writeFixture(
 	root: string,
 	archLabel: string,
 	metadataName: string,
+	packageVersion: string,
+	metadataVersion = packageVersion,
 	): { packages: string[]; metadata: string; signatures: string[] } {
 	const packages = [
-		path.join(root, `Cocode-1.0.1-${archLabel}.deb`),
-		path.join(root, `Cocode-1.0.1-${archLabel}.rpm`),
+		path.join(root, `Cocode-${packageVersion}-${archLabel}.deb`),
+		path.join(root, `Cocode-${packageVersion}-${archLabel}.rpm`),
 	]
 	for (const file of packages) writeFileSync(file, path.basename(file))
 	const signatures = packages.map((file) => `${file}.asc`)
@@ -91,7 +133,7 @@ function writeFixture(
 	writeFileSync(
 		metadata,
 		[
-			"version: 1.0.1",
+			`version: ${metadataVersion}`,
 			"files:",
 			...rows.flat(),
 			`path: "${path.basename(packages[0])}"`,
@@ -106,6 +148,7 @@ function writeEvidence(
 	root: string,
 	arch: "x64" | "arm64",
 	{ packages, metadata, signatures }: { packages: string[]; metadata: string; signatures: string[] },
+	version: string,
 ): void {
 	const manifest = path.join(root, `linux-release-manifest-${arch}.json`)
 	const artifacts = packages.map((file) => ({
@@ -119,6 +162,7 @@ function writeEvidence(
 		`${JSON.stringify(
 			{
 				schemaVersion: 2,
+				version,
 				target: { platform: "linux", arch },
 				artifacts,
 				signatures: signatures.map((file) => path.basename(file)),
