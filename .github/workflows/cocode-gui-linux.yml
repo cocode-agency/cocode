@@ -225,7 +225,11 @@ jobs:
           test -n "$LINUX_GPG_PRIVATE_KEY"
           test -n "$LINUX_SIGNING_KEY"
           printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
-          gpg --batch --armor --export "$LINUX_SIGNING_KEY" | sudo rpm --import -
+          rpm_key_file="$(mktemp "${RUNNER_TEMP:-/tmp}/cocode-rpm-key.XXXXXX")"
+          trap 'rm -f "$rpm_key_file"' EXIT
+          gpg --batch --armor --export "$LINUX_SIGNING_KEY" >"$rpm_key_file"
+          test -s "$rpm_key_file"
+          sudo rpm --import "$rpm_key_file"
       - name: Sign DEB and RPM packages
         env:
           LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
@@ -331,7 +335,11 @@ jobs:
           test -n "$LINUX_GPG_PRIVATE_KEY"
           test -n "$LINUX_SIGNING_KEY"
           printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
-          gpg --batch --armor --export "$LINUX_SIGNING_KEY" | sudo rpm --import -
+          rpm_key_file="$(mktemp "${RUNNER_TEMP:-/tmp}/cocode-rpm-key.XXXXXX")"
+          trap 'rm -f "$rpm_key_file"' EXIT
+          gpg --batch --armor --export "$LINUX_SIGNING_KEY" >"$rpm_key_file"
+          test -s "$rpm_key_file"
+          sudo rpm --import "$rpm_key_file"
       - name: Verify release assets and repository snapshot
         run: |
           version="$(node -p "require('./cocode-gui/package.json').version")"
