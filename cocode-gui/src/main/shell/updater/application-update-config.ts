@@ -1,6 +1,7 @@
 export type ApplicationUpdateDisabledReason =
 	| "development"
 	| "disabled-by-environment"
+	| "managed-by-package-manager"
 	| "unsupported-platform"
 	| "unsupported-architecture"
 
@@ -45,19 +46,20 @@ export function resolveApplicationUpdateConfig({
 	if (architecture !== "x64" && architecture !== "arm64") {
 		return { enabled: false, reason: "unsupported-architecture" }
 	}
+	if (platform === "linux") {
+		return { enabled: false, reason: "managed-by-package-manager" }
+	}
 
 	const repository = environment.ELECTRON_UPDATE_REPOSITORY?.trim() || defaultRepository
 	assertGitHubRepository(repository)
 	const updateInterval = environment.ELECTRON_UPDATE_INTERVAL?.trim() || "10 minutes"
 	assertUpdateInterval(updateInterval)
-	const channel = platform === "linux" ? null : (architecture as ApplicationUpdateChannel)
-
 	return {
 		enabled: true,
 		platform,
 		repository,
 		updateInterval,
-		channel,
+		channel: architecture as ApplicationUpdateChannel,
 	}
 }
 

@@ -43,13 +43,7 @@ jobs:
         working-directory: .
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y xvfb binutils dpkg-dev rpm gnupg
-      - name: Import Linux package signing key
-        env:
-          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
-        run: |
-          test -n "$LINUX_GPG_PRIVATE_KEY"
-          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          sudo apt-get install --no-install-recommends -y xvfb binutils dpkg-dev rpm
       - name: Install Host Supervisor dependencies
         working-directory: cocode-host-supervisor
         run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
@@ -60,24 +54,16 @@ jobs:
         run: corepack pnpm@10.34.5 install --frozen-lockfile
       - name: Check build environment
         run: corepack pnpm@10.34.5 run check:env
-      - name: Build signed Linux packages
+      - name: Build Linux packages
         env:
           RELEASE_PLATFORM: linux
           RELEASE_ARCH: ${{ matrix.arch }}
-          RELEASE_REQUIRE_SIGNING: "1"
-          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
-          LINUX_SIGNING_PASSPHRASE: ${{ secrets.LINUX_SIGNING_PASSPHRASE }}
         run: corepack pnpm@10.34.5 run release -- --platform linux --arch "${{ matrix.arch }}"
-      - name: Verify Linux package structure, signatures and release metadata
-        env:
-          RELEASE_REQUIRE_SIGNING: "1"
-          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+      - name: Check built Linux package files
         run: |
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            corepack pnpm@10.34.5 run verify:linux:arm64 -- --skip-smoke
-          else
-            corepack pnpm@10.34.5 run verify:linux-packages -- --arch "${{ matrix.arch }}"
-          fi
+          for package in release/linux/${{ matrix.arch }}/*.deb release/linux/${{ matrix.arch }}/*.rpm; do
+            test -s "$package"
+          done
       - name: Upload Linux release artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,10 +72,6 @@ jobs:
           path: |
             cocode-gui/release/linux/${{ matrix.arch }}/*.deb
             cocode-gui/release/linux/${{ matrix.arch }}/*.rpm
-            cocode-gui/release/linux/${{ matrix.arch }}/*.asc
-            cocode-gui/release/linux/${{ matrix.arch }}/latest-linux*.yml
-            cocode-gui/release/linux/${{ matrix.arch }}/SHA256SUMS-${{ matrix.arch }}
-            cocode-gui/release/linux/${{ matrix.arch }}/linux-release-manifest-${{ matrix.arch }}.json
 
   smoke-deb:
     name: Installed DEB smoke / ${{ matrix.arch }}
@@ -202,9 +184,160 @@ jobs:
         if: always()
         run: rm -rf ".tmp/cocode-rpm-smoke/${{ matrix.arch }}"
 
-  publish:
-    name: Publish GitHub Release
+  sign-packages:
+    name: Sign Linux packages / ${{ matrix.arch }}
     needs: [build, smoke-deb, smoke-rpm]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-${{ matrix.arch }}-${{ github.sha }}
+          path: release-assets/${{ matrix.arch }}
+      - name: Install Linux signing tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gnupg rpm
+          command -v rpmsign
+      - name: Import Linux package signing key
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+        run: |
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          test -n "$LINUX_SIGNING_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --armor --export "$LINUX_SIGNING_KEY" | sudo rpm --import -
+      - name: Sign DEB and RPM packages
+        env:
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_SIGNING_PASSPHRASE: ${{ secrets.LINUX_SIGNING_PASSPHRASE }}
+          RELEASE_REQUIRE_SIGNING: "1"
+        run: |
+          node ./cocode-gui/scripts/release/sign-linux-packages.mjs \
+            release-assets/${{ matrix.arch }}/*.deb \
+            release-assets/${{ matrix.arch }}/*.rpm
+      - name: Verify signed Linux packages
+        env:
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+        run: |
+          for package in release-assets/${{ matrix.arch }}/*.deb release-assets/${{ matrix.arch }}/*.rpm; do
+            test -s "$package"
+            test -s "$package.asc"
+            gpg --batch --verify "$package.asc" "$package"
+          done
+          for package in release-assets/${{ matrix.arch }}/*.rpm; do
+            rpm --checksig --verbose "$package"
+          done
+      - name: Upload signed Linux package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-signed-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            release-assets/${{ matrix.arch }}/*.deb
+            release-assets/${{ matrix.arch }}/*.rpm
+            release-assets/${{ matrix.arch }}/*.asc
+
+  generate-metadata:
+    name: Generate Linux APT/RPM metadata
+    needs: [sign-packages]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-signed-x64-${{ github.sha }}
+          path: release-assets/x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-signed-arm64-${{ github.sha }}
+          path: release-assets/arm64
+      - name: Install repository tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y apt-utils createrepo-c rpm gnupg
+          command -v apt-ftparchive
+          command -v createrepo_c
+      - name: Import Linux repository signing key
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+        run: |
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Generate signed release metadata and repository
+        env:
+          LINUX_REPOSITORY_BASE_URL: https://www.cocode.agency
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_SIGNING_PASSPHRASE: ${{ secrets.LINUX_SIGNING_PASSPHRASE }}
+          RELEASE_REQUIRE_SIGNING: "1"
+        run: |
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          node ./cocode-gui/scripts/release/finalize-linux-release-assets.mjs release-assets/x64 x64 "$version"
+          node ./cocode-gui/scripts/release/finalize-linux-release-assets.mjs release-assets/arm64 arm64 "$version"
+          node ./cocode-gui/scripts/release/linux-repository.mjs release-assets linux-repository "$version"
+          tar -C linux-repository -czf "cocode-linux-repository-${version}.tar.gz" .
+      - name: Upload Linux metadata snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-metadata-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            release-assets/**
+            linux-repository/**
+            cocode-linux-repository-*.tar.gz
+
+  verify-repository:
+    name: Verify Linux repository snapshot
+    needs: [generate-metadata]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-metadata-${{ github.sha }}
+          path: snapshot
+      - name: Install repository verification tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gnupg rpm
+          command -v gpg
+          command -v rpm
+      - name: Import Linux verification key
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+        run: |
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          test -n "$LINUX_SIGNING_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --armor --export "$LINUX_SIGNING_KEY" | sudo rpm --import -
+      - name: Verify release assets and repository snapshot
+        run: |
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          node ./cocode-gui/scripts/release/verify-github-release-assets.mjs "v${version}" snapshot/release-assets
+          node ./cocode-gui/scripts/release/verify-linux-repository.mjs snapshot/linux-repository "$version"
+          tar -C snapshot -czf "cocode-linux-verified-snapshot-${version}.tar.gz" release-assets linux-repository
+      - name: Upload verified Linux release snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-verified-snapshot-${{ github.sha }}
+          if-no-files-found: error
+          path: cocode-linux-verified-snapshot-*.tar.gz
+
+  upload-release:
+    name: Upload GitHub Release
+    needs: [verify-repository]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     environment: release
@@ -214,12 +347,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: cocode-linux-x64-${{ github.sha }}
-          path: release-assets/x64
-      - uses: actions/download-artifact@v4
-        with:
-          name: cocode-linux-arm64-${{ github.sha }}
-          path: release-assets/arm64
+          name: cocode-linux-verified-snapshot-${{ github.sha }}
+          path: verified-artifact
+      - name: Extract verified Linux release snapshot
+        run: |
+          mkdir -p verified
+          tar -xzf verified-artifact/cocode-linux-verified-snapshot-*.tar.gz -C verified
+          mkdir -p release-assets
+          cp -R verified/release-assets/. release-assets/
+          mkdir -p release-assets/repository
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          tar -C verified/linux-repository -czf "release-assets/repository/cocode-linux-repository-${version}.tar.gz" .
       - name: Validate tag and release asset set
         run: node ./cocode-gui/scripts/release/verify-github-release-assets.mjs "${GITHUB_REF_NAME}" release-assets
       - name: Create or update draft release
@@ -228,7 +366,7 @@ jobs:
         run: |
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
             gh release create "${GITHUB_REF_NAME}" --draft --title "Cocode ${GITHUB_REF_NAME#v}" --generate-notes
-          gh release upload "${GITHUB_REF_NAME}" release-assets/x64/* release-assets/arm64/* --clobber
+          gh release upload "${GITHUB_REF_NAME}" release-assets/x64/* release-assets/arm64/* release-assets/repository/*.tar.gz --clobber
       - name: Final release asset gate
         env:
           GH_TOKEN: ${{ github.token }}
