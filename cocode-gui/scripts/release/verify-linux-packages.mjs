@@ -21,7 +21,45 @@ export function linuxUpdateMetadataName(arch) {
 	return arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml"
 }
 
-export function verifyLinuxPackageArtifact(file, arch, { run = execFileSync, inspect = true } = {}) {
+export function resolveLinuxPackageRoot(argv, arch, cwd = process.cwd()) {
+	const rootIndex = argv.indexOf("--root")
+	if (rootIndex === -1) return path.resolve(cwd, "release", "linux", arch)
+	const root = argv[rootIndex + 1]
+	if (!root || root.startsWith("--"))
+		throw new Error("Usage: node scripts/release/verify-linux-packages.mjs --arch <x64|arm64> [--root <directory>]")
+	return path.resolve(cwd, root)
+}
+
+export function verifyLinuxSandboxPackageListing(
+	listing,
+	format,
+	packageFile = "Linux package",
+	{ requireSuid = true } = {},
+) {
+	const sandboxRow = listing.split(/\r?\n/).find((row) => row.includes("chrome-sandbox"))
+	if (!sandboxRow)
+		throw new Error(`Linux package chrome-sandbox is missing: ${packageFile}`)
+	if (!requireSuid) return sandboxRow
+	const valid =
+		format === "deb"
+			? /^-rwsr-xr-x\s+root\/root\s/.test(sandboxRow)
+			: format === "rpm"
+				? /(?:^|\s)0?104755\s+root\s+root(?:\s|$)/.test(sandboxRow)
+				: false
+	if (!valid)
+		throw new Error(
+			`Linux package chrome-sandbox must be root-owned with SUID mode 4755: ${packageFile}`,
+		)
+	return sandboxRow
+}
+
+export function verifyLinuxPackageArtifact(
+	file,
+	arch,
+	{ run = execFileSync, inspect = true, requireSandboxSuid = false } = {},
+) {
+	// DEB/RPM maintainer scripts apply root ownership and the SUID bit at install
+	// time. The installed-package smoke gate performs that privileged check.
 	const resolved = path.resolve(file)
 	const extension = path.extname(resolved).toLowerCase().slice(1)
 	if (!PACKAGE_EXTENSIONS.has(`.${extension}`))
@@ -55,17 +93,9 @@ export function verifyLinuxPackageArtifact(file, arch, { run = execFileSync, ins
 	for (const required of ["cocode-gui", "resources/startup-failure.html", "resources/cocode-node", "resources/dsh-runtime", "resources/tui"]) {
 		if (!listing.includes(required)) throw new Error(`Linux package is missing ${required}: ${resolved}`)
 	}
-	if (!listing.includes("chrome-sandbox"))
-		throw new Error(`Linux package is missing chrome-sandbox: ${resolved}`)
-	if (extension === "deb") {
-		const sandboxRow = listing.split(/\r?\n/).find((row) => row.includes("chrome-sandbox"))
-		if (!/^-rwsr-xr-x\s/.test(sandboxRow ?? ""))
-			throw new Error(`Linux package chrome-sandbox must retain SUID mode 4755: ${resolved}`)
-	} else {
-		const sandboxRow = listing.split(/\r?\n/).find((row) => row.includes("/chrome-sandbox"))
-		if (!/(?:^|\s)0?104755(?:\s|$)/.test(sandboxRow ?? ""))
-			throw new Error(`Linux package chrome-sandbox must retain SUID mode 4755: ${resolved}`)
-	}
+	verifyLinuxSandboxPackageListing(listing, extension, resolved, {
+		requireSuid: requireSandboxSuid,
+	})
 	return { file: resolved, format: extension, architecture: actual }
 }
 
@@ -183,8 +213,8 @@ function collectFiles(root) {
 const invokedPath = process.argv[1]
 if (invokedPath && path.resolve(invokedPath) === path.resolve(fileURLToPath(import.meta.url))) {
 	const arch = process.argv[process.argv.indexOf("--arch") + 1]
-	const root = process.argv[process.argv.indexOf("--root") + 1] ?? path.resolve("release", "linux", arch)
 	if (arch !== "x64" && arch !== "arm64") throw new Error("Usage: node scripts/release/verify-linux-packages.mjs --arch <x64|arm64> [--root <directory>]")
+	const root = resolveLinuxPackageRoot(process.argv, arch)
 	const files = collectFiles(root).filter((file) => PACKAGE_EXTENSIONS.has(path.extname(file).toLowerCase()))
 	if (files.length !== 2) throw new Error(`Expected one .deb and one .rpm under ${root}; found ${files.length}.`)
 	for (const file of files) verifyLinuxPackageArtifact(file, arch)
