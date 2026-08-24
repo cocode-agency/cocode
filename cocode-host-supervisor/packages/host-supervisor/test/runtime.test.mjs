@@ -133,18 +133,23 @@ test('createRuntimePatch leaves shared DSH settings and credentials at their def
   assert.equal(parsed.some((entry) => entry?.id === 'llm-pi-ai'), false)
 })
 
-test('createRuntimePatch injects the Host credentials provider', () => {
+test('createRuntimePatch disables the native credentials provider and inserts the Host provider', () => {
   const patch = createRuntimePatch('file:///host-jsonrpc.mjs', '/tmp/host.sock', [], undefined, 'file:///credentials-compat.mjs', '/tmp/shared-dsh')
-  const credentials = YAML.parse(patch).find((entry) => entry?.id === 'credentials')
-  assert.equal(credentials?.name, 'file:///credentials-compat.mjs')
-  assert.equal(credentials?.config.path, '/tmp/shared-dsh/.credentials.yaml')
-  assert.equal(credentials?.config.dshHome, '/tmp/shared-dsh')
+  const parsed = YAML.parse(patch)
+  const nativeCredentials = parsed.find((entry) => entry?.id === 'credentials')
+  const hostCredentials = parsed.find((entry) => entry?.insert?.some((item) => item?.id === 'cocode-credentials'))?.insert
+    ?.find((item) => item?.id === 'cocode-credentials')
+  assert.equal(nativeCredentials?.name, '@deepseek-ai/dsh-credentials-local')
+  assert.equal(nativeCredentials?.disabled, true)
+  assert.equal(hostCredentials?.name, 'file:///credentials-compat.mjs')
+  assert.equal(hostCredentials?.config.path, '/tmp/shared-dsh/.credentials.yaml')
+  assert.equal(hostCredentials?.config.dshHome, '/tmp/shared-dsh')
 })
 
-test('createRuntimePatch uses only the Host credentials provider', () => {
+test('createRuntimePatch keeps the native credentials name as a patch guard', () => {
   const patch = createRuntimePatch('file:///host-jsonrpc.mjs', '/tmp/host.sock', [], undefined, 'file:///credentials-compat.mjs', '/tmp/shared-dsh')
-  assert.match(patch, /id: credentials\n  name: "file:\/\/\/credentials-compat\.mjs"/)
-  assert.doesNotMatch(patch, /@deepseek-ai\/dsh-credentials-local/)
+  assert.match(patch, /id: credentials\n  name: '@deepseek-ai\/dsh-credentials-local'\n  disabled: true/)
+  assert.match(patch, /id: cocode-credentials\n      name: "file:\/\/\/credentials-compat\.mjs"/)
 })
 
 test('createRuntimePatch mounts COCODE_LLM_PROVIDERS on llm-pi-ai', () => {
