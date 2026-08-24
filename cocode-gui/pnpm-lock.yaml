@@ -334,6 +334,27 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@24.13.3)(jsdom@29.1.1(@noble/hashes@2.3.0))(lightningcss@1.32.0)(sugarss@2.0.0)(terser@5.50.0)
 
+  packages/cocode/cocode-input-history:
+    devDependencies:
+      '@deepseek-ai/dsh-client-runtime':
+        specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(6ef9bea1ffb02b7be9333a18bfeaf17e)
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      cordis:
+        specifier: ^4.0.0-rc.7
+        version: 4.0.0-rc.8(@cordisjs/plugin-loader@1.0.0-rc.5)
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(tsx@4.23.12)(typescript@5.9.3)(unrun@0.2.39)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@24.13.3)(jsdom@29.1.1(@noble/hashes@2.3.0))(lightningcss@1.32.0)(sugarss@2.0.0)(terser@5.50.0)
+
   packages/cocode/cocode-shortcuts:
     dependencies:
       schemastery:
