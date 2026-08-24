@@ -58,7 +58,11 @@ test("verifies the stable APT/RPM repository snapshot layout", () => {
 					{ arch: "arm64", format: "deb", file: "Cocode-1.2.3-arm64.deb" },
 					{ arch: "arm64", format: "rpm", file: "Cocode-1.2.3-arm64.rpm" },
 				],
-				run: () => "",
+				run: (_command, args) => {
+					if (args.includes("-qa")) return "gpg-pubkey-f8a9bc65-00000000\n"
+					if (args.includes("--checksig")) return "Header V4 RSA/SHA512 Signature, key ID f8a9bc65: OK\n"
+					return ""
+				},
 			}),
 		)
 	} finally {

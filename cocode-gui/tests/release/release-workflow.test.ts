@@ -39,11 +39,14 @@ test("uses the Linux workflow as the canonical signed DEB/RPM build", () => {
 	assert.match(workflow, /draft-release:/)
 	assert.match(workflow, /LINUX_GPG_PRIVATE_KEY/)
 	assert.match(workflow, /LINUX_SIGNING_KEY/)
-	assert.match(workflow, /mktemp "\$\{RUNNER_TEMP:-\/tmp\}\/cocode-rpm-key\.XXXXXX"/)
-	assert.match(workflow, /gpg --batch --armor --export "\$LINUX_SIGNING_KEY" >"\$rpm_key_file"/)
-	assert.match(workflow, /test -s "\$rpm_key_file"/)
-	assert.match(workflow, /sudo rpm --import "\$rpm_key_file"/)
+	assert.match(workflow, /gpg --batch --armor --export "\$LINUX_SIGNING_KEY" >"\$LINUX_RPM_PUBLIC_KEY"/)
+	assert.match(workflow, /test -s "\$LINUX_RPM_PUBLIC_KEY"/)
+	assert.doesNotMatch(workflow, /sudo rpm --import/)
 	assert.doesNotMatch(workflow, /rpm --import -/)
+	assert.match(workflow, /verify-rpm-signatures\.mjs/)
+	assert.match(workflow, /LINUX_RPM_PUBLIC_KEY:/)
+	assert.match(workflow, /LINUX_RPM_DB_PATH:/)
+	assert.match(workflow, /gpg --homedir "\$gpg_verify_home" --batch --import "\$LINUX_RPM_PUBLIC_KEY"/)
 	assert.match(workflow, /verify-github-release-assets\.mjs/)
 	assert.match(workflow, /release-assets\/x64/)
 	assert.match(workflow, /release-assets\/arm64/)
@@ -309,7 +312,7 @@ test("keeps local and release builds from implicitly publishing to GitHub", () =
 	assert.doesNotMatch(buildRelease, /RELEASE_PUBLISH/)
 })
 
-test("prepares target-native Windows dependencies before building release assets", () => {
+test("prepares target-native dependencies before building release assets", () => {
 	const buildRelease = readFileSync(
 		path.join(repoRoot, "cocode-gui/scripts/release/build-release.ts"),
 		"utf8",
@@ -322,7 +325,20 @@ test("prepares target-native Windows dependencies before building release assets
 	assert.match(buildRelease, /`--platform=\$\{target\.platform\}`/)
 	assert.match(buildRelease, /`--arch=\$\{target\.arch\}`/)
 	assert.match(buildRelease, /cleanNativeBuildOutputs/)
+	assert.match(buildRelease, /target\.platform === "darwin"/)
+	assert.match(buildRelease, /ensureDarwinNodePtyNatives/)
+	assert.match(buildRelease, /verifyDarwinNodePtyArchitecture/)
 	assert.match(buildRelease, /assertNativeReleaseHost/)
+})
+
+test("prepares the sibling Host Supervisor node-pty for the active target", () => {
+	const buildSupervisor = readFileSync(
+		path.join(repoRoot, "cocode-gui/scripts/build-supervisor.mjs"),
+		"utf8",
+	)
+	assert.match(buildSupervisor, /ensureDarwinNodePtyNatives/)
+	assert.match(buildSupervisor, /ensureWindowsNodePtyNatives/)
+	assert.match(buildSupervisor, /ensureLinuxNodePtyNatives/)
 })
 
 test("configures signed Windows updates and the Cocode NSIS include", () => {

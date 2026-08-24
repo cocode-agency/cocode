@@ -217,19 +217,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y gnupg rpm
           command -v rpmsign
-      - name: Import Linux package signing key
+      - name: Import Linux package signing key and export RPM verification key
         env:
           LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
           LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_RPM_PUBLIC_KEY: ${{ runner.temp }}/cocode-linux-release-public-key.asc
         run: |
           test -n "$LINUX_GPG_PRIVATE_KEY"
           test -n "$LINUX_SIGNING_KEY"
           printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
-          rpm_key_file="$(mktemp "${RUNNER_TEMP:-/tmp}/cocode-rpm-key.XXXXXX")"
-          trap 'rm -f "$rpm_key_file"' EXIT
-          gpg --batch --armor --export "$LINUX_SIGNING_KEY" >"$rpm_key_file"
-          test -s "$rpm_key_file"
-          sudo rpm --import "$rpm_key_file"
+          gpg --batch --list-secret-keys "$LINUX_SIGNING_KEY" >/dev/null
+          gpg --batch --armor --export "$LINUX_SIGNING_KEY" >"$LINUX_RPM_PUBLIC_KEY"
+          test -s "$LINUX_RPM_PUBLIC_KEY"
       - name: Sign DEB and RPM packages
         env:
           LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
@@ -240,15 +239,25 @@ jobs:
             release-assets/${{ matrix.arch }}/*.deb \
             release-assets/${{ matrix.arch }}/*.rpm
       - name: Verify signed Linux packages
+        env:
+          LINUX_RPM_PUBLIC_KEY: ${{ runner.temp }}/cocode-linux-release-public-key.asc
+          LINUX_RPM_DB_PATH: ${{ runner.temp }}/cocode-linux-rpm-db-${{ matrix.arch }}
         run: |
+          gpg_verify_home="${RUNNER_TEMP:-/tmp}/cocode-linux-verify-gpg-${{ matrix.arch }}"
+          rm -rf "$gpg_verify_home"
+          mkdir -p "$gpg_verify_home"
+          chmod 700 "$gpg_verify_home"
+          gpg --homedir "$gpg_verify_home" --batch --import "$LINUX_RPM_PUBLIC_KEY"
           for package in release-assets/${{ matrix.arch }}/*.deb release-assets/${{ matrix.arch }}/*.rpm; do
             test -s "$package"
             test -s "$package.asc"
-            gpg --batch --verify "$package.asc" "$package"
+            gpg --homedir "$gpg_verify_home" --batch --verify "$package.asc" "$package"
           done
-          for package in release-assets/${{ matrix.arch }}/*.rpm; do
-            rpm --checksig --verbose "$package"
-          done
+          node ./cocode-gui/scripts/release/verify-rpm-signatures.mjs \
+            "$LINUX_RPM_PUBLIC_KEY" \
+            "$LINUX_RPM_DB_PATH" \
+            release-assets/${{ matrix.arch }}/*.rpm
+          rm -rf "$gpg_verify_home"
       - name: Upload signed Linux package artifact
         uses: actions/upload-artifact@v4
         with:
@@ -327,19 +336,6 @@ jobs:
           sudo apt-get install --no-install-recommends -y gnupg rpm
           command -v gpg
           command -v rpm
-      - name: Import Linux verification key
-        env:
-          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
-          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
-        run: |
-          test -n "$LINUX_GPG_PRIVATE_KEY"
-          test -n "$LINUX_SIGNING_KEY"
-          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
-          rpm_key_file="$(mktemp "${RUNNER_TEMP:-/tmp}/cocode-rpm-key.XXXXXX")"
-          trap 'rm -f "$rpm_key_file"' EXIT
-          gpg --batch --armor --export "$LINUX_SIGNING_KEY" >"$rpm_key_file"
-          test -s "$rpm_key_file"
-          sudo rpm --import "$rpm_key_file"
       - name: Verify release assets and repository snapshot
         run: |
           version="$(node -p "require('./cocode-gui/package.json').version")"

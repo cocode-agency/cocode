@@ -22,12 +22,18 @@ import {
 	writeArchitectureUpdateMetadata,
 	writeWindowsPeSigningInventory,
 	writeWindowsReleaseEvidenceManifest,
+	resolveMacLipoArchitecture,
 } from "../../scripts/release/release-hooks"
 import {
 	copyProductionDependencyClosure,
 	verifyProductionDependencyClosure,
 } from "../../scripts/release/runtime-dependency-closure"
 import { verifyPackagedStartupAssets } from "../../scripts/release/verify-packaged-startup-assets.mjs"
+
+test("maps release architectures to macOS lipo architecture names", () => {
+	assert.equal(resolveMacLipoArchitecture("x64"), "x86_64")
+	assert.equal(resolveMacLipoArchitecture("arm64"), "arm64")
+})
 
 test("writes isolated macOS updater metadata for each architecture", () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-update-metadata-"))

@@ -830,8 +830,13 @@ function verifySignedMacZip(file: string, arch: ReleaseArchitecture): void {
 	}
 }
 
+export function resolveMacLipoArchitecture(arch: ReleaseArchitecture): string {
+	return arch === "x64" ? "x86_64" : arch
+}
+
 function verifyMacPackagedArchitecture(appPath: string, arch: ReleaseArchitecture): void {
 	if (process.platform !== "darwin") return
+	const expectedArchitecture = resolveMacLipoArchitecture(arch)
 	const candidates = [
 		path.join(appPath, "Contents", "MacOS", "Cocode"),
 		path.join(appPath, "Contents", "Resources", "cocode-node"),
@@ -845,7 +850,7 @@ function verifyMacPackagedArchitecture(appPath: string, arch: ReleaseArchitectur
 		const architectures = execFileSync("lipo", ["-archs", file], { encoding: "utf8" })
 			.trim()
 			.split(/\s+/)
-		if (!architectures.includes(arch))
+		if (!architectures.includes(expectedArchitecture))
 			throw new Error(`Native packaged file architecture mismatch for ${arch}: ${file}`)
 	}
 }
