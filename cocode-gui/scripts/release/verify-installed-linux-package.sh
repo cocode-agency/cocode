@@ -47,6 +47,9 @@ cleanup() {
 		} >"$smoke_root/kernel-kill-diagnostics.log" 2>&1
 	fi
 	if [[ -n "$smoke_root" ]]; then
+		if [[ "${SMOKE_PRESERVE_ARTIFACTS:-0}" == "1" && -n "${SMOKE_HOST_UID:-}" && -n "${SMOKE_HOST_GID:-}" ]]; then
+			chown -R "${SMOKE_HOST_UID}:${SMOKE_HOST_GID}" "$smoke_root" || true
+		fi
 		if [[ "${SMOKE_PRESERVE_ARTIFACTS:-0}" == "1" ]]; then
 			printf 'Preserved smoke artifacts: %s\n' "$smoke_root" >&2
 		else
@@ -75,7 +78,7 @@ case "$format" in
 			tail -n 200 "$package_install_log" >&2 || true
 			exit 1
 		fi
-		app_path="$(dpkg -L "$package_name" | awk '$0 ~ /\/cocode-gui$/ { print; exit }')"
+		app_path="$(dpkg -L "$package_name" | awk '$0 ~ /\/cocode-gui$/ && !found { print; found=1 }')"
 		;;
 	rpm)
 		command -v rpm >/dev/null
@@ -86,7 +89,7 @@ case "$format" in
 			tail -n 200 "$package_install_log" >&2 || true
 			exit 1
 		fi
-		app_path="$(rpm -ql "$package_name" | awk '$0 ~ /\/cocode-gui$/ { print; exit }')"
+		app_path="$(rpm -ql "$package_name" | awk '$0 ~ /\/cocode-gui$/ && !found { print; found=1 }')"
 		;;
 esac
 installed=1
