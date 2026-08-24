@@ -33,11 +33,19 @@ test("resolves supported desktop release targets including Linux", () => {
 	assert.throws(() => resolveReleaseTarget({ RELEASE_PLATFORM: "darwin", RELEASE_ARCH: "ia32" }))
 })
 
-test("Linux release credentials are intentionally a no-op", () => {
+test("signed Linux releases require the Linux signing key", () => {
+	assert.throws(
+		() =>
+			requireReleaseCredentials(
+				{ platform: "linux", arch: "arm64" },
+				{ RELEASE_REQUIRE_SIGNING: "1" },
+			),
+		/LINUX_SIGNING_KEY is required/,
+	)
 	assert.doesNotThrow(() =>
 		requireReleaseCredentials(
 			{ platform: "linux", arch: "arm64" },
-			{ RELEASE_REQUIRE_SIGNING: "1" },
+			{ RELEASE_REQUIRE_SIGNING: "1", LINUX_SIGNING_KEY: "cocode-linux-signing-key" },
 		),
 	)
 })

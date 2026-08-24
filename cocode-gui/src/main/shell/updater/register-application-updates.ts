@@ -15,8 +15,6 @@ import {
 import { resolveUpdateIntervalMilliseconds } from "./update-interval"
 import type { ApplicationLocale } from "../../shared/locale/application-locale"
 
-const { autoUpdater } = electronUpdater
-
 export interface ApplicationUpdateLifecycle {
 	readonly requestQuitForUpdate: (installUpdate: () => void) => boolean
 }
@@ -82,7 +80,7 @@ export function registerApplicationUpdates(
 		return createInactiveRegistration()
 	}
 
-	const updater = autoUpdater as unknown as ElectronUpdaterAdapter
+	const updater = electronUpdater.autoUpdater as unknown as ElectronUpdaterAdapter
 	try {
 		configureElectronUpdater(updater, config)
 	} catch (error) {

@@ -12,16 +12,15 @@ on:
       - "cocode-tui/**"
       - "cocode-host-supervisor/**"
       - ".github/workflows/cocode-gui-check.yml"
-      - ".github/workflows/cocode-gui-release.yml"
   push:
     branches:
       - main
+      - feature/*
     paths:
       - "cocode-gui/**"
       - "cocode-tui/**"
       - "cocode-host-supervisor/**"
       - ".github/workflows/cocode-gui-check.yml"
-      - ".github/workflows/cocode-gui-release.yml"
 
 permissions:
   contents: read

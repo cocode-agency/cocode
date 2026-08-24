@@ -63,7 +63,7 @@
 		"build:linux:arm64": "corepack pnpm@10.34.5 run release:linux:arm64",
 		"release:linux:arm64:verified": "RELEASE_REQUIRE_SIGNING=1 corepack pnpm@10.34.5 run build:linux:arm64 && RELEASE_REQUIRE_SIGNING=1 corepack pnpm@10.34.5 run verify:linux:arm64",
 		"publish": "corepack pnpm@10.34.5 run prepare:release-assets && electron-vite build && electron-builder --config electron-builder.config.ts --publish always",
-		"test": "tsx --test \"tests/**/*.test.ts\"",
+		"test": "node --import ./tests/support/register-electron-test-loader.mjs --import tsx --test \"tests/**/*.test.ts\"",
 		"lint": "oxlint --deny-warnings src scripts tests",
 		"lint:fix": "oxlint --fix src scripts tests",
 		"lint:ci": "node scripts/check-changed-files.mjs lint",

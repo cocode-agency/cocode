@@ -12,7 +12,7 @@ test("tooltip dismisses after its anchor is activated", () => {
 	assert.match(source, /onClick\?: MouseEventHandler/)
 	assert.match(
 		source,
-		/onClick: \(e: MouseEvent<HTMLElement>\) => \{ children\.props\.onClick\?\.\(e\); dismissAfterActivation\(\) \}/,
+		/onClick:\s*\(e: MouseEvent<HTMLElement>\) => \{[\s\S]*?children\.props\.onClick\?\.\(e\)[\s\S]*?dismissAfterActivation\(\)/,
 	)
 	assert.match(
 		source,

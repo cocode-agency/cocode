@@ -1,0 +1,128 @@
+name: Cocode GUI Linux packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Linux DEB + RPM / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: cocode-gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: |
+            cocode-gui/pnpm-lock.yaml
+            cocode-tui/pnpm-lock.yaml
+            cocode-host-supervisor/pnpm-lock.yaml
+      - name: Assert native Linux runner
+        run: node scripts/release/assert-native-release-host.mjs --platform linux --arch "${{ matrix.arch }}"
+      - name: Install Linux packaging dependencies
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xvfb binutils dpkg-dev rpm gnupg
+      - name: Import Linux package signing key
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+        run: |
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Install Host Supervisor dependencies
+        working-directory: cocode-host-supervisor
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+      - name: Install TUI dependencies
+        working-directory: cocode-tui
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+      - name: Install GUI dependencies
+        run: corepack pnpm@10.34.5 install --frozen-lockfile
+      - name: Check build environment
+        run: corepack pnpm@10.34.5 run check:env
+      - name: Build signed Linux packages
+        env:
+          RELEASE_PLATFORM: linux
+          RELEASE_ARCH: ${{ matrix.arch }}
+          RELEASE_REQUIRE_SIGNING: "1"
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_SIGNING_PASSPHRASE: ${{ secrets.LINUX_SIGNING_PASSPHRASE }}
+        run: corepack pnpm@10.34.5 run release:linux:${{ matrix.arch }}
+      - name: Verify Linux packages, signatures and updater metadata
+        env:
+          RELEASE_REQUIRE_SIGNING: "1"
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            corepack pnpm@10.34.5 run verify:linux:arm64
+          else
+            corepack pnpm@10.34.5 run verify:linux-packages -- --arch "${{ matrix.arch }}"
+          fi
+      - name: Upload Linux release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            cocode-gui/release/linux/${{ matrix.arch }}/*.deb
+            cocode-gui/release/linux/${{ matrix.arch }}/*.rpm
+            cocode-gui/release/linux/${{ matrix.arch }}/*.asc
+            cocode-gui/release/linux/${{ matrix.arch }}/latest-linux*.yml
+            cocode-gui/release/linux/${{ matrix.arch }}/SHA256SUMS-${{ matrix.arch }}
+            cocode-gui/release/linux/${{ matrix.arch }}/linux-release-manifest-${{ matrix.arch }}.json
+
+  publish:
+    name: Publish GitHub Release
+    needs: [build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-x64-${{ github.sha }}
+          path: release-assets/x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-arm64-${{ github.sha }}
+          path: release-assets/arm64
+      - name: Validate tag and release asset set
+        run: node ./cocode-gui/scripts/release/verify-github-release-assets.mjs "${GITHUB_REF_NAME}" release-assets
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --draft --title "Cocode ${GITHUB_REF_NAME#v}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" release-assets/x64/* release-assets/arm64/* --clobber
+      - name: Final release asset gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node ./cocode-gui/scripts/release/verify-github-release-assets.mjs "${GITHUB_REF_NAME}" github-release
+      - name: Publish release after protected approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false
