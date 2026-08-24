@@ -37,7 +37,11 @@ export type MeProfile = {
   email?: string
 }
 
-export type CloudModel = { id: string; name: string }
+export type CloudModel = {
+  id: string
+  name: string
+  reasoningEfforts?: Readonly<Record<string, string>>
+}
 
 export const CLOUD_API = 'openai-responses'
 export const CLOUD_MAX_RETRIES = 5

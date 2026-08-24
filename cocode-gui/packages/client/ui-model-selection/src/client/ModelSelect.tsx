@@ -90,10 +90,14 @@ export function ModelSelect(
   const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
     ? []
     : [
-      ...reasoning.defaultEffort === undefined
-        ? [{ key: 'provider-default', effort: undefined, label: t('effort.providerDefault') }]
+      ...reasoning.defaultEffort === undefined && !reasoning.efforts.some(effort => effort.id === 'off')
+        ? [{ key: 'effort:off', effort: undefined, label: t('effort.providerDefault') }]
         : [],
-      ...reasoning.efforts.map((effort: ModelReasoningEffort) => ({
+      ...[...reasoning.efforts].sort((left, right) => {
+        if (left.id === 'off') return -1
+        if (right.id === 'off') return 1
+        return 0
+      }).map((effort: ModelReasoningEffort) => ({
         key: `effort:${effort.id}`,
         effort: effort.id,
         label: effort.name,
