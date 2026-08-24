@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs"
+import { readdirSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import * as common from "./common.mjs"
