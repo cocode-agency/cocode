@@ -31,6 +31,9 @@ test('repairs an incomplete DSH runtime slot before booting it', () => {
     const pluginPath = fileURLToPath(new URL('../lib/host-jsonrpc-plugin.js', import.meta.url))
     const slot = prepareRuntimeSlot(scope, '/tmp/cocode-incomplete-slot-jsonrpc.sock', pluginPath)
 
+    assert.equal(existsSync(join(slot.root, 'cocode-credentials-local-compat.mjs')), true)
+    assert.match(readFileSync(join(slot.root, 'cocode-credentials-local-compat.mjs'), 'utf8'), /loadCredentials/)
+
     for (const file of readdirSync(join(dshRoot, 'lib'))) {
       assert.equal(existsSync(join(slot.root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', file)), true, file)
     }
@@ -130,12 +133,18 @@ test('createRuntimePatch leaves shared DSH settings and credentials at their def
   assert.equal(parsed.some((entry) => entry?.id === 'llm-pi-ai'), false)
 })
 
-test('createRuntimePatch replaces credentials with the v1-compatible loader', () => {
+test('createRuntimePatch injects the Host credentials provider', () => {
   const patch = createRuntimePatch('file:///host-jsonrpc.mjs', '/tmp/host.sock', [], undefined, 'file:///credentials-compat.mjs', '/tmp/shared-dsh')
   const credentials = YAML.parse(patch).find((entry) => entry?.id === 'credentials')
   assert.equal(credentials?.name, 'file:///credentials-compat.mjs')
   assert.equal(credentials?.config.path, '/tmp/shared-dsh/.credentials.yaml')
   assert.equal(credentials?.config.dshHome, '/tmp/shared-dsh')
+})
+
+test('createRuntimePatch uses only the Host credentials provider', () => {
+  const patch = createRuntimePatch('file:///host-jsonrpc.mjs', '/tmp/host.sock', [], undefined, 'file:///credentials-compat.mjs', '/tmp/shared-dsh')
+  assert.match(patch, /id: credentials\n  name: "file:\/\/\/credentials-compat\.mjs"/)
+  assert.doesNotMatch(patch, /@deepseek-ai\/dsh-credentials-local/)
 })
 
 test('createRuntimePatch mounts COCODE_LLM_PROVIDERS on llm-pi-ai', () => {

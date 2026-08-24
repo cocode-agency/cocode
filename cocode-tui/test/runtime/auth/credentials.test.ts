@@ -1,13 +1,8 @@
-import { access, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  patchCredential,
-  readCredentials,
-  readCredentialsRecovering,
-} from '../../../src/runtime/auth/credentials.ts'
-import { withFileLock } from '../../../src/runtime/auth/file-lock.ts'
+import { patchCredential, readCredentials } from '../../../src/runtime/auth/credentials.ts'
 import { credentialsPath } from '../../../src/runtime/auth/paths.ts'
 
 const homes: string[] = []
@@ -40,6 +35,7 @@ describe('credentials', () => {
     expect(await readCredentials(home)).toEqual({
       DEEPSEEK_API_KEY: 'sk-one',
     })
+    expect(await readFile(credentialsPath(home), 'utf8')).not.toContain('version:')
   })
 
   it('reads and updates versioned DSH credentials', async () => {
@@ -50,11 +46,12 @@ describe('credentials', () => {
     expect(await readCredentials(home)).toEqual({ DEEPSEEK_API_KEY: 'sk-old' })
     await patchCredential(home, 'COCODE_NUT_API_KEY', 'ck-new')
     const text = await readFile(path, 'utf8')
+    expect(text).toContain('version: 1')
     expect(text).toContain('COCODE_NUT_API_KEY: ck-new')
     expect(text).toContain('provider/example:')
   })
 
-  it('migrates the legacy Cocode ref while holding the shared lock', async () => {
+  it('moves the legacy Cocode ref without changing the file layout', async () => {
     const home = await tempHome()
     const path = credentialsPath(home)
     await mkdir(dirname(path), { recursive: true })
@@ -62,8 +59,8 @@ describe('credentials', () => {
 
     expect(await readCredentials(home)).toEqual({ COCODE_NUT_API_KEY: 'ck-legacy' })
     const text = await readFile(path, 'utf8')
-    expect(text).toContain('version: 1')
     expect(text).toContain('COCODE_NUT_API_KEY: ck-legacy')
+    expect(text).not.toContain('version: 1')
     expect(text).not.toContain('COCODE_CLOUD_API_KEY')
   })
 
@@ -76,14 +73,6 @@ describe('credentials', () => {
     expect(await readCredentials(home)).toEqual({
       DEEPSEEK_API_KEY: 'sk-one',
       COCODE_NUT_API_KEY: 'ck-two',
-    })
-  })
-
-  it('uses the same regular-file lock protocol as DSH', async () => {
-    const home = await tempHome()
-    const path = credentialsPath(home)
-    await withFileLock(path, async () => {
-      expect((await lstat(`${path}.lock`)).isFile()).toBe(true)
     })
   })
 

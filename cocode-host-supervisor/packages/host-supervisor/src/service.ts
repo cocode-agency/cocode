@@ -15,6 +15,7 @@ import {
 import { canonicalizeScope, HOST_PROTOCOL_REVISION, hostKey, isHostDescriptorCompatible, leaseId as makeLeaseId, LEASE_TTL_MS, SUPERVISOR_BUILD_REVISION, SUPERVISOR_PROTOCOL_REVISION, type AcquireHostRequest, type HostDescriptor, type HostScope } from './protocol.js'
 import { mergeHostRuntimeEnv, prepareRuntimeSlot } from './runtime.js'
 import { HostLogger } from './logging.js'
+import { loadCredentials } from './credentials-local.js'
 
 type AcquireRequest = AcquireHostRequest & { clientPid?: number }
 type HostProcess = { child: ReturnType<typeof spawn> | null; descriptor: HostDescriptor; idleTimer?: NodeJS.Timeout }
@@ -147,10 +148,15 @@ class SupervisorService {
       const result = await this.handle(frame.method, frame.params ?? {}, signal)
       writeLineFrame(socket, { jsonrpc: '2.0', id: frame.id, result })
     } catch (error) {
+      const details = error as { code?: unknown }
       writeLineFrame(socket, {
         jsonrpc: '2.0',
         id: frame.id,
-        error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+        error: {
+          code: -32000,
+          message: error instanceof Error ? error.message : String(error),
+          ...(typeof details.code === 'string' ? { data: { code: details.code } } : {}),
+        },
       })
     }
   }
@@ -213,6 +219,8 @@ class SupervisorService {
 
   private async startHost(request: AcquireHostRequest): Promise<void> {
     const jsonRpcEndpoint = process.platform === 'win32' ? `\\\\.\\pipe\\cocode-dsh-jsonrpc-${hostKey(this.scope)}` : join(this.directory, 'dsh-jsonrpc.sock')
+    const credentials = await loadCredentials(join(this.scope.dshHome, '.credentials.yaml'))
+    this.logger.log('info', 'credentials.document.loaded', { layout: credentials.layout })
     const pluginPath = fileURLToPath(new URL('./host-jsonrpc-plugin.js', import.meta.url))
     const slot = prepareRuntimeSlot(this.scope, jsonRpcEndpoint, pluginPath, request.runtimeEnv)
     const workspace = join(this.scope.dshHome, 'workspaces', 'default')
@@ -266,7 +274,7 @@ class SupervisorService {
       reject(error)
     }
     const ready = new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => rejectStartup(reject, new Error(`DSH Host startup timed out.\n${startupBuffer.value}`)), 60_000)
+      const timer = setTimeout(() => rejectStartup(reject, startupFailureError(`DSH Host startup timed out.\n${startupBuffer.value}`, startupBuffer.value)), 60_000)
       const inspect = (chunk: Buffer | string) => {
         consume('stdout', chunk)
         const match = startupBuffer.value.match(/dsh web: (http:\/\/127\.0\.0\.1:\d+)/)
@@ -290,7 +298,7 @@ class SupervisorService {
           signal: signal ?? 'none',
           hostPid: child.pid ?? -1,
         })
-        if (!readyObserved) rejectStartup(reject, new Error(`DSH Host exited before ready: ${String(code ?? signal ?? 'unknown')}\n${startupBuffer.value}`))
+        if (!readyObserved) rejectStartup(reject, startupFailureError(`DSH Host exited before ready: ${String(code ?? signal ?? 'unknown')}\n${startupBuffer.value}`, startupBuffer.value))
         if (this.host?.child === child) {
           this.host = null
           rmSync(descriptorPath(this.directory), { force: true })
@@ -462,6 +470,13 @@ class SupervisorService {
     this.hadHost = true
     if (this.leases.size === 0) this.armIdleShutdown()
   }
+}
+
+function startupFailureError(message: string, output: string): Error {
+  const error = new Error(message)
+  const code = output.match(/\b(CREDENTIALS_[A-Z0-9_]+)\b/)?.[1]
+  if (code !== undefined) Object.defineProperty(error, 'code', { value: code, enumerable: true })
+  return error
 }
 
 function shortId(value: string): string { return value.slice(0, 8) }
