@@ -360,6 +360,10 @@ jobs:
           tar -xzf verified-artifact/cocode-linux-verified-snapshot-*.tar.gz -C verified
           mkdir -p release-assets
           cp -R verified/release-assets/. release-assets/
+          test -d verified/linux-repository
+          mkdir -p release-assets/repository
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          tar -C verified/linux-repository -czf "release-assets/repository/cocode-linux-repository-${version}.tar.gz" .
       - name: Recheck downloaded release evidence
         run: |
           for arch in x64 arm64; do
@@ -385,13 +389,14 @@ jobs:
               --title "Cocode Linux (os/linux)" \
               --notes "Automated Linux packages from the os/linux branch."
           fi
-      - name: Upload current Linux packages and metadata
+      - name: Upload current Linux packages, metadata and repository archive
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$RELEASE_TAG" \
             release-assets/x64/* \
             release-assets/arm64/* \
+            release-assets/repository/*.tar.gz \
             --clobber
       - name: Remove stale draft assets
         env:
