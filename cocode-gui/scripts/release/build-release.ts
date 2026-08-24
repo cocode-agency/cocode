@@ -120,6 +120,7 @@ if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiSta
 const viteStatus = runPnpm(["exec", "electron-vite", "build"])
 if (viteStatus !== 0) throw new Error(`Electron Vite build exited with code ${String(viteStatus)}.`)
 
+cleanBuilderOutput(target.platform, environment.RELEASE_OUTPUT_DIR)
 const builderPlatform =
 	target.platform === "darwin" ? "--mac" : target.platform === "win32" ? "--win" : "--linux"
 const builderArch = target.arch === "arm64" ? "--arm64" : "--x64"
@@ -141,6 +142,13 @@ function cleanNativeBuildOutputs(): void {
 	]) {
 		rmSync(path.resolve(relativePath), { recursive: true, force: true })
 	}
+}
+
+function cleanBuilderOutput(platform: string, outputDirectory: string | undefined): void {
+	if (!outputDirectory) return
+	const directoryName =
+		platform === "darwin" ? "mac" : platform === "win32" ? "win-unpacked" : "linux-unpacked"
+	rmSync(path.resolve(outputDirectory, directoryName), { recursive: true, force: true })
 }
 
 function assertLinuxPackagingTools(): void {

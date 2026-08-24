@@ -91,6 +91,15 @@ test("uses the Linux workflow as the canonical signed DEB/RPM build", () => {
 	assert.match(workflow, /LINUX_REPOSITORY_BASE_URL/)
 	assert.match(workflow, /cocode-linux-repository-/)
 	assert.match(workflow, /Upload verified Linux release snapshot/)
+	const verificationBlock = workflow.match(
+		/\n  verify-repository:[\s\S]*?(?=\n  draft-release:)/,
+	)?.[0] ?? ""
+	assert.match(verificationBlock, /pnpm\/action-setup@v4/)
+	assert.match(verificationBlock, /version: 10\.34\.5/)
+	assert.match(verificationBlock, /actions\/setup-node@v4/)
+	assert.match(verificationBlock, /node-version: 22\.22\.2/)
+	assert.match(verificationBlock, /corepack pnpm@10\.34\.5 install --frozen-lockfile --ignore-scripts/)
+	assert.match(verificationBlock, /working-directory: cocode-gui/)
 	assert.match(workflow, /needs:\s*\[build, smoke-deb, smoke-rpm\]/)
 	assert.ok(workflow.indexOf("\n  build:") < workflow.indexOf("\n  smoke-deb:"))
 	assert.ok(workflow.indexOf("\n  smoke-rpm:") < workflow.indexOf("\n  sign-packages:"))
@@ -328,6 +337,7 @@ test("prepares target-native dependencies before building release assets", () =>
 	assert.match(buildRelease, /target\.platform === "darwin"/)
 	assert.match(buildRelease, /ensureDarwinNodePtyNatives/)
 	assert.match(buildRelease, /verifyDarwinNodePtyArchitecture/)
+	assert.match(buildRelease, /cleanBuilderOutput/)
 	assert.match(buildRelease, /assertNativeReleaseHost/)
 })
 

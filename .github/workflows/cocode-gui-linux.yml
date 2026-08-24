@@ -326,10 +326,21 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: cocode-gui/pnpm-lock.yaml
       - uses: actions/download-artifact@v4
         with:
           name: cocode-linux-metadata-${{ github.sha }}
           path: snapshot
+      - name: Install GUI verification dependencies
+        working-directory: cocode-gui
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
       - name: Install repository verification tooling
         run: |
           sudo apt-get update
