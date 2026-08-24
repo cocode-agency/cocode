@@ -28,6 +28,18 @@ test("accepts a native Linux arm64 host", () => {
 	)
 })
 
+test("accepts a native Windows x64 host without requiring Unix uname", () => {
+	assert.doesNotThrow(() =>
+		assertNativeReleaseHost({
+			targetPlatform: "win32",
+			targetArch: "x64",
+			platform: "win32",
+			arch: "x64",
+			environment: {},
+		}),
+	)
+})
+
 test("rejects a Linux process architecture mismatch", () => {
 	assert.throws(
 		() =>
