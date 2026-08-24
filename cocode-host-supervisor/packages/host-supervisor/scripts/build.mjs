@@ -18,9 +18,11 @@ import { assertBuiltRuntimePlugin } from './runtime-plugins.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workspaceRoot = resolve(packageRoot, '../..')
+const compatSource = join(packageRoot, 'src/credentials-local-compat.mjs')
 const lib = join(packageRoot, 'lib')
 rmSync(lib, { recursive: true, force: true })
 mkdirSync(lib, { recursive: true })
+cpSync(compatSource, join(lib, 'credentials-local-compat.mjs'))
 
 execFileSync(process.execPath, [resolve(workspaceRoot, 'node_modules/typescript/bin/tsc'), '-p', join(packageRoot, 'tsconfig.build.json')], { cwd: workspaceRoot, stdio: 'inherit' })
 

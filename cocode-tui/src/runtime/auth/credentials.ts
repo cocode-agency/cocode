@@ -1,25 +1,28 @@
 /**
- * Harness credential document: REF: value mapping, nothing else.
+ * Shared DSH credential document, supporting flat and version-1 layouts.
  */
 
 import { credentialsPath } from './paths.ts'
 import { readYamlUnknown, writeYamlFile } from './io.ts'
+import { withFileLock } from './file-lock.ts'
 import { TuiError } from '../errors/index.ts'
 
 const REF = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 export async function readCredentials(home: string): Promise<Record<string, string>> {
-  const loaded = await readYamlUnknown(credentialsPath(home), { secret: true })
-  if (loaded.missing) return {}
-  const credentials = asStringMap(loaded.value)
-  const legacyKey = credentials.COCODE_CLOUD_API_KEY
-  if (legacyKey !== undefined && credentials.COCODE_NUT_API_KEY === undefined) {
-    await patchCredential(home, 'COCODE_NUT_API_KEY', legacyKey)
-    await patchCredential(home, 'COCODE_CLOUD_API_KEY', undefined)
-    credentials.COCODE_NUT_API_KEY = legacyKey
-    delete credentials.COCODE_CLOUD_API_KEY
-  }
-  return credentials
+  return withCredentialsLock(home, async () => {
+    const loaded = await readYamlUnknown(credentialsPath(home), { secret: true })
+    if (loaded.missing) return {}
+    const credentials = asStringMap(loaded.value)
+    const legacyKey = credentials.COCODE_CLOUD_API_KEY
+    if (legacyKey !== undefined && credentials.COCODE_NUT_API_KEY === undefined) {
+      await patchCredential(home, 'COCODE_NUT_API_KEY', legacyKey)
+      await patchCredential(home, 'COCODE_CLOUD_API_KEY', undefined)
+      credentials.COCODE_NUT_API_KEY = legacyKey
+      delete credentials.COCODE_CLOUD_API_KEY
+    }
+    return credentials
+  })
 }
 
 export async function patchCredential(
@@ -28,30 +31,51 @@ export async function patchCredential(
   value: string | undefined,
 ): Promise<void> {
   if (!REF.test(ref)) throw new TuiError('AUTH_CREDENTIAL_REF', { ref })
-  const path = credentialsPath(home)
-  const loaded = await readYamlUnknown(path, { secret: true })
-  const current = loaded.missing ? {} : asStringMap(loaded.value)
-  if (value === undefined) {
-    delete current[ref]
-  } else {
-    const trimmed = value.trim()
-    if (trimmed === '') throw new TuiError('AUTH_CREDENTIAL_EMPTY')
-    current[ref] = trimmed
-  }
-  await writeYamlFile(path, current, 0o600)
+  return withCredentialsLock(home, async () => {
+    const path = credentialsPath(home)
+    const loaded = await readYamlUnknown(path, { secret: true })
+    const document = loaded.missing ? undefined : asCredentialDocument(loaded.value)
+    const current = document?.refs ?? {}
+    if (value === undefined) {
+      delete current[ref]
+    } else {
+      const trimmed = value.trim()
+      if (trimmed === '') throw new TuiError('AUTH_CREDENTIAL_EMPTY')
+      current[ref] = trimmed
+    }
+    await writeYamlFile(path, document === undefined || document.version === undefined
+      ? { version: 1, refs: current }
+      : { ...document.raw, version: 1, refs: current }, 0o600)
+  })
+}
+
+function withCredentialsLock<T>(home: string, operation: () => Promise<T>): Promise<T> {
+  return withFileLock(credentialsPath(home), operation)
 }
 
 function asStringMap(value: unknown): Record<string, string> {
-  if (value === null || value === undefined) return {}
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new TuiError('AUTH_CREDENTIALS_PARSE')
-  }
+  return asCredentialDocument(value).refs
+}
+
+type CredentialDocument = { version?: number; refs: Record<string, string>; raw: Record<string, unknown> }
+
+function asCredentialDocument(value: unknown): CredentialDocument {
+  if (value === null || value === undefined) return { refs: {}, raw: {} }
+  if (typeof value !== 'object' || Array.isArray(value)) throw new TuiError('AUTH_CREDENTIALS_PARSE')
+  const raw = value as Record<string, unknown>
+  const version = raw.version
+  if (version !== undefined && version !== 1) throw new TuiError('AUTH_CREDENTIALS_PARSE')
+  if (version === 1 && Object.keys(raw).some((key) => !['version', 'refs', 'records'].includes(key))) throw new TuiError('AUTH_CREDENTIALS_PARSE')
+  const section = version === 1 ? raw.refs : raw
+  if (section === null || section === undefined) return { version, refs: {}, raw }
+  if (typeof section !== 'object' || Array.isArray(section)) throw new TuiError('AUTH_CREDENTIALS_PARSE')
   const out: Record<string, string> = {}
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, item] of Object.entries(section as Record<string, unknown>)) {
+    if (version === 1 && ['version', 'refs', 'records'].includes(key)) continue
     if (typeof item !== 'string' || !REF.test(key) || item.trim() === '') {
       throw new TuiError('AUTH_CREDENTIALS_PARSE')
     }
     out[key] = item
   }
-  return out
+  return { ...(version === undefined ? {} : { version }), refs: out, raw }
 }

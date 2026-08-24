@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimeSlotDirectory } from './paths.js'
 import { hostKey, resolveCocodeHome, stableJson, type HostRuntimeEnv, type HostScope } from './protocol.js'
 
@@ -156,6 +156,8 @@ export function prepareRuntimeSlot(
   }
   const pluginTarget = join(slot, 'cocode-host-jsonrpc-plugin.mjs')
   cpSync(pluginPath, pluginTarget)
+  const credentialsCompatTarget = join(slot, 'cocode-credentials-local-compat.mjs')
+  cpSync(fileURLToPath(new URL('./credentials-local-compat.mjs', import.meta.url)), credentialsCompatTarget)
   const pluginEntries: RuntimePluginEntry[] = []
   if (existsSync(pluginRoot)) {
     for (const entry of readdirSync(pluginRoot, { withFileTypes: true })) {
@@ -170,7 +172,7 @@ export function prepareRuntimeSlot(
   registerRuntimePluginsInDshManifest(slot, pluginEntries)
   restoreNodePtyHelper(slot)
   const patch = join(slot, 'cocode-host.patch.yml')
-  const rows = createRuntimePatch(pathToFileURL(pluginTarget).href, jsonRpcEndpoint, pluginEntries, runtimeEnv)
+  const rows = createRuntimePatch(pathToFileURL(pluginTarget).href, jsonRpcEndpoint, pluginEntries, runtimeEnv, pathToFileURL(credentialsCompatTarget).href, scope.dshHome)
   writeFileSync(patch, rows)
   writeFileSync(join(slot, 'active.json'), `${JSON.stringify({
     schemaVersion: 1,
@@ -255,6 +257,8 @@ export function createRuntimePatch(
   jsonRpcEndpoint: string,
   pluginEntries: readonly RuntimePluginEntry[],
   runtimeEnv?: HostRuntimeEnv,
+  credentialsCompatUrl?: string,
+  credentialsHome?: string,
 ): string {
   const providers = parseRuntimeProviders(runtimeEnv?.COCODE_LLM_PROVIDERS)
   return [
@@ -265,6 +269,13 @@ export function createRuntimePatch(
     '    retryPolicy:',
     '      mode: normal',
     '      maxRetries: 5',
+    ...(credentialsCompatUrl === undefined || credentialsHome === undefined ? [] : [
+      '- id: credentials',
+      `  name: ${JSON.stringify(credentialsCompatUrl)}`,
+      '  config:',
+      `    path: ${JSON.stringify(join(credentialsHome, '.credentials.yaml'))}`,
+      `    dshHome: ${JSON.stringify(credentialsHome)}`,
+    ]),
     ...(providers === undefined ? [] : llmPiAiPatchLines(providers)),
     '- insert:',
     '    - id: cocode-host-jsonrpc',
