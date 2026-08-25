@@ -14,7 +14,7 @@ import {
   FILE_CUT_COMMAND, FILE_DELETE_COMMAND, FILE_EXPAND_COMMAND, FILE_OPEN_COMMAND,
   FILE_PASTE_COMMAND, FILE_RENAME_COMMAND, FILE_SELECT_NEXT_COMMAND,
   FILE_SELECT_PREVIOUS_COMMAND, fileShortcutBindingsSnapshot, fileShortcutLabel,
-  setActiveFileShortcutTarget, subscribeFileShortcutBindings,
+  removeActiveFileShortcutTarget, setActiveFileShortcutTarget, subscribeFileShortcutBindings,
 } from "./file-shortcuts.ts"
 import { fileMentionText, treeMentionPath } from "./file-mention.ts"
 import { ChevronIcon, FileGlyph, FolderGlyph, SearchIcon } from "./icons.tsx"
@@ -343,7 +343,7 @@ export function FilesPanel(props: WorkbenchPanelProps) {
     }
     setActiveFileShortcutTarget(target)
     return () => {
-      if (activeFileShortcutTarget() === target) setActiveFileShortcutTarget(undefined)
+      removeActiveFileShortcutTarget(target)
     }
   })
 

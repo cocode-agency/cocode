@@ -30,4 +30,24 @@ describe("file list shortcuts", () => {
     expect(run).toHaveBeenCalledWith(FILE_OPEN_COMMAND)
     setActiveFileShortcutTarget(undefined)
   })
+
+  it("selects the focused target when multiple file trees are mounted", () => {
+    const firstRun = vi.fn(() => true)
+    const secondRun = vi.fn(() => true)
+    let firstActive = false
+    let secondActive = false
+    setActiveFileShortcutTarget({ isActive: () => firstActive, run: firstRun })
+    setActiveFileShortcutTarget({ isActive: () => secondActive, run: secondRun })
+
+    firstActive = true
+    expect(fileShortcutCommands().find(command => command.id === FILE_OPEN_COMMAND)?.run()).toBe(true)
+    expect(firstRun).toHaveBeenCalledWith(FILE_OPEN_COMMAND)
+    expect(secondRun).not.toHaveBeenCalled()
+
+    firstActive = false
+    secondActive = true
+    expect(fileShortcutCommands().find(command => command.id === FILE_OPEN_COMMAND)?.run()).toBe(true)
+    expect(secondRun).toHaveBeenCalledWith(FILE_OPEN_COMMAND)
+    setActiveFileShortcutTarget(undefined)
+  })
 })

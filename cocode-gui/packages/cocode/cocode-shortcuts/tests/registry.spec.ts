@@ -70,6 +70,100 @@ describe("ShortcutRegistry", () => {
     expect(snapshot.orphaned).toEqual(["orphan"])
   })
 
+  it("falls back to app scope when stale settings mark a local command global", async () => {
+    const { registry } = await setup({
+      local: { combo: { key: "l", primary: true }, scope: "global" },
+    })
+    const run = vi.fn(() => true)
+    registry.register({
+      id: "local",
+      title: "Local",
+      defaultCombo: { key: "a", primary: true },
+      run,
+    })
+
+    expect(registry.getSnapshot().bindings).toEqual([
+      expect.objectContaining({ commandId: "local", scope: "app" }),
+    ])
+    const dispose = registry.mount()
+    window.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "l",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }))
+    expect(run).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+
+  it("keeps global-capable shortcuts usable in a browser without the desktop bridge", async () => {
+    const { registry } = await setup({
+      global: { combo: { key: "g", primary: true }, scope: "global" },
+    })
+    const run = vi.fn(() => true)
+    registry.register({
+      id: "global",
+      title: "Global",
+      defaultCombo: { key: "a", primary: true },
+      globalCapable: true,
+      run,
+    })
+
+    const dispose = registry.mount()
+    window.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "g",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }))
+    expect(run).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+
+  it("serializes rapid edits instead of losing the later binding", async () => {
+    let releaseFirst!: () => void
+    const firstWrite = new Promise<void>(resolve => { releaseFirst = resolve })
+    const updates: ShortcutSettingsView["value"]["bindings"][] = []
+    const controller = new ShortcutSettingsController({
+      get: async () => view(),
+      update: async patch => {
+        updates.push(structuredClone(patch.bindings ?? {}))
+        if (updates.length === 1) await firstWrite
+        return view(patch.bindings ?? {}, updates.length)
+      },
+    })
+    await controller.reload()
+    const registry = new ShortcutRegistry({} as never, controller)
+    registry.register({
+      id: "first",
+      title: "First",
+      defaultCombo: { key: "a", primary: true },
+      run: () => true,
+    })
+    registry.register({
+      id: "second",
+      title: "Second",
+      defaultCombo: { key: "b", primary: true },
+      run: () => true,
+    })
+
+    registry.setBinding("first", { combo: { key: "f", primary: true } })
+    registry.setBinding("second", { combo: { key: "s", primary: true } })
+    await Promise.resolve()
+    expect(updates).toHaveLength(1)
+    releaseFirst()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(updates).toEqual([
+      { first: { combo: { key: "f", primary: true }, disabled: false } },
+      {
+        first: { combo: { key: "f", primary: true }, disabled: false },
+        second: { combo: { key: "s", primary: true }, disabled: false },
+      },
+    ])
+  })
+
   it("does not consume unmatched, text-entry, IME, or false-returning commands", async () => {
     const { registry } = await setup()
     const run = vi.fn(() => false)
