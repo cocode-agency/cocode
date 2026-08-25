@@ -553,6 +553,7 @@ class TuiAppImpl implements TuiApp {
   private readonly keymap: Keymap
   private imageSerial = 0
   private readonly activeSubagents = new Set<string>()
+  private highestSessionSeq = -1
   private lastSubagent: TuiSubagentActivity['last']
   private readonly promptQueue = new PromptQueueCoordinator()
   private capturingByok = false
@@ -3641,13 +3642,7 @@ class TuiAppImpl implements TuiApp {
     }
     handleNotification(notification, {
       sessionId: this.sessionId,
-      ingest: (event) => {
-        this.telemetry.ingest(event)
-        this.sessionState.ingest(event)
-        if (event.type === 'turn/start') this.checklist = undefined
-        if (event.type === 'session/title') this.sessionTitleOverride = undefined
-        this.assembler.ingest(event)
-      },
+      ingest: (event) => this.ingestSessionEvent(event),
       isDeadOrExiting: () => this.agent === 'dead' || this.exiting,
       setAgent: (agent) => {
         const previous = this.agent
@@ -3759,7 +3754,10 @@ class TuiAppImpl implements TuiApp {
 
   private replaceSessionProjection(events: readonly SessionEvent[]): void {
     const projection = createSessionProjection()
-    for (const event of events) {
+    this.highestSessionSeq = -1
+    for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
+      if (event.seq <= this.highestSessionSeq) continue
+      this.highestSessionSeq = event.seq
       projection.assembler.ingest(event)
       projection.telemetry.ingest(event)
       projection.sessionState.ingest(event)
@@ -3767,6 +3765,16 @@ class TuiAppImpl implements TuiApp {
     this.assembler = projection.assembler
     this.telemetry = projection.telemetry
     this.sessionState = projection.sessionState
+  }
+
+  private ingestSessionEvent(event: SessionEvent): void {
+    if (event.seq <= this.highestSessionSeq) return
+    this.highestSessionSeq = event.seq
+    this.telemetry.ingest(event)
+    this.sessionState.ingest(event)
+    if (event.type === 'turn/start') this.checklist = undefined
+    if (event.type === 'session/title') this.sessionTitleOverride = undefined
+    this.assembler.ingest(event)
   }
 
   private scheduleEmit(): void {
