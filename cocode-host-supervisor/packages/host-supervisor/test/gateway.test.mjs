@@ -272,6 +272,42 @@ test('reads cold session metadata and model selection without creating an Agent'
   assert.equal(created.length, 0)
 })
 
+test('reads an attachment referenced by a cold session', async () => {
+  const attachments = {
+    async readImage(ref) {
+      return { ref, data: Buffer.from('image-bytes') }
+    },
+  }
+  const { ctx } = createContext({
+    attachments,
+    sessionPersistence: {
+      async list() {
+        return [{ id: 'cold-image', createdAt: 1, cwd: '/tmp' }]
+      },
+      async inspect() {
+        return {
+          meta: { id: 'cold-image', createdAt: 1, cwd: '/tmp' },
+          events: [{
+            type: 'user/message',
+            seq: 1,
+            time: 2,
+            data: {
+              content: [{ type: 'image', attachment: {
+                attachmentId: 'image-1', mediaType: 'image/png', bytes: 11, width: 2, height: 3,
+              } }],
+            },
+          }],
+        }
+      },
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+  const result = await gateway.readAttachment({ sessionId: 'cold-image', attachmentId: 'image-1' })
+  assert.equal(result.data, Buffer.from('image-bytes').toString('base64'))
+  assert.equal(result.attachment.attachmentId, 'image-1')
+})
+
 test('rejects unsupported images before they enter the session', async () => {
   const { ctx, followed, created } = createContext()
   const gateway = createGateway(ctx)
