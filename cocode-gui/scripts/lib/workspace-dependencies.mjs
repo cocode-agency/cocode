@@ -339,6 +339,8 @@ export function pruneNativePrebuildDirectories(
 	const packageRoot = path.join(root, "node_modules", "node-pty")
 	if (!existsSync(packageRoot)) return false
 	let changed = pruneTargetDirectories(path.join(packageRoot, "prebuilds"), `${platform}-${arch}`)
+	if (platform === "darwin")
+		changed = pruneNodePtyAbiDirectories(path.join(packageRoot, "bin"), arch) || changed
 	changed =
 		(platform === "win32"
 			? pruneTargetDirectories(
@@ -346,6 +348,19 @@ export function pruneNativePrebuildDirectories(
 					`win10-${arch}`,
 			  )
 			: removeDirectory(path.join(packageRoot, "third_party", "conpty"))) || changed
+	return changed
+}
+
+function pruneNodePtyAbiDirectories(root, arch) {
+	if (!existsSync(root) || !lstatSync(root).isDirectory()) return false
+	let changed = false
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue
+		const match = /^darwin-(x64|arm64)-\d+$/i.exec(entry.name)
+		if (!match || match[1].toLowerCase() === arch) continue
+		rmSync(path.join(root, entry.name), { recursive: true, force: true })
+		changed = true
+	}
 	return changed
 }
 

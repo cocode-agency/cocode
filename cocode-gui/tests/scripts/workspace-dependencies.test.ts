@@ -257,6 +257,41 @@ test("prunes node-pty native prebuild directories to the staged target", () => {
 	}
 })
 
+test("prunes node-pty ABI directories to the staged macOS architecture", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-node-pty-bin-prune-test-"))
+	try {
+		for (const directory of ["darwin-arm64-148", "darwin-x64-148"]) {
+			const file = path.join(
+				root,
+				"node_modules",
+				"node-pty",
+				"bin",
+				directory,
+				"node-pty.node",
+			)
+			mkdirSync(path.dirname(file), { recursive: true })
+			writeFileSync(file, "native")
+		}
+
+		pruneNativePrebuildDirectories(root, { platform: "darwin", arch: "x64" })
+
+		assert.equal(
+			existsSync(
+				path.join(root, "node_modules", "node-pty", "bin", "darwin-x64-148", "node-pty.node"),
+			),
+			true,
+		)
+		assert.equal(
+			existsSync(
+				path.join(root, "node_modules", "node-pty", "bin", "darwin-arm64-148", "node-pty.node"),
+			),
+			false,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
 test("prunes incompatible optional native packages and node-pty conpty assets", () => {
 	const root = mkdtempSync(path.join(tmpdir(), "cocode-native-package-prune-test-"))
 	try {
