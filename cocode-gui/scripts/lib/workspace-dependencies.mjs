@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, lstatSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import {
+	chmodSync,
+	existsSync,
+	lstatSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+} from "node:fs"
 import * as path from "pathe"
 import { shellCommandOptions } from "./child-process-options.mjs"
 
@@ -63,6 +70,126 @@ export function ensureWindowsNodePtyNatives({
 		)
 	}
 	return true
+}
+
+export function ensureLinuxNodePtyNatives({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+	force = false,
+	run = execFileSync,
+} = {}) {
+	if (platform !== "linux") return false
+	const packageRoot = path.join(root, "node_modules", "node-pty")
+	if (!force && resolveLinuxNodePtyMissing(packageRoot, arch).length === 0) return false
+
+	console.log(`[workspace-deps] rebuilding node-pty natives for linux/${arch}`)
+	run(
+		process.platform === "win32" ? "corepack.cmd" : "corepack",
+		["pnpm@10.34.5", "rebuild", "node-pty"],
+		{
+			...shellCommandOptions({ cwd: root, stdio: "inherit" }),
+			env: { ...process.env, npm_config_arch: arch },
+		},
+	)
+	compileLinuxNodePtySpawnHelper(packageRoot, { run })
+
+	const missing = resolveLinuxNodePtyMissing(packageRoot, arch)
+	if (missing.length > 0) {
+		throw new Error(
+			[
+				`node-pty Linux native files are missing after rebuild for linux/${arch}.`,
+				"Run the pinned pnpm rebuild in the host-supervisor workspace with build scripts enabled:",
+				`  corepack pnpm@10.34.5 --dir ${root} rebuild node-pty`,
+				...missing.map((file) => `  missing: ${file}`),
+			].join("\n"),
+		)
+	}
+	return true
+}
+
+/**
+ * macOS node-pty can retain a native build from a previous arm64/x64 install
+ * even when the target prebuild for the current architecture is present. The
+ * loader checks build/Release before prebuilds, so always remove that output
+ * before rebuilding the target package during a native release.
+ */
+export function ensureDarwinNodePtyNatives({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+	force = false,
+	run = execFileSync,
+} = {}) {
+	if (platform !== "darwin") return false
+	const packageRoot = path.join(root, "node_modules", "node-pty")
+	const buildRoot = path.join(packageRoot, "build")
+	const missingBefore = resolveDarwinNodePtyMissing(packageRoot, arch)
+	if (!force && !existsSync(buildRoot) && missingBefore.length === 0) return false
+
+	rmSync(buildRoot, { recursive: true, force: true })
+	console.log(`[workspace-deps] rebuilding node-pty natives for darwin/${arch}`)
+	run(
+		process.platform === "win32" ? "corepack.cmd" : "corepack",
+		["pnpm@10.34.5", "rebuild", "node-pty"],
+		{
+			...shellCommandOptions({ cwd: root, stdio: "inherit" }),
+			env: {
+				...process.env,
+				npm_config_arch: arch,
+				npm_config_platform: "darwin",
+			},
+		},
+	)
+
+	const missing = resolveDarwinNodePtyMissing(packageRoot, arch)
+	if (missing.length > 0) {
+		throw new Error(
+			[
+				`node-pty macOS native files are missing after rebuild for darwin/${arch}.`,
+				"Run the pinned pnpm rebuild in the GUI workspace and ensure node-pty build scripts are allowed:",
+				`  corepack pnpm@10.34.5 --dir ${root} rebuild node-pty`,
+				...missing.map((file) => `  missing: ${file}`),
+			].join("\n"),
+		)
+	}
+	return true
+}
+
+export function verifyDarwinNodePtyArchitecture({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+	architectures = (file) =>
+		execFileSync("lipo", ["-archs", file], { encoding: "utf8" }).trim().split(/\s+/),
+} = {}) {
+	if (platform !== "darwin") return false
+	const packageRoot = path.join(root, "node_modules", "node-pty")
+	const nativeDirectory = resolveDarwinNodePtyDirectory(packageRoot, arch)
+	if (!nativeDirectory) {
+		throw new Error(`node-pty native files are missing for darwin/${arch} under ${packageRoot}.`)
+	}
+	const expectedArchitecture = arch === "x64" ? "x86_64" : arch
+	for (const name of ["pty.node", "spawn-helper"]) {
+		const file = path.join(nativeDirectory, name)
+		if (!existsSync(file)) throw new Error(`node-pty ${name} is missing for darwin/${arch}: ${file}`)
+		if (!architectures(file).includes(expectedArchitecture)) {
+			throw new Error(`node-pty ${name} architecture mismatch for darwin/${arch}: ${file}`)
+		}
+	}
+	return true
+}
+
+function compileLinuxNodePtySpawnHelper(packageRoot, { run }) {
+	const source = path.join(packageRoot, "src", "unix", "spawn-helper.cc")
+	const output = path.join(packageRoot, "build", "Release", "spawn-helper")
+	if (!existsSync(source) || existsSync(output)) return
+
+	console.log("[workspace-deps] compiling node-pty spawn-helper for linux")
+	run(process.env.CXX || "c++", ["-O2", "-std=c++17", source, "-o", output], {
+		...shellCommandOptions({ cwd: packageRoot, stdio: "inherit" }),
+	})
+	chmodSync(output, 0o755)
 }
 
 export function pruneIncompatibleNativePackages(
@@ -208,13 +335,12 @@ export function pruneNativePrebuildDirectories(
 	root,
 	{ platform = process.platform, arch = process.arch } = {},
 ) {
-	if (platform !== "win32" && platform !== "darwin") return false
+	if (platform !== "win32" && platform !== "darwin" && platform !== "linux") return false
 	const packageRoot = path.join(root, "node_modules", "node-pty")
 	if (!existsSync(packageRoot)) return false
-	let changed = pruneTargetDirectories(
-		path.join(packageRoot, "prebuilds"),
-		platform === "win32" || platform === "darwin" ? `${platform}-${arch}` : undefined,
-	)
+	let changed = pruneTargetDirectories(path.join(packageRoot, "prebuilds"), `${platform}-${arch}`)
+	if (platform === "darwin")
+		changed = pruneNodePtyAbiDirectories(path.join(packageRoot, "bin"), arch) || changed
 	changed =
 		(platform === "win32"
 			? pruneTargetDirectories(
@@ -222,6 +348,19 @@ export function pruneNativePrebuildDirectories(
 					`win10-${arch}`,
 			  )
 			: removeDirectory(path.join(packageRoot, "third_party", "conpty"))) || changed
+	return changed
+}
+
+function pruneNodePtyAbiDirectories(root, arch) {
+	if (!existsSync(root) || !lstatSync(root).isDirectory()) return false
+	let changed = false
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue
+		const match = /^darwin-(x64|arm64)-\d+$/i.exec(entry.name)
+		if (!match || match[1].toLowerCase() === arch) continue
+		rmSync(path.join(root, entry.name), { recursive: true, force: true })
+		changed = true
+	}
 	return changed
 }
 
@@ -267,4 +406,52 @@ function resolveWindowsNodePtyMissing(packageRoot, arch) {
 		}
 	}
 	return missing
+}
+
+function resolveLinuxNodePtyMissing(packageRoot, arch) {
+	const searchDirectories = [
+		path.join(packageRoot, "build", "Release"),
+		path.join(packageRoot, "build", "Debug"),
+		path.join(packageRoot, "prebuilds", `linux-${arch}`),
+	]
+	const resolveDirectory = (name) =>
+		searchDirectories.find((directory) => existsSync(path.join(directory, name)))
+	const missing = []
+	const ptyDirectory = resolveDirectory("pty.node")
+	if (!ptyDirectory) {
+		missing.push(`pty.node (searched: ${searchDirectories.join(", ")})`)
+	} else if (!existsSync(path.join(ptyDirectory, "spawn-helper"))) {
+		missing.push(path.join(ptyDirectory, "spawn-helper"))
+	}
+	return missing
+}
+
+function resolveDarwinNodePtyMissing(packageRoot, arch) {
+	const searchDirectories = [
+		path.join(packageRoot, "build", "Release"),
+		path.join(packageRoot, "build", "Debug"),
+		path.join(packageRoot, "prebuilds", `darwin-${arch}`),
+	]
+	const resolveDirectory = (name) =>
+		searchDirectories.find((directory) => existsSync(path.join(directory, name)))
+	const missing = []
+	const ptyDirectory = resolveDirectory("pty.node")
+	if (!ptyDirectory) missing.push(`pty.node (searched: ${searchDirectories.join(", ")})`)
+	const spawnHelperDirectory = resolveDirectory("spawn-helper")
+	if (!spawnHelperDirectory)
+		missing.push(`spawn-helper (searched: ${searchDirectories.join(", ")})`)
+	return missing
+}
+
+function resolveDarwinNodePtyDirectory(packageRoot, arch) {
+	const searchDirectories = [
+		path.join(packageRoot, "build", "Release"),
+		path.join(packageRoot, "build", "Debug"),
+		path.join(packageRoot, "prebuilds", `darwin-${arch}`),
+	]
+	return searchDirectories.find(
+		(directory) =>
+			existsSync(path.join(directory, "pty.node")) &&
+			existsSync(path.join(directory, "spawn-helper")),
+	)
 }

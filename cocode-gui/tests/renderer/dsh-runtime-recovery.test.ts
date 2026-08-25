@@ -155,6 +155,54 @@ test("Host handshake timeouts request runtime recovery", async () => {
 	assert.ok(recoveryRequests >= 1)
 })
 
+test("runtime rebound cannot be lost between stream failure and retry backoff", async () => {
+	let describeCalls = 0
+	const ended = async function* (): AsyncGenerator<never, void, unknown> {
+		return
+	}
+	const waitForAbort = async function* (
+		signal: AbortSignal,
+	): AsyncGenerator<never, void, unknown> {
+		await new Promise<void>((resolve) => {
+			if (signal.aborted) resolve()
+			else signal.addEventListener("abort", () => resolve(), { once: true })
+		})
+		return
+	}
+	const api = {
+		events: {
+			mux: (_payload: unknown, signal: AbortSignal, onOpen?: () => void) => {
+				onOpen?.()
+				return describeCalls === 0 ? ended() : waitForAbort(signal)
+			},
+			host: (_payload: unknown, signal: AbortSignal, onOpen?: () => void) => {
+				onOpen?.()
+				return describeCalls === 0 ? ended() : waitForAbort(signal)
+			},
+		},
+		host: {
+			describe: async () => {
+				describeCalls += 1
+				return { result: { ok: true, value: {} } }
+			},
+		},
+	} as never
+	const controller = new ConnectionController(
+		api,
+		{
+			onStateChange: (state) => {
+				if (state === "reconnecting") controller.rebind()
+			},
+		},
+		{ backoffBaseMs: 60_000, backoffMaxMs: 60_000 },
+	)
+	controller.start()
+	await waitUntil(() => describeCalls >= 2)
+	controller.stop()
+
+	assert.ok(describeCalls >= 2)
+})
+
 async function waitUntil(predicate: () => boolean, timeoutMs = 250): Promise<void> {
 	const deadline = Date.now() + timeoutMs
 	while (!predicate() && Date.now() < deadline) {

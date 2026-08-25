@@ -23,7 +23,6 @@ export function useRemote<T>(load: (signal: AbortSignal) => Promise<T>, keys: re
       error => { if (!controller.signal.aborted) setState({ error: message(error), loading: false }) },
     )
     return () => controller.abort()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, keys)
   return state
 }

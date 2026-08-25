@@ -9,6 +9,9 @@ import {
 	isPackageCompatible,
 	pruneIncompatibleNativePackages,
 	pruneNativePrebuildDirectories,
+	ensureLinuxNodePtyNatives,
+	ensureDarwinNodePtyNatives,
+	verifyDarwinNodePtyArchitecture,
 	ensureWindowsNodePtyNatives,
 	ensureWorkspaceDependencies,
 } from "../../scripts/lib/workspace-dependencies.mjs"
@@ -112,6 +115,113 @@ test("repairs missing Windows node-pty native files with the target architecture
 	}
 })
 
+test("repairs missing Linux node-pty native files with the target architecture", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-linux-node-pty-native-test-"))
+	const release = path.join(root, "node_modules", "node-pty", "prebuilds", "linux-arm64")
+	const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv }> = []
+	try {
+		assert.equal(
+			ensureLinuxNodePtyNatives({
+				root,
+				platform: "linux",
+				arch: "arm64",
+				run(command, args, options) {
+					calls.push({ command, args, env: options?.env })
+					for (const file of [
+						path.join(release, "pty.node"),
+						path.join(release, "spawn-helper"),
+					]) {
+						mkdirSync(path.dirname(file), { recursive: true })
+						writeFileSync(file, "native")
+					}
+				},
+			}),
+			true,
+		)
+		assert.equal(calls.length, 1)
+		assert.deepEqual(calls[0]?.args, ["pnpm@10.34.5", "rebuild", "node-pty"])
+		assert.equal(calls[0]?.env?.npm_config_arch, "arm64")
+		assert.equal(existsSync(path.join(release, "spawn-helper")), true)
+		assert.equal(ensureLinuxNodePtyNatives({ root, platform: "linux", arch: "arm64" }), false)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("cleans stale macOS node-pty build output before rebuilding the target architecture", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-darwin-node-pty-native-test-"))
+	const buildRelease = path.join(root, "node_modules", "node-pty", "build", "Release")
+	const stalePty = path.join(buildRelease, "pty.node")
+	const targetPrebuild = path.join(root, "node_modules", "node-pty", "prebuilds", "darwin-x64")
+	mkdirSync(buildRelease, { recursive: true })
+	writeFileSync(stalePty, "arm64")
+	const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv; staleStillExists?: boolean }> = []
+	try {
+		assert.equal(
+			ensureDarwinNodePtyNatives({
+				root,
+				platform: "darwin",
+				arch: "x64",
+				run(command, args, options) {
+					calls.push({
+						command,
+						args,
+						env: options?.env,
+						staleStillExists: existsSync(stalePty),
+					})
+					for (const name of ["pty.node", "spawn-helper"]) {
+						const file = path.join(targetPrebuild, name)
+						mkdirSync(path.dirname(file), { recursive: true })
+						writeFileSync(file, "x86_64")
+					}
+				},
+			}),
+			true,
+		)
+		assert.equal(calls.length, 1)
+		assert.deepEqual(calls[0]?.args, ["pnpm@10.34.5", "rebuild", "node-pty"])
+		assert.equal(calls[0]?.env?.npm_config_arch, "x64")
+		assert.equal(calls[0]?.staleStillExists, false)
+		assert.equal(existsSync(stalePty), false)
+		assert.equal(ensureDarwinNodePtyNatives({ root, platform: "darwin", arch: "x64" }), false)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("rejects a macOS node-pty native file with the wrong architecture", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-darwin-node-pty-verify-test-"))
+	const nativeRoot = path.join(root, "node_modules", "node-pty", "prebuilds", "darwin-x64")
+	try {
+		for (const name of ["pty.node", "spawn-helper"]) {
+			const file = path.join(nativeRoot, name)
+			mkdirSync(path.dirname(file), { recursive: true })
+			writeFileSync(file, "native")
+		}
+		assert.throws(
+			() =>
+				verifyDarwinNodePtyArchitecture({
+					root,
+					platform: "darwin",
+					arch: "x64",
+					architectures: () => ["arm64"],
+				}),
+			/architecture mismatch for darwin\/x64/,
+		)
+		assert.equal(
+			verifyDarwinNodePtyArchitecture({
+				root,
+				platform: "darwin",
+				arch: "x64",
+				architectures: () => ["x86_64"],
+			}),
+			true,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
 test("prunes node-pty native prebuild directories to the staged target", () => {
 	const root = mkdtempSync(path.join(tmpdir(), "cocode-node-pty-prune-test-"))
 	try {
@@ -142,6 +252,41 @@ test("prunes node-pty native prebuild directories to the staged target", () => {
 				false,
 				directory,
 			)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("prunes node-pty ABI directories to the staged macOS architecture", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-node-pty-bin-prune-test-"))
+	try {
+		for (const directory of ["darwin-arm64-148", "darwin-x64-148"]) {
+			const file = path.join(
+				root,
+				"node_modules",
+				"node-pty",
+				"bin",
+				directory,
+				"node-pty.node",
+			)
+			mkdirSync(path.dirname(file), { recursive: true })
+			writeFileSync(file, "native")
+		}
+
+		pruneNativePrebuildDirectories(root, { platform: "darwin", arch: "x64" })
+
+		assert.equal(
+			existsSync(
+				path.join(root, "node_modules", "node-pty", "bin", "darwin-x64-148", "node-pty.node"),
+			),
+			true,
+		)
+		assert.equal(
+			existsSync(
+				path.join(root, "node_modules", "node-pty", "bin", "darwin-arm64-148", "node-pty.node"),
+			),
+			false,
+		)
 	} finally {
 		rmSync(root, { recursive: true, force: true })
 	}

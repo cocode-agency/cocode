@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join, sep } from 'node:path'
 import { resolveWorkspaceInfo, workspaceName, workspacePath } from '../../src/runtime/workspace.ts'
 
 describe('workspace info', () => {
@@ -28,7 +30,8 @@ describe('workspace info', () => {
     expect(workspacePath('/Users/coder/Documents/cocode-tui', '/Users/coder')).toBe(
       '~/Documents/cocode-tui',
     )
-    expect(workspacePath('/tmp/cocode-tui', '/Users/coder')).toBe('/tmp/cocode-tui')
+    const externalPath = join(tmpdir(), 'cocode-tui')
+    expect(workspacePath(externalPath, '/Users/coder')).toBe(externalPath.split(sep).join('/'))
     expect(workspacePath('/Users/coder', '/Users/coder')).toBe('~')
   })
 })

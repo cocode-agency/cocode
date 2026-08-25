@@ -137,7 +137,11 @@ async function writeCloudRoute(
     baseURL: `${origin.replace(/\/$/, '')}/v1`,
     apiKeyEnv: CLOUD_KEY_REF,
     retryPolicy: { mode: 'normal', maxRetries: CLOUD_MAX_RETRIES },
-    models: models.map((model) => ({ id: model.id, name: model.name })),
+    models: models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      ...(model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts }),
+    })),
   }
   llm.providers = providers
   root['llm-pi-ai'] = llm

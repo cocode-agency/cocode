@@ -25,14 +25,26 @@ export interface FileShortcutTarget {
   readonly run: (commandId: string) => boolean
 }
 
-let activeTarget: FileShortcutTarget | undefined
+// More than one session can render a file tree at once. Keep every mounted
+// target and resolve the one whose tree currently owns focus instead of letting
+// the last mounted panel shadow the active panel.
+const activeTargets = new Set<FileShortcutTarget>()
 
 export function setActiveFileShortcutTarget(target: FileShortcutTarget | undefined): void {
-  activeTarget = target
+  if (target === undefined) {
+    activeTargets.clear()
+    return
+  }
+  activeTargets.add(target)
+}
+
+export function removeActiveFileShortcutTarget(target: FileShortcutTarget): void {
+  activeTargets.delete(target)
 }
 
 export function activeFileShortcutTarget(): FileShortcutTarget | undefined {
-  return activeTarget
+  const targets = [...activeTargets].reverse()
+  return targets.find(target => target.isActive())
 }
 
 export interface ShortcutCommandLike {
@@ -123,7 +135,7 @@ export function fileShortcutCommands(t: (key: string) => string = key => key): r
     description,
     defaultCombo,
     run: () => {
-      const target = activeTarget
+      const target = activeFileShortcutTarget()
       return target !== undefined && target.isActive() && target.run(id)
     },
   })

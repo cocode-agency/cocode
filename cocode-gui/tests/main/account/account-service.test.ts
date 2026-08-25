@@ -9,6 +9,10 @@ import { AgencyHttpError } from "../../../src/main/contexts/account/infrastructu
 import type { CleanupPendingState } from "../../../src/main/contexts/account/infrastructure/cleanup-pending"
 import { SignInCancelledError } from "../../../src/main/contexts/account/infrastructure/sign-in-cancelled-error"
 import {
+	guiClientIdentity,
+	harnessClientIdentity,
+} from "../../../src/main/contexts/account/infrastructure/client-identity"
+import {
 	DshCloudConfigUnavailableError,
 	type DefaultSelection,
 	type ModelGroup,
@@ -62,6 +66,10 @@ function validIdentity(overrides: Partial<IdentityState> = {}): IdentityState {
 		accessExpiresAt: Date.now() + 60_000,
 		...overrides,
 	}
+}
+
+async function currentCocodeClient(): Promise<Record<string, string>> {
+	return harnessClientIdentity(await guiClientIdentity())
 }
 
 function agency(overrides: Record<string, unknown> = {}): {
@@ -306,12 +314,14 @@ test("reuses a ready device cloud route without minting another API key", async 
 		}),
 	)
 	const { client, createdKeys } = agency()
+	const cocodeClient = await currentCocodeClient()
 	let writes = 0
 	const route = {
 		displayName: "Cocode Nut",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
 		models: [{ id: "cloud-model", name: "Cloud Model" }],
 	}
@@ -368,6 +378,67 @@ test("reuses a ready device cloud route without minting another API key", async 
 	})
 })
 
+test("refreshes hosted reasoning metadata on an existing managed route", async () => {
+	const identity = new MemoryVault(validIdentity())
+	const { client, createdKeys } = agency({
+		models: async () => [{
+			id: "cloud-model",
+			name: "Cloud Model",
+			reasoningEfforts: { high: "high", max: "max" },
+		}],
+	})
+	const cocodeClient = await currentCocodeClient()
+	let route: Record<string, unknown> = {
+		displayName: "Cocode Nut",
+		api: "openai-responses",
+		baseURL: "https://cocode.agency/v1",
+		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
+		retryPolicy: { mode: "normal", maxRetries: 5 },
+		models: [{ id: "cloud-model", name: "Cloud Model" }],
+	}
+	const dsh = {
+		currentDefault: async () => ({ provider: "cocode-nut", model: "cloud-model" }),
+		describeSettings: async () => ({
+			writable: true,
+			namespaces: [{ ns: "llm-pi-ai", revision: 3, value: { providers: { "cocode-nut": route } } }],
+		}),
+		describeCredentials: async () => ({
+			COCODE_NUT_API_KEY: { configured: true, writable: true },
+		}),
+		providers: async (): Promise<ProviderView[]> => [{
+			provider: "cocode-nut",
+			displayName: "Cocode Nut",
+			settingsNs: "llm-pi-ai",
+			settingsPath: ["providers", "cocode-nut"],
+			active: true,
+		}],
+		models: async (): Promise<ModelGroup[]> => [{
+			id: "cocode-nut",
+			name: "Cocode Nut",
+			models: [{ id: "cloud-model", name: "Cloud Model" }],
+		}],
+		mutateSettings: async (request: { ops: { value?: unknown }[] }): Promise<void> => {
+			route = request.ops[0]?.value as Record<string, unknown>
+		},
+		setCredential: async () => undefined,
+		unsetCredential: async () => undefined,
+	} as never
+
+	const snapshot = await new AccountService(
+		dsh,
+		client,
+		dependencies(identity, new MemoryVault("ck_existing")).deps,
+	).signIn()
+	assert.equal(snapshot.phase, "signed-in")
+	assert.deepEqual(createdKeys, [])
+	assert.deepEqual((route.models as unknown[])[0], {
+		id: "cloud-model",
+		name: "Cloud Model",
+		reasoningEfforts: { high: "high", max: "max" },
+	})
+})
+
 test("paid sign-in switches a custom default and the open session onto Nut Flash", async () => {
 	const identity = new MemoryVault(
 		validIdentity({
@@ -376,6 +447,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 		}),
 	)
 	const { client } = agency()
+	const cocodeClient = await currentCocodeClient()
 	let current: DefaultSelection = { provider: "deepseek-official", model: "deepseek-v4-flash" }
 	const selected: { sessionId: string; selection: DefaultSelection }[] = []
 	const defaultOps: { op: string; path: readonly string[]; value?: unknown }[] = []
@@ -384,6 +456,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
 		models: [
 			{ id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro" },
@@ -481,12 +554,14 @@ test("free sign-in keeps a custom default model", async () => {
 			syncedAt: "2026-08-15T00:00:00.000Z",
 		}),
 	})
+	const cocodeClient = await currentCocodeClient()
 	let writes = 0
 	const route = {
 		displayName: "Cocode Nut",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
 		models: [{ id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" }],
 	}

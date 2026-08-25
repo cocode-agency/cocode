@@ -1,5 +1,7 @@
+import { execFile as execFileCallback } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { promisify } from "node:util"
 import { join } from "pathe"
 import { describe, expect, it, vi } from "vitest"
 import htmlToDocx from "html-to-docx"
@@ -7,6 +9,9 @@ import { FileSearchEngine } from "../src/file-search-engine.ts"
 import type { FileSearchService } from "../src/file-search-service.ts"
 import { createWorkbenchApi } from "../src/host-api.ts"
 import type { SandboxMode, WorkbenchContext } from "../src/host-types.ts"
+import { discoverOfficePath } from "../src/word-document.ts"
+
+const execFile = promisify(execFileCallback)
 
 /**
  * Host context of a session rooted at `cwd`. Without a mounted `sandboxPolicy`
@@ -141,6 +146,36 @@ describe("Cocode Workbench host API", () => {
     expect((reread.value?.value as { html?: string }).html).toContain("Saved")
   }, 15_000)
 
+  it.each(["xlsx", "xls"] as const)("previews and edits an Excel workbook (%s) without a remote service", async extension => {
+    const office = await discoverOfficePath()
+    if (office === undefined) return
+    const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-excel-"))
+    const seed = join(cwd, "report.html")
+    await writeFile(seed, "<!doctype html><html><body><table><tr><td>Team</td><td>Status</td><td>Total</td></tr><tr><td>GUI</td><td>Ready</td><td>=1+2</td></tr></table></body></html>")
+    const filter = extension === "xls" ? "xls:MS Excel 97" : "xlsx:Calc MS Excel 2007 XML"
+    await execFile(office, ["--headless", "--invisible", "--nodefault", "--nologo", "--nolockcheck", "--norestore", "--infilter=HTML (StarCalc)", "--convert-to", filter, "--outdir", cwd, seed], { timeout: 45_000 })
+    const path = join(cwd, `report.${extension}`)
+    const route = createTestApi(context(cwd))
+
+    const preview = await invoke(route, "excel.read", { sessionId: "s1", path: `report.${extension}` })
+    expect(preview.status).toBe(200)
+    expect(preview.value?.value).toMatchObject({ kind: "excel", writable: true })
+    expect((preview.value?.value as { html?: string }).html).toContain("Ready")
+    expect((preview.value?.value as { html?: string }).html).toContain("data-sheets-formula")
+
+    const save = await invoke(route, "excel.write", {
+      sessionId: "s1",
+      path: `report.${extension}`,
+      html: "<table><tr><td>Team</td><td>Status</td><td>Total</td></tr><tr><td>GUI</td><td>Edited</td><td sdval=\"3\" sdnum=\"2052;\" data-sheets-formula=\"=1+2\">3</td></tr></table>",
+    })
+    expect(save.status).toBe(200)
+    expect(save.value?.value).toMatchObject({ written: true })
+
+    const reread = await invoke(route, "excel.read", { sessionId: "s1", path: `report.${extension}` })
+    expect((reread.value?.value as { html?: string }).html).toContain("Edited")
+    expect((reread.value?.value as { html?: string }).html).toContain("data-sheets-formula")
+  }, 15_000)
+
   it("round-trips rich Word formatting instead of flattening it to plain text", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "cocode-workbench-rich-word-"))
     const path = join(cwd, "rich.docx")
@@ -158,15 +193,23 @@ describe("Cocode Workbench host API", () => {
     const route = createTestApi(context(cwd))
 
     const preview = await invoke(route, "word.read", { sessionId: "s1", path: "rich.docx" })
-    const html = (preview.value?.value as { html?: string }).html ?? ""
+    const previewValue = preview.value?.value as { engine?: string; html?: string; warnings?: string[] }
+    const html = previewValue.html ?? ""
     expect(html).toContain("Rich title")
     expect(html).toContain("<ol")
     expect(html).toContain("<table")
-    expect(html).toContain('width="602"')
-    expect(html).toContain("border: 1px solid #000000")
-    expect(html).toContain("line-height: 100%")
     expect(html).toContain("<sub>")
     expect(html).toContain("<sup>")
+    if (previewValue.engine === "libreoffice") {
+      expect(html).toContain('width="602"')
+      expect(html).toContain("border: 1px solid #000000")
+      expect(html).toContain("line-height: 100%")
+    } else {
+      expect(previewValue.engine).toBe("mammoth")
+      expect(previewValue.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/Full-fidelity Word conversion unavailable/),
+      ]))
+    }
 
     const save = await invoke(route, "word.write", {
       sessionId: "s1",

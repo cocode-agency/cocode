@@ -386,6 +386,10 @@ function redactEndpoint(value: string): string {
 }
 
 function shouldAutoInstallCommandLineTool(): boolean {
+	// Linux DEB/RPM packages install the canonical /usr/bin/cocode wrapper
+	// before any Desktop process starts. Do not create a second user-level shim
+	// that could shadow the installer-managed TUI command.
+	if (process.platform === "linux" && app.isPackaged) return false
 	const configured = process.env.COCODE_AUTO_INSTALL_CLI?.trim()
 	if (configured === "0") return false
 	return app.isPackaged || configured === "1"

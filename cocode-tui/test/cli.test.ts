@@ -18,6 +18,10 @@ describe('cocode CLI', () => {
       commandArgs: ['--workspace', '/tmp/project'],
     })
     expect(parseCliArgs(['--tui'])).toMatchObject({ command: 'tui', commandArgs: [] })
+    expect(parseCliArgs(['run', '--model', 'm1', 'fix the test'])).toMatchObject({
+      command: 'run',
+      commandArgs: ['--model', 'm1', 'fix the test'],
+    })
   })
 
   it('distinguishes the detailed version command from the script flag', () => {
@@ -99,7 +103,7 @@ describe('cocode CLI', () => {
   })
 
   it('reads the bundled DSH package version from its resolved entry', () => {
-    expect(resolveDshVersion({ staged: false })).toBe('0.1.0-rc.6')
+    expect(resolveDshVersion({ staged: false })).toBe('0.1.1-rc.2')
   })
 
   it('passes DSH arguments unchanged and returns its exit code', () => {

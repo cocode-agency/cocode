@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { loadEnvFile } from "node:process"
 import * as path from "pathe"
 
-export type ReleasePlatform = "darwin" | "win32"
+export type ReleasePlatform = "darwin" | "win32" | "linux"
 export type ReleaseArchitecture = "x64" | "arm64"
 export type WindowsSignMode = "service" | "pfx"
 
@@ -84,6 +84,11 @@ const RELEASE_KEYS = new Set([
 	"WINDOWS_SIGN_CERTIFICATE_SUBJECT",
 	"WINDOWS_SIGN_CERTIFICATE_SHA1",
 	"WINDOWS_SIGN_LEDGER_DIR",
+	"LINUX_SIGNING_KEY",
+	"LINUX_SIGNING_PASSPHRASE",
+	"LINUX_GPG_HOME",
+	"LINUX_GPG_PRIVATE_KEY",
+	"LINUX_REPOSITORY_BASE_URL",
 	"RELEASE_ENV_FILE",
 	"RELEASE_PLATFORM",
 	"RELEASE_ARCH",
@@ -127,7 +132,7 @@ export function validateReleaseEnvFile(file: string): void {
 export function resolveReleaseTarget(environment = process.env): ReleaseTarget {
 	const platform = environment.RELEASE_PLATFORM ?? process.platform
 	const arch = environment.RELEASE_ARCH ?? process.arch
-	if (platform !== "darwin" && platform !== "win32") {
+	if (platform !== "darwin" && platform !== "win32" && platform !== "linux") {
 		throw new Error(`Unsupported release platform: ${platform}.`)
 	}
 	if (arch !== "x64" && arch !== "arm64") {
@@ -339,6 +344,11 @@ export function createWindowsSignOptions(
 
 export function requireReleaseCredentials(target: ReleaseTarget, environment = process.env): void {
 	if (!isReleaseSigningRequired(environment)) return
+	if (target.platform === "linux") {
+		if (!environment.LINUX_SIGNING_KEY?.trim())
+			throw new Error("LINUX_SIGNING_KEY is required for a signed Linux release.")
+		return
+	}
 	if (target.platform === "darwin") {
 		if (!createMacSignOptions(environment))
 			throw new Error("MAC_SIGNING_IDENTITY is required for a signed macOS release.")

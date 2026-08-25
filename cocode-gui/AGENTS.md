@@ -485,19 +485,18 @@ surface is needed.
 
 ### Code quality toolchain
 
-- ESLint MUST extend `@dtyq/eslint-config/base`, `/typescript`, `/react` and
-  `/prettier` through the root `.eslintrc.cjs`. Do not migrate to flat config unless a
-  newer package version actually exports flat-config-compatible presets and the
-  migration is verified.
-- Prettier MUST consume `@dtyq/eslint-config/prettier/config`; do not duplicate or
-  silently override its formatting policy in editor-specific settings.
-- Run `pnpm lint:fix` for ESLint-safe fixes and `pnpm format` for deterministic source
-  formatting. Generated output, dependencies and project documentation are excluded.
+- Oxlint is the only JavaScript/TypeScript lint engine. Keep its rules in `.oxlintrc.json`
+  and use `pnpm lint` or `pnpm lint:fix`; do not add legacy lint configs or CLI scripts.
+- Prettier uses the repository-local `prettier.config.cjs` so formatting remains
+  deterministic without depending on an external lint configuration package.
+- Run `pnpm format` for deterministic source formatting. Generated output, dependencies
+  and project documentation are excluded from linting.
 - New lint exceptions MUST be narrowly scoped and include a reason. Do not disable a
   rule globally merely to make existing code pass.
 - Renderer imports of `electron` and `node:*` are lint errors and MUST remain so.
-- Commit messages MUST pass the `@dtyq/eslint-config/commitlint` Conventional Commits
-  rules. Husky runs lint-staged at `pre-commit` and commitlint at `commit-msg`.
+- Commit messages MUST pass the local Conventional Commits rules in
+  `commitlint.config.cjs`. Husky runs lint-staged at `pre-commit` and commitlint at
+  `commit-msg`.
 - Supported commit types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`,
   `refactor`, `revert`, `style`, `test`, `major` and `config`; headers are limited to
   72 characters.

@@ -27,6 +27,7 @@ describe("file tree chat insertion", () => {
 
   it("uses the same file mention projection as the at picker", () => {
     expect(fileMentionText("src/main.ts")).toBe("@src/main.ts ")
+    expect(fileMentionText("工作周报示例.docx")).toBe("@工作周报示例.docx ")
     expect(fileMentionText("docs/design note.md")).toBe('@"docs/design note.md" ')
     expect(treeMentionPath("/work/repo", "/work/repo/docs", true)).toBe("docs/")
     expect(treeMentionPath("/work/repo", "/work/repo", true)).toBe(".")

@@ -23,40 +23,53 @@ const CLIENT_MODULE_TABLE_EXTERNALS = new Set([
 	"cordis",
 	"@deepseek-ai/cordis",
 	"@deepseek-ai/dsh-client-ui-slots",
-	"@deepseek-ai/dsh-client-web-react",
 	"@deepseek-ai/dsh-client-ui-primitives",
-	"@deepseek-ai/dsh-client-ui-attachment",
-	"@deepseek-ai/dsh-client-schema-form",
 	"@deepseek-ai/dsh-client-runtime/client",
 ])
 
 export function discoverDshClientPackages(root = clientRoot) {
 	const packages = []
-	for (const directory of readdirSync(root, { withFileTypes: true })) {
-		if (!directory.isDirectory()) continue
-		const packageRoot = path.join(root, directory.name)
-		const manifestPath = path.join(packageRoot, "package.json")
-		const configPath = path.join(packageRoot, "tsdown.config.ts")
-		const sourceEntry = [
-			path.join(packageRoot, "src", "client", "index.ts"),
-			path.join(packageRoot, "src", "client", "index.tsx"),
-		].find((candidate) => existsSync(candidate))
-		if (!existsSync(manifestPath) || !existsSync(configPath) || sourceEntry === undefined)
-			continue
-
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
-		if (manifest.dsh?.client?.platform !== "web" || typeof manifest.name !== "string") continue
-		packages.push({
-			directory: directory.name,
-			id: manifest.name,
-			root: packageRoot,
-			configPath,
-			sourceRoot: path.join(packageRoot, "src"),
-			tsconfigPath: resolveClientBuildTsconfig(packageRoot),
-			bundlePath: path.join(packageRoot, "lib", "client.js"),
-		})
-	}
+	visit(root)
 	return packages.sort((left, right) => left.id.localeCompare(right.id))
+
+	function visit(directory) {
+		for (const entry of readdirSync(directory, { withFileTypes: true })) {
+			if (!entry.isDirectory() || entry.name === "node_modules" || entry.name === "lib")
+				continue
+			const packageRoot = path.join(directory, entry.name)
+			const manifestPath = path.join(packageRoot, "package.json")
+			if (!existsSync(manifestPath)) {
+				visit(packageRoot)
+				continue
+			}
+			const configPath = path.join(packageRoot, "tsdown.config.ts")
+			const sourceEntry = [
+				path.join(packageRoot, "src", "client", "index.ts"),
+				path.join(packageRoot, "src", "client", "index.tsx"),
+			].find((candidate) => existsSync(candidate))
+			const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+			if (
+				existsSync(configPath) &&
+				sourceEntry !== undefined &&
+				manifest.dsh?.client?.platform === "web" &&
+				typeof manifest.name === "string"
+			) {
+				packages.push({
+					directory: directory.name,
+					id: manifest.name,
+					root: packageRoot,
+					configPath,
+					sourceRoot: path.join(packageRoot, "src"),
+					tsconfigPath: resolveClientBuildTsconfig(packageRoot),
+					bundlePath: path.join(packageRoot, "lib", "client.js"),
+				})
+			}
+			// A workspace/category directory may itself carry a manifest while
+			// still containing nested client packages. Continue below it instead
+			// of treating that manifest as a traversal boundary.
+			visit(packageRoot)
+		}
+	}
 }
 
 /**
@@ -244,9 +257,10 @@ async function startWatcher(runtimeRoot) {
 
 	const scheduleBuild = createBuildScheduler(packages, runtimeRoot)
 	const watcher = watch(
-		["packages/client/*/src/**/*.{ts,tsx,css}", "packages/cocode/*/src/**/*.{ts,tsx,css}"],
+		packages.map((clientPackage) =>
+			path.join(clientPackage.sourceRoot, "**", "*.{ts,tsx,css}"),
+		),
 		{
-			cwd: repositoryRoot,
 			ignoreInitial: true,
 			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 25 },
 		},

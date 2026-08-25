@@ -43,11 +43,16 @@ export function effortChoices(
   efforts: readonly TuiModelReasoningEffort[],
   defaultEffort?: string,
 ): EffortChoice[] {
+  const ordered = [...efforts].sort((left, right) => {
+    if (left.id === 'off') return -1
+    if (right.id === 'off') return 1
+    return 0
+  })
   return [
-    ...defaultEffort === undefined
-      ? [{ key: 'provider-default', effort: undefined, label: 'Default' }]
+    ...defaultEffort === undefined && !ordered.some((effort) => effort.id === 'off')
+      ? [{ key: 'effort:off', effort: undefined, label: 'Off' }]
       : [],
-    ...efforts.map((effort) => ({
+    ...ordered.map((effort) => ({
       key: `effort:${effort.id}`,
       effort: effort.id,
       label: effort.name,

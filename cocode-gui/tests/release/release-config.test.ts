@@ -17,7 +17,7 @@ import {
 	resolveWindowsSignServiceOptions,
 } from "../../scripts/release/release-config"
 
-test("resolves only supported desktop release targets", () => {
+test("resolves supported desktop release targets including Linux", () => {
 	assert.deepEqual(resolveReleaseTarget({ RELEASE_PLATFORM: "darwin", RELEASE_ARCH: "x64" }), {
 		platform: "darwin",
 		arch: "x64",
@@ -26,8 +26,28 @@ test("resolves only supported desktop release targets", () => {
 		platform: "win32",
 		arch: "arm64",
 	})
-	assert.throws(() => resolveReleaseTarget({ RELEASE_PLATFORM: "linux", RELEASE_ARCH: "x64" }))
+	assert.deepEqual(resolveReleaseTarget({ RELEASE_PLATFORM: "linux", RELEASE_ARCH: "x64" }), {
+		platform: "linux",
+		arch: "x64",
+	})
 	assert.throws(() => resolveReleaseTarget({ RELEASE_PLATFORM: "darwin", RELEASE_ARCH: "ia32" }))
+})
+
+test("signed Linux releases require the Linux signing key", () => {
+	assert.throws(
+		() =>
+			requireReleaseCredentials(
+				{ platform: "linux", arch: "arm64" },
+				{ RELEASE_REQUIRE_SIGNING: "1" },
+			),
+		/LINUX_SIGNING_KEY is required/,
+	)
+	assert.doesNotThrow(() =>
+		requireReleaseCredentials(
+			{ platform: "linux", arch: "arm64" },
+			{ RELEASE_REQUIRE_SIGNING: "1", LINUX_SIGNING_KEY: "cocode-linux-signing-key" },
+		),
+	)
 })
 
 test("uses one GitHub repository for every architecture", () => {

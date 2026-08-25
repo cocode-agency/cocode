@@ -5,7 +5,7 @@
 import { deleteAccount, readAccount, writeAccount } from './account.ts'
 import { join } from 'node:path'
 import { withAccountLock } from './account-lock.ts'
-import { patchCredential, readCredentials } from './credentials.ts'
+import { patchCredential, readCredentialsRecovering } from './credentials.ts'
 import {
   listHostedModels,
   loadProfile,
@@ -140,23 +140,29 @@ class AuthStoreImpl implements AuthStore {
     try {
       await this.refreshCloudAccount(signal)
       if (signal?.aborted) return
-      const account = await readAccount(this.accountHome)
-      const credentials = await readCredentials(this.dshHome)
-      const cloudKey = nonempty(credentials[CLOUD_KEY_REF])
-      if (
-        account !== undefined &&
-        this.cloudModels === undefined &&
-        cloudKey !== undefined
-      ) {
-        try {
-          this.cloudModels = await listHostedModels(
-            account.origin,
-            cloudKey,
-            this.client,
-            signal,
-          )
-        } catch {
-          this.cloudModels = []
+      let account = await readAccount(this.accountHome)
+      const credentials = await readCredentialsRecovering(this.dshHome)
+      let cloudKey = nonempty(credentials[CLOUD_KEY_REF])
+      if (account !== undefined && this.cloudModels === undefined) {
+        if (cloudKey !== undefined) {
+          try {
+            this.cloudModels = await listHostedModels(
+              account.origin,
+              cloudKey,
+              this.client,
+              signal,
+            )
+          } catch (error) {
+            if (!(error instanceof TuiError) || error.code !== 'AUTH_KEY_REJECTED') {
+              this.cloudModels = []
+            }
+          }
+        }
+        if (this.cloudModels === undefined) {
+          this.cloudModels = await this.recoverCloudKey(account, signal)
+          if (signal?.aborted) return
+          account = await readAccount(this.accountHome)
+          cloudKey = nonempty((await readCredentialsRecovering(this.dshHome))[CLOUD_KEY_REF])
         }
       }
       if (signal?.aborted) return
@@ -179,7 +185,7 @@ class AuthStoreImpl implements AuthStore {
       if (signal?.aborted) return
       if (resolved.status === 'ready') {
         this.auth = resolved.auth
-        const currentCredentials = await readCredentials(this.dshHome)
+        const currentCredentials = await readCredentialsRecovering(this.dshHome)
         const currentSettings = await readSettings(this.dshHome)
         this.snap = {
           phase: 'ready',
@@ -265,7 +271,7 @@ class AuthStoreImpl implements AuthStore {
     }
     if (await this.homeIsBusy()) return { status: 'home-busy' }
     const settings = await readSettings(this.dshHome)
-    const credentials = await readCredentials(this.dshHome)
+    const credentials = await readCredentialsRecovering(this.dshHome)
     if (mode === 'byok') {
       const has =
         nonempty(this.env[DEEPSEEK_KEY_REF]) !== undefined ||
@@ -384,7 +390,7 @@ class AuthStoreImpl implements AuthStore {
     let didWrite = false
     try {
       this.ensureCurrent(operation)
-      previousKey = (await readCredentials(this.dshHome)).DEEPSEEK_API_KEY
+      previousKey = (await readCredentialsRecovering(this.dshHome)).DEEPSEEK_API_KEY
       this.ensureCurrent(operation)
       await saveByokKey(this.dshHome, trimmed)
       didWrite = true
@@ -472,7 +478,7 @@ class AuthStoreImpl implements AuthStore {
       this.ensureCurrent(operation)
       await withAccountLock(this.accountHome, async () => {
         const existing = await readAccount(this.accountHome)
-        const credentials = await readCredentials(this.dshHome)
+        const credentials = await readCredentialsRecovering(this.dshHome)
         const stored = credentials[CLOUD_KEY_REF]?.trim()
         const reusable =
           existing !== undefined &&
@@ -589,6 +595,43 @@ class AuthStoreImpl implements AuthStore {
     ])
   }
 
+  private async recoverCloudKey(
+    account: AccountRecord,
+    signal?: AbortSignal,
+  ): Promise<CloudModel[] | undefined> {
+    try {
+      const identity = await tuiClientIdentity(this.accountHome, this.env)
+      const minted = await mintPersonalKey(
+        account.origin,
+        account.accessToken,
+        this.client,
+        signal,
+        identity,
+      )
+      if (signal?.aborted) return undefined
+      const models = await listHostedModels(account.origin, minted.secret, this.client, signal)
+      if (signal?.aborted) return undefined
+      await patchCredential(this.dshHome, CLOUD_KEY_REF, minted.secret)
+      await writeAccount(this.accountHome, {
+        ...account,
+        personalKeyId: minted.id,
+        personalKeyName: KEY_NAME,
+      })
+      return models
+    } catch (error) {
+      if (signal?.aborted) return undefined
+      if (
+        error instanceof TuiError &&
+        (error.code === 'AUTH_SESSION_EXPIRED' ||
+          (error.code === 'AUTH_KEY_CREATE_FAILED' &&
+            error.params.detail === 'managed_client_mismatch'))
+      ) {
+        await this.clearCloudState()
+      }
+      return undefined
+    }
+  }
+
   private async refreshCloudAccount(signal?: AbortSignal): Promise<void> {
     if (this.refreshInFlight !== undefined) {
       await this.refreshInFlight
@@ -606,7 +649,7 @@ class AuthStoreImpl implements AuthStore {
   private async doRefreshCloudAccount(signal?: AbortSignal): Promise<void> {
     const account = await readAccount(this.accountHome)
     if (account === undefined || account.accessExpiresAt > Date.now() + 30_000) return
-    const credentials = await readCredentials(this.dshHome)
+    const credentials = await readCredentialsRecovering(this.dshHome)
     if (nonempty(credentials[CLOUD_KEY_REF]) === undefined) return
     try {
       const refreshed = await refreshAccess(

@@ -10,6 +10,7 @@ import { gitDispatch } from "./git-api.ts"
 import { searchWorkspace } from "./fs-search.ts"
 import { WorkerFileSearchService, type FileSearchService } from "./file-search-service.ts"
 import { readWordDocument, writeWordDocument } from "./word-document.ts"
+import { readExcelDocument, writeExcelDocument } from "./excel-document.ts"
 
 const exec = promisify(execFile)
 const MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -167,6 +168,18 @@ async function wordWrite(ctx: WorkbenchContext, payload: Record<string, unknown>
   return writeWordDocument(path, html)
 }
 
+async function excelRead(ctx: WorkbenchContext, payload: Record<string, unknown>) {
+  const path = readablePath(ctx, payload, "path")
+  return readExcelDocument(path, canWrite(ctx, payload, path))
+}
+
+async function excelWrite(ctx: WorkbenchContext, payload: Record<string, unknown>) {
+  const path = writablePath(ctx, payload, "path")
+  const html = payload.html
+  if (typeof html !== "string") throw new Error("excel.write requires HTML content")
+  return writeExcelDocument(path, html)
+}
+
 async function fileMkdir(ctx: WorkbenchContext, payload: Record<string, unknown>) {
   const path = writablePath(ctx, payload, "path")
   await mkdir(path)
@@ -251,6 +264,8 @@ async function dispatch(
     case "fs.write": return mutateWorkspace(ctx, payload, fileSearch, () => fileWrite(ctx, payload))
     case "word.read": return wordRead(ctx, payload)
     case "word.write": return mutateWorkspace(ctx, payload, fileSearch, () => wordWrite(ctx, payload))
+    case "excel.read": return excelRead(ctx, payload)
+    case "excel.write": return mutateWorkspace(ctx, payload, fileSearch, () => excelWrite(ctx, payload))
     case "fs.mkdir": return mutateWorkspace(ctx, payload, fileSearch, () => fileMkdir(ctx, payload))
     case "fs.rename": return mutateWorkspace(ctx, payload, fileSearch, () => fileRename(ctx, payload))
     case "fs.copy": return mutateWorkspace(ctx, payload, fileSearch, () => fileCopy(ctx, payload))

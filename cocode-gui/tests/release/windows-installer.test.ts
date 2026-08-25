@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import os from "node:os"
 // Windows PATH behavior must be tested with win32 semantics on every host.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import path from "node:path"
 import test from "node:test"
 import {

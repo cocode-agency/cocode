@@ -23,7 +23,13 @@ import {
 } from "../infrastructure/agency-client"
 import { listenForCallback as createCallbackListener } from "../infrastructure/callback-server"
 import { CleanupPendingStore, type CleanupPendingState } from "../infrastructure/cleanup-pending"
-import { SecureVault } from "../infrastructure/secure-vault"
+import { AccountLockBusyError } from "../infrastructure/account-lock"
+import {
+	FileStorageUnavailableError,
+	FileVault,
+	resolveCocodeFile,
+} from "../infrastructure/file-vault"
+import { SecureStorageUnavailableError, SecureVault } from "../infrastructure/secure-vault"
 import { guiClientIdentity, harnessClientIdentity } from "../infrastructure/client-identity"
 import { SignInCancelledError } from "../infrastructure/sign-in-cancelled-error"
 import { SharedAccountStore } from "../infrastructure/shared-account-store"
@@ -77,6 +83,10 @@ type Vault<T> = {
 	write(value: T): Promise<void>
 	clear(): Promise<void>
 	withLock?<R>(operation: () => Promise<R>): Promise<R>
+	getStatus?: () => {
+		readonly state: "unknown" | "available" | "unavailable"
+		readonly reason?: string
+	}
 }
 
 type AccountAgency = {
@@ -254,6 +264,18 @@ function cloudRouteValue(
 	}
 }
 
+function routeModelsMatch(route: Record<string, unknown>, models: readonly AgencyModel[]): boolean {
+	const configured = Array.isArray(route.models) ? route.models : []
+	const expected = models.map((model) => ({
+		id: model.id,
+		name: model.name,
+		...(model.reasoningEfforts === undefined
+			? {}
+			: { reasoningEfforts: model.reasoningEfforts }),
+	}))
+	return JSON.stringify(configured) === JSON.stringify(expected)
+}
+
 function isExpectedCloudProvider(provider: ProviderView): boolean {
 	return (
 		provider.settingsNs === CLOUD_NAMESPACE &&
@@ -346,7 +368,7 @@ export class AccountService {
 	) {
 		this.agency = agency
 		this.identity = dependencies.identity ?? new SharedAccountStore()
-		this.cloudKey = dependencies.cloudKey ?? new SecureVault<string>("cocode-nut-key.bin")
+		this.cloudKey = dependencies.cloudKey ?? createCloudKeyVault()
 		this.cleanupPending = dependencies.cleanupPending ?? new CleanupPendingStore()
 		this.listenForCallback = dependencies.listenForCallback ?? createCallbackListener
 		this.openExternal = dependencies.openExternal ?? shell.openExternal
@@ -361,7 +383,18 @@ export class AccountService {
 
 	async hydrate(): Promise<void> {
 		this.stage = "cleanup"
-		await this.ensureLoaded()
+		try {
+			await this.ensureLoaded()
+		} catch (error) {
+			this.logFailure("hydrate", error)
+			this.publish({
+				phase: "error",
+				profile: null,
+				cloud: { status: "error", providerId: CLOUD_PROVIDER },
+				error: safeError(error, "account-unavailable"),
+			})
+			return
+		}
 		try {
 			await this.migrateLegacyCloudSettings()
 		} catch {
@@ -395,6 +428,12 @@ export class AccountService {
 			}
 			if (error instanceof InvalidIdentityError) {
 				await this.handleInvalidIdentity(state)
+				return
+			}
+			if (isManagedClientMismatch(error)) {
+				await this.handleInvalidIdentity(state)
+				if (this.snapshotValue.error?.code === "cleanup-pending") return
+				await this.signIn()
 				return
 			}
 			this.publish({
@@ -584,13 +623,13 @@ export class AccountService {
 	}
 
 	private async performSignIn(): Promise<AccountSnapshot> {
-		await this.ensureLoaded()
-		this.publish({
-			phase: "signing-in",
-			profile: null,
-			cloud: { status: "absent", providerId: CLOUD_PROVIDER },
-		})
 		try {
+			await this.ensureLoaded()
+			this.publish({
+				phase: "signing-in",
+				profile: null,
+				cloud: { status: "absent", providerId: CLOUD_PROVIDER },
+			})
 			const pending = await this.cleanupPending.read()
 			if (pending !== undefined) {
 				this.stage = "cleanup"
@@ -610,11 +649,13 @@ export class AccountService {
 				await this.cloudKey.clear()
 			}
 			let state = await this.identity.read()
+			let reusedExisting = false
 			if (state !== undefined) {
 				try {
 					this.stage = "identity-refresh"
 					this.assertIdentityOrigin(state)
 					state = await this.ensureIdentityAccess(state)
+					reusedExisting = true
 				} catch (error) {
 					if (!(error instanceof InvalidIdentityError)) throw error
 					// An explicit retry should be able to recover from a stale or rotated
@@ -625,71 +666,22 @@ export class AccountService {
 				}
 			}
 			if (state === undefined) {
-				this.stage = "callback-server"
-				const callback = await this.listenForCallback("/auth/callback")
-				// Closing the listener is what releases the wait below, so this is
-				// also the cancel handle for as long as the browser round trip runs.
-				this.signInCallback = callback
-				try {
-					const { verifier, challenge } = createPkce()
-					const stateValue = base64Url(randomBytes(24))
-					this.stage = "authorization"
-					const authorizationUrl = await this.agency.startAuthorization({
-						redirectUri: callback.redirectUri,
-						state: stateValue,
-						codeChallenge: challenge,
-					})
-					await this.openExternal(authorizationUrl)
-					const arrived = await callback.wait()
-					if (arrived.searchParams.get("state") !== stateValue)
-						throw new Error("login state mismatch")
-					const code = arrived.searchParams.get("code")
-					if (code === null || code === "") throw new Error("login was not approved")
-					this.stage = "exchange-code"
-					const token = await this.agency.exchangeCode({
-						code,
-						redirectUri: callback.redirectUri,
-						verifier,
-					})
-					state = {
-						origin: this.agency.getOrigin(),
-						accessToken: token.access_token,
-						refreshToken: token.refresh_token,
-						accessExpiresAt: Date.now() + token.expires_in * 1000,
-					}
-					await this.identity.write(state)
-				} finally {
-					this.signInCallback = undefined
-					callback.close()
-				}
+				state = await this.authorizeNativeSession()
 			}
-			this.stage = "identity-refresh"
-			this.assertIdentityOrigin(state)
-			state = await this.ensureIdentityAccess(state)
-			this.stage = "profile"
-			const profile = await this.loadIdentityProfile(state.accessToken)
-			state = { ...state, profile }
-			this.stage = "default-model"
-			const currentDefault = await this.dsh.currentDefault()
-			if (state.preLoginDefault === undefined)
-				state = { ...state, preLoginDefault: currentDefault }
-			await this.identity.write(state)
-			this.publish({
-				phase: "provisioning",
-				profile,
-				cloud: { status: "absent", providerId: CLOUD_PROVIDER },
-			})
-			const snapshot = await this.provision(state)
-			if (snapshot.phase === "signed-in") {
-				try {
-					await this.switchToPaidNutFlash(state.accessToken)
-				} catch (error) {
-					// Sign-in already landed the managed route. Switching the picker
-					// is a preference and must not roll the account back to an error.
-					this.logFailure("paid-nut-default", error)
-				}
+			try {
+				return await this.completeSignedInSession(state)
+			} catch (error) {
+				if (!reusedExisting || !isManagedClientMismatch(error)) throw error
+				const invalid = (await this.identity.read()) ?? state
+				await this.handleInvalidIdentity(invalid)
+				if (this.snapshotValue.error?.code === "cleanup-pending") return this.snapshotValue
+				this.publish({
+					phase: "signing-in",
+					profile: null,
+					cloud: { status: "absent", providerId: CLOUD_PROVIDER },
+				})
+				return await this.completeSignedInSession(await this.authorizeNativeSession())
 			}
-			return snapshot
 		} catch (error) {
 			if (error instanceof SignInCancelledError) {
 				// Abandoning a sign-in leaves the account exactly where it started.
@@ -700,6 +692,10 @@ export class AccountService {
 				return snapshot
 			}
 			this.logFailure("sign-in", error)
+			if (isManagedClientMismatch(error)) {
+				const invalid = await this.identity.read()
+				if (invalid !== undefined) await this.handleInvalidIdentity(invalid)
+			}
 			if (isReauthenticationRequired(error)) {
 				const invalid = await this.identity.read()
 				return this.handleBrowserReauthentication(invalid)
@@ -729,6 +725,77 @@ export class AccountService {
 			this.publish(snapshot)
 			return snapshot
 		}
+	}
+
+	private async authorizeNativeSession(): Promise<IdentityState> {
+		this.stage = "callback-server"
+		const callback = await this.listenForCallback("/auth/callback")
+		// Closing the listener is what releases the wait below, so this is
+		// also the cancel handle for as long as the browser round trip runs.
+		this.signInCallback = callback
+		try {
+			const { verifier, challenge } = createPkce()
+			const stateValue = base64Url(randomBytes(24))
+			this.stage = "authorization"
+			const authorizationUrl = await this.agency.startAuthorization({
+				redirectUri: callback.redirectUri,
+				state: stateValue,
+				codeChallenge: challenge,
+			})
+			await this.openExternal(authorizationUrl)
+			const arrived = await callback.wait()
+			if (arrived.searchParams.get("state") !== stateValue)
+				throw new Error("login state mismatch")
+			const code = arrived.searchParams.get("code")
+			if (code === null || code === "") throw new Error("login was not approved")
+			this.stage = "exchange-code"
+			const token = await this.agency.exchangeCode({
+				code,
+				redirectUri: callback.redirectUri,
+				verifier,
+			})
+			const state: IdentityState = {
+				origin: this.agency.getOrigin(),
+				accessToken: token.access_token,
+				refreshToken: token.refresh_token,
+				accessExpiresAt: Date.now() + token.expires_in * 1000,
+			}
+			await this.identity.write(state)
+			return state
+		} finally {
+			this.signInCallback = undefined
+			callback.close()
+		}
+	}
+
+	private async completeSignedInSession(state: IdentityState): Promise<AccountSnapshot> {
+		this.stage = "identity-refresh"
+		this.assertIdentityOrigin(state)
+		state = await this.ensureIdentityAccess(state)
+		this.stage = "profile"
+		const profile = await this.loadIdentityProfile(state.accessToken)
+		state = { ...state, profile }
+		this.stage = "default-model"
+		const currentDefault = await this.dsh.currentDefault()
+		if (state.preLoginDefault === undefined)
+			state = { ...state, preLoginDefault: currentDefault }
+		await this.identity.write(state)
+		this.publish({
+			phase: "provisioning",
+			profile,
+			cloud: { status: "absent", providerId: CLOUD_PROVIDER },
+		})
+		const snapshot = await this.provision(state)
+		if (snapshot.phase === "signed-in") {
+			try {
+				await this.switchToPaidNutFlash(state.accessToken)
+			} catch (error) {
+				// Sign-in already landed the managed route. Switching the picker
+				// is a preference and must not roll the account back to an error.
+				this.logFailure("paid-nut-default", error)
+			}
+		}
+		return snapshot
 	}
 
 	private async provision(state: IdentityState): Promise<AccountSnapshot> {
@@ -781,6 +848,34 @@ export class AccountService {
 				(candidate) => candidate.id === CLOUD_PROVIDER,
 			)
 			if (group !== undefined && group.models.length > 0) {
+				// A managed route can outlive the hosted model catalog. In
+				// particular, reasoning_efforts may be added after a desktop
+				// install has already written settings.yaml. Refresh the route
+				// metadata so a still-supported effort such as `high` is not
+				// rejected by stale local configuration.
+				const cloudKey = await this.cloudKey.read()
+				if (cloudKey !== undefined && CLOUD_KEY_PATTERN.test(cloudKey)) {
+					try {
+						const models = await this.agency.models(cloudKey)
+						if (models.length > 0 && !routeModelsMatch(route, models)) {
+							this.stage = "settings.mutate"
+							await this.dsh.mutateSettings({
+								ns: CLOUD_NAMESPACE,
+								expectedRevision: cloudNamespace.revision,
+								ops: [
+									{
+										op: "set",
+										path: CLOUD_PATH,
+										value: cloudRouteValue(baseURL, models, currentClient),
+									},
+								],
+							})
+						}
+					} catch {
+						// Keep an already-working managed route usable when a
+						// metadata refresh is temporarily unavailable.
+					}
+				}
 				const next: IdentityState = { ...state, managedRoute: intendedRoute }
 				await this.identity.write(next)
 				const snapshot: AccountSnapshot = {
@@ -1257,15 +1352,17 @@ export class AccountService {
 
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded) return
-		this.loaded = true
 		await this.identity.read()
-		const legacyVault = new SecureVault<string>("cocode-cloud-key.bin")
-		const legacyKey = await legacyVault.read()
-		if (legacyKey !== undefined && (await this.cloudKey.read()) === undefined) {
-			await this.cloudKey.write(legacyKey)
-			await legacyVault.clear()
+		if (process.platform !== "linux") {
+			const legacyVault = new SecureVault<string>("cocode-cloud-key.bin")
+			const legacyKey = await legacyVault.read()
+			if (legacyKey !== undefined && (await this.cloudKey.read()) === undefined) {
+				await this.cloudKey.write(legacyKey)
+				await legacyVault.clear()
+			}
 		}
 		await this.cloudKey.read()
+		this.loaded = !vaultNeedsRetry(this.identity) && !vaultNeedsRetry(this.cloudKey)
 	}
 
 	private async migrateLegacyCloudSettings(): Promise<void> {
@@ -1345,16 +1442,40 @@ function isReauthenticationRequired(error: unknown): boolean {
 	)
 }
 
+function isManagedClientMismatch(error: unknown): boolean {
+	return (
+		error instanceof AgencyHttpError &&
+		error.status === 422 &&
+		/managed client metadata does not match/i.test(error.message)
+	)
+}
+
 function browserReauthenticationUrl(origin: string): string {
 	const url = new URL("/login", origin)
 	url.searchParams.set("return_to", "/account")
 	return url.href
 }
 
+function createCloudKeyVault(): Vault<string> {
+	return process.platform === "linux"
+		? new FileVault<string>(resolveCocodeFile("cocode-nut-key.yaml"))
+		: new SecureVault<string>("cocode-nut-key.bin")
+}
+
+function vaultNeedsRetry(vault: Pick<Vault<unknown>, "getStatus">): boolean {
+	const status = vault.getStatus?.()
+	return status?.state === "unavailable" && status.reason !== "corrupt"
+}
+
 function safeError(error: unknown, code: string): { code: string; message: string } {
 	const message = error instanceof Error ? error.message : String(error)
 	return {
-		code,
+		code:
+			error instanceof SecureStorageUnavailableError ||
+			error instanceof FileStorageUnavailableError ||
+			error instanceof AccountLockBusyError
+				? error.code
+				: code,
 		message: message
 			.replace(/ck_[A-Za-z0-9_-]+/g, "[redacted]")
 			.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")

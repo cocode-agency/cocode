@@ -20,6 +20,26 @@ export {
 } from './runtime.js'
 export { connectJsonRpc, type JsonRpcPeer } from './socket-jsonrpc-client.js'
 export {
+  DOCUMENT_VERSION,
+  CredentialsError,
+  detectCredentialsLayout,
+  parseCredentialsDocument,
+  renderCredentialsUpdate,
+  loadCredentials,
+  writeCredentialRef,
+  moveCredentialRef,
+  refreshCredentials,
+  readCredentials,
+  patchCredential,
+  withCredentialsLock,
+  type CredentialRefMap,
+  type CredentialRecord,
+  type CredentialRecordMap,
+  type CredentialsDocument,
+  type CredentialsErrorCode,
+  type CredentialsLayout,
+} from './credentials-local.js'
+export {
   createExternalDshReadSource,
   ExternalDshReader,
   type ExternalDshReadSource,

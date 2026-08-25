@@ -86,7 +86,12 @@ test("rotating sink starts from an existing file date and preserves permissions"
 	sink.write("next\n")
 	sink.close()
 	const info = await stat(path.join(directory, "current.jsonl"))
-	assert.equal(info.mode & 0o777, 0o600)
+	if (process.platform === "win32") {
+		assert.ok(info.isFile())
+		assert.ok(info.size > 0)
+	} else {
+		assert.equal(info.mode & 0o777, 0o600)
+	}
 })
 
 test("desktop logger writes structured app and emergency records", async () => {

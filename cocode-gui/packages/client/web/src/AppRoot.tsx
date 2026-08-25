@@ -8,7 +8,7 @@
  * loading page, lists the per-entry fiber states and the sweep report (fail
  * loud, no partial UI).
  */
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { KernelSignal, LoaderStatus } from './loader-status.ts'
 import css from './AppRoot.module.css'
@@ -23,6 +23,8 @@ export interface AppRootProps {
   error: KernelSignal<string | undefined>
   /** Builds the real UI; called only after settled. */
   renderApp: () => ReactNode
+  /** Reloads the shell with a fresh boot graph after a failed startup. */
+  onRetry?: () => void
 }
 
 /** Boot gate: loading page until the boot settles; failures stay here. */
@@ -31,6 +33,7 @@ export function AppRoot(props: AppRootProps) {
   const status = useSyncExternalStore(props.status.subscribe, props.status.getSnapshot)
   const error = useSyncExternalStore(props.error.subscribe, props.error.getSnapshot)
   const failed = Object.entries(status).filter(([, s]) => s === 'failed')
+  const [retrying, setRetrying] = useState(false)
 
   if (settled) return <>{props.renderApp()}</>
 
@@ -44,14 +47,39 @@ export function AppRoot(props: AppRootProps) {
           ? (
             <>
               <div className={css.spinner} />
-              <div className={css.hint}>Loading plugins…</div>
+              <div className={css.hint}>正在准备应用…</div>
             </>
           )
           : (
-            <div className={css.failed}>
-              <div className={css.failedTitle}>Failed to load plugins</div>
-              {failed.map(([id]) => <div key={id} className={css.failedItem}>{id}</div>)}
-              {error !== undefined && <div className={css.failedItem}>{error}</div>}
+            <div className={css.failed} role="alert">
+              <div className={css.failedIcon} aria-hidden="true">!</div>
+              <div className={css.failedTitle}>Cocode 暂时还没准备好</div>
+              <div className={css.failedMessage}>
+                启动时遇到了一点问题，我们已经自动尝试修复。请点击“重新尝试”；如果仍然打不开，请重启应用。
+              </div>
+              <div className={css.actions}>
+                <button
+                  type="button"
+                  className={css.primaryAction}
+                  disabled={retrying || props.onRetry === undefined}
+                  onClick={() => {
+                    setRetrying(true)
+                    props.onRetry?.()
+                  }}
+                >
+                  {retrying ? '正在重新打开…' : '重新尝试'}
+                </button>
+                <button type="button" className={css.secondaryAction} onClick={() => window.location.reload()}>
+                  重启应用
+                </button>
+              </div>
+              <details className={css.details}>
+                <summary>查看技术信息</summary>
+                <div className={css.detailBody}>
+                  {failed.map(([id]) => <div key={id} className={css.failedItem}>{id}</div>)}
+                  {error !== undefined && <pre className={css.failedItem}>{error}</pre>}
+                </div>
+              </details>
             </div>
           )}
       </div>

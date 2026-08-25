@@ -1,0 +1,442 @@
+name: Cocode GUI Linux branch draft
+
+on:
+  push:
+    branches:
+      - os/linux
+
+concurrency:
+  group: cocode-gui-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Linux DEB + RPM / ${{ matrix.arch }}
+    environment: Linux
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: cocode-gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: |
+            cocode-gui/pnpm-lock.yaml
+            cocode-tui/pnpm-lock.yaml
+            cocode-host-supervisor/pnpm-lock.yaml
+      - name: Assert native Linux runner
+        run: node scripts/release/assert-native-release-host.mjs --platform linux --arch "${{ matrix.arch }}"
+      - name: Install Linux packaging dependencies
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xvfb xauth binutils dpkg-dev rpm
+      - name: Install Host Supervisor dependencies
+        working-directory: cocode-host-supervisor
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+      - name: Install TUI dependencies
+        working-directory: cocode-tui
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+      - name: Install GUI dependencies
+        run: corepack pnpm@10.34.5 install --frozen-lockfile
+      - name: Check build environment
+        run: corepack pnpm@10.34.5 run check:env
+      - name: Build Linux packages
+        env:
+          RELEASE_PLATFORM: linux
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: corepack pnpm@10.34.5 run release:linux:${{ matrix.arch }}
+      - name: Check built Linux package files
+        run: |
+          for package in release/linux/${{ matrix.arch }}/*.deb release/linux/${{ matrix.arch }}/*.rpm; do
+            test -s "$package"
+          done
+      - name: Upload Linux branch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            cocode-gui/release/linux/${{ matrix.arch }}/*.deb
+            cocode-gui/release/linux/${{ matrix.arch }}/*.rpm
+
+  smoke-deb:
+    name: Installed DEB smoke / ${{ matrix.arch }}
+    needs: [build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-${{ matrix.arch }}-${{ github.sha }}
+          path: release-assets/${{ matrix.arch }}
+      - name: Install Debian runtime smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xvfb xauth
+          command -v xvfb-run
+      - name: Install DEB and smoke-test as an ordinary user
+        env:
+          SMOKE_USER: runner
+          ELECTRON_AUTO_UPDATE: "off"
+          SMOKE_PRESERVE_ARTIFACTS: "1"
+          SMOKE_ARTIFACT_ROOT: ${{ runner.temp }}/cocode-deb-smoke
+        run: |
+          deb="$(find "release-assets/${{ matrix.arch }}" -type f -name '*.deb' -print -quit)"
+          test -n "$deb"
+          bash cocode-gui/scripts/release/verify-installed-linux-package.sh deb "$deb"
+      - name: Upload DEB smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-deb-smoke-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/cocode-deb-smoke/**
+
+  smoke-rpm:
+    name: Installed RPM smoke / ${{ matrix.arch }}
+    needs: [build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            docker_arch: amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            docker_arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-${{ matrix.arch }}-${{ github.sha }}
+          path: release-assets/${{ matrix.arch }}
+      - name: Install RPM in Fedora and smoke-test as an ordinary user
+        env:
+          DOCKER_ARCH: ${{ matrix.docker_arch }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          host_uid="$(id -u)"
+          host_gid="$(id -g)"
+          mkdir -p ".tmp/cocode-rpm-smoke/${{ matrix.arch }}"
+          rpm="$(find "release-assets/${{ matrix.arch }}" -type f -name '*.rpm' -print -quit)"
+          test -n "$rpm"
+          package_path="/workspace/${rpm#./}"
+          docker_log="$(mktemp "${RUNNER_TEMP:-/tmp}/cocode-rpm-smoke.log.XXXXXX")"
+          if docker run --rm \
+              --platform "linux/$DOCKER_ARCH" \
+              --security-opt seccomp=unconfined \
+              --volume "$GITHUB_WORKSPACE:/workspace" \
+              --workdir /workspace \
+              --env PACKAGE_FILE="$package_path" \
+              --env ELECTRON_AUTO_UPDATE=off \
+              --env SMOKE_PRESERVE_ARTIFACTS=1 \
+              --env SMOKE_HOST_UID="$host_uid" \
+              --env SMOKE_HOST_GID="$host_gid" \
+              --env SMOKE_ARTIFACT_ROOT="/workspace/.tmp/cocode-rpm-smoke/${{ matrix.arch }}" \
+              fedora:42 \
+              bash -euc '
+                rpm_prerequisites_log="/tmp/cocode-rpm-prerequisites.log"
+                if ! dnf -y --setopt=install_weak_deps=False install \
+                  xorg-x11-server-Xvfb \
+                  xorg-x11-xauth \
+                  shadow-utils \
+                  >"$rpm_prerequisites_log" 2>&1; then
+                  tail -n 200 "$rpm_prerequisites_log" >&2 || true
+                  exit 1
+                fi
+                SMOKE_USER=cocode-smoke bash cocode-gui/scripts/release/verify-installed-linux-package.sh rpm "$PACKAGE_FILE"
+              ' \
+              >"$docker_log" 2>&1; then
+            rm -f "$docker_log"
+          else
+            docker_status=$?
+            tail -n 200 "$docker_log" >&2 || true
+            rm -f "$docker_log"
+            exit "$docker_status"
+          fi
+      - name: Upload RPM smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-rpm-smoke-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: ignore
+          path: .tmp/cocode-rpm-smoke/${{ matrix.arch }}/**
+      - name: Clean RPM smoke workspace
+        if: always()
+        run: rm -rf ".tmp/cocode-rpm-smoke/${{ matrix.arch }}"
+
+  sign-packages:
+    name: Sign Linux packages / ${{ matrix.arch }}
+    environment: Linux
+    needs: [build, smoke-deb, smoke-rpm]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-${{ matrix.arch }}-${{ github.sha }}
+          path: release-assets/${{ matrix.arch }}
+      - name: Install Linux signing tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gnupg rpm
+          command -v rpmsign
+      - name: Import Linux package signing key and export RPM verification key
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_RPM_PUBLIC_KEY: ${{ runner.temp }}/cocode-linux-release-public-key.asc
+        run: |
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          test -n "$LINUX_SIGNING_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --list-secret-keys "$LINUX_SIGNING_KEY" >/dev/null
+          gpg --batch --armor --export "$LINUX_SIGNING_KEY" >"$LINUX_RPM_PUBLIC_KEY"
+          test -s "$LINUX_RPM_PUBLIC_KEY"
+      - name: Sign DEB and RPM packages
+        env:
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_SIGNING_PASSPHRASE: ${{ secrets.LINUX_SIGNING_PASSPHRASE }}
+          RELEASE_REQUIRE_SIGNING: "1"
+        run: |
+          node ./cocode-gui/scripts/release/sign-linux-packages.mjs \
+            release-assets/${{ matrix.arch }}/*.deb \
+            release-assets/${{ matrix.arch }}/*.rpm
+      - name: Verify signed Linux packages
+        env:
+          LINUX_RPM_PUBLIC_KEY: ${{ runner.temp }}/cocode-linux-release-public-key.asc
+          LINUX_RPM_DB_PATH: ${{ runner.temp }}/cocode-linux-rpm-db-${{ matrix.arch }}
+        run: |
+          gpg_verify_home="${RUNNER_TEMP:-/tmp}/cocode-linux-verify-gpg-${{ matrix.arch }}"
+          rm -rf "$gpg_verify_home"
+          mkdir -p "$gpg_verify_home"
+          chmod 700 "$gpg_verify_home"
+          gpg --homedir "$gpg_verify_home" --batch --import "$LINUX_RPM_PUBLIC_KEY"
+          for package in release-assets/${{ matrix.arch }}/*.deb release-assets/${{ matrix.arch }}/*.rpm; do
+            test -s "$package"
+            test -s "$package.asc"
+            gpg --homedir "$gpg_verify_home" --batch --verify "$package.asc" "$package"
+          done
+          node ./cocode-gui/scripts/release/verify-rpm-signatures.mjs \
+            "$LINUX_RPM_PUBLIC_KEY" \
+            "$LINUX_RPM_DB_PATH" \
+            release-assets/${{ matrix.arch }}/*.rpm
+          rm -rf "$gpg_verify_home"
+      - name: Upload signed Linux package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-signed-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            release-assets/${{ matrix.arch }}/*.deb
+            release-assets/${{ matrix.arch }}/*.rpm
+            release-assets/${{ matrix.arch }}/*.asc
+
+  generate-metadata:
+    name: Generate Linux APT/RPM metadata
+    environment: Linux
+    needs: [sign-packages]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-signed-x64-${{ github.sha }}
+          path: release-assets/x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-signed-arm64-${{ github.sha }}
+          path: release-assets/arm64
+      - name: Install repository tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y apt-utils createrepo-c rpm gnupg
+          command -v apt-ftparchive
+          command -v createrepo_c
+      - name: Import Linux repository signing key
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+        run: |
+          test -n "$LINUX_GPG_PRIVATE_KEY"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Generate signed release metadata and repository
+        env:
+          LINUX_REPOSITORY_BASE_URL: https://www.cocode.agency
+          LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
+          LINUX_SIGNING_PASSPHRASE: ${{ secrets.LINUX_SIGNING_PASSPHRASE }}
+          RELEASE_REQUIRE_SIGNING: "1"
+        run: |
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          node ./cocode-gui/scripts/release/finalize-linux-release-assets.mjs release-assets/x64 x64 "$version"
+          node ./cocode-gui/scripts/release/finalize-linux-release-assets.mjs release-assets/arm64 arm64 "$version"
+          node ./cocode-gui/scripts/release/linux-repository.mjs release-assets linux-repository "$version"
+          tar -C linux-repository -czf "cocode-linux-repository-${version}.tar.gz" .
+      - name: Upload Linux metadata snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-metadata-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            release-assets/**
+            linux-repository/**
+            cocode-linux-repository-*.tar.gz
+
+  verify-repository:
+    name: Verify Linux repository snapshot
+    environment: Linux
+    needs: [generate-metadata]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: cocode-gui/pnpm-lock.yaml
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-metadata-${{ github.sha }}
+          path: snapshot
+      - name: Install GUI verification dependencies
+        working-directory: cocode-gui
+        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+      - name: Install repository verification tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gnupg rpm
+          command -v gpg
+          command -v rpm
+      - name: Verify release assets and repository snapshot
+        run: |
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          node ./cocode-gui/scripts/release/verify-github-release-assets.mjs "v${version}" snapshot/release-assets
+          node ./cocode-gui/scripts/release/verify-linux-repository.mjs snapshot/linux-repository "$version"
+          tar -C snapshot -czf "cocode-linux-verified-snapshot-${version}.tar.gz" release-assets linux-repository
+      - name: Upload verified Linux release snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocode-linux-verified-snapshot-${{ github.sha }}
+          if-no-files-found: error
+          path: cocode-linux-verified-snapshot-*.tar.gz
+
+  draft-release:
+    name: Update os/linux draft release
+    needs: [verify-repository]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: os-linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cocode-linux-verified-snapshot-${{ github.sha }}
+          path: verified-artifact
+      - name: Extract verified Linux release snapshot
+        run: |
+          mkdir -p verified
+          tar -xzf verified-artifact/cocode-linux-verified-snapshot-*.tar.gz -C verified
+          mkdir -p release-assets
+          cp -R verified/release-assets/. release-assets/
+          test -d verified/linux-repository
+          mkdir -p release-assets/repository
+          version="$(node -p "require('./cocode-gui/package.json').version")"
+          tar -C verified/linux-repository -czf "release-assets/repository/cocode-linux-repository-${version}.tar.gz" .
+      - name: Recheck downloaded release evidence
+        run: |
+          for arch in x64 arm64; do
+            (
+              cd "release-assets/$arch"
+              sha256sum -c "SHA256SUMS-$arch"
+            )
+          done
+      - name: Create or keep draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --draft=true \
+              --target "$GITHUB_SHA" \
+              --title "Cocode Linux (os/linux)"
+          else
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "Cocode Linux (os/linux)" \
+              --notes "Automated Linux packages from the os/linux branch."
+          fi
+      - name: Upload current Linux packages, metadata and repository archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            release-assets/x64/* \
+            release-assets/arm64/* \
+            release-assets/repository/*.tar.gz \
+            --clobber
+      - name: Remove stale draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          expected_assets="$(find release-assets -type f -printf '%f\n' | sort -u)"
+          while IFS= read -r asset; do
+            [ -z "$asset" ] && continue
+            if ! grep -Fqx "$asset" <<<"$expected_assets"; then
+              gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+            fi
+          done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+      - name: Verify draft release asset set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_json="$(gh release view "$RELEASE_TAG" --json isDraft,assets)"
+          test "$(jq -r '.isDraft' <<<"$release_json")" = "true"
+          expected_assets="$(find release-assets -type f -printf '%f\n' | sort -u)"
+          actual_assets="$(jq -r '.assets[].name' <<<"$release_json" | sort -u)"
+          diff -u \
+            <(printf '%s\n' "$expected_assets") \
+            <(printf '%s\n' "$actual_assets")

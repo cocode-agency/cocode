@@ -19,6 +19,7 @@ const LOCAL_CLIENT_BUNDLES = new Map<string, string>([
 		"ui-layout",
 		"ui-message-feedback",
 		"ui-model-selection",
+		"ui-reference",
 		"ui-permission-presets",
 		"ui-plan",
 		"ui-settings",
@@ -36,13 +37,22 @@ const LOCAL_CLIENT_BUNDLES = new Map<string, string>([
 		"ui-workflow-run",
 		"ui-workspace",
 	].map((directory) => [`${CLIENT_PACKAGE_PREFIX}${directory}`, directory] as const),
+	// The Web roster keeps this short id for compatibility with the permission
+	// slot, while the package directory retains its explicit `-presets` name.
+	[`${CLIENT_PACKAGE_PREFIX}ui-permission`, "ui-permission-presets"],
 	["cocode-workbench", "cocode/cocode-workbench"],
 	["cocode-account", "cocode/cocode-account"],
 	["cocode-shortcuts", "cocode/cocode-shortcuts"],
 ])
 
+const DSH_CLIENT_PACKAGE_PREFIX = "@deepseek-ai/dsh-client-"
+
 export function resolveLocalDshClientBundleUrl(packageId: string): string | undefined {
-	const directory = LOCAL_CLIENT_BUNDLES.get(packageId)
+	const directory =
+		LOCAL_CLIENT_BUNDLES.get(packageId) ??
+		(packageId.startsWith(DSH_CLIENT_PACKAGE_PREFIX)
+			? packageId.slice(DSH_CLIENT_PACKAGE_PREFIX.length)
+			: undefined)
 	if (directory === undefined) return undefined
 	return new URL(`./dsh-client/${directory}/client.js`, window.location.href).href
 }

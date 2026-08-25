@@ -25,6 +25,7 @@ const outputDirectory = path.resolve(
 	process.env.RELEASE_OUTPUT_DIR ?? path.join("release", target.platform, target.arch),
 )
 const iconRoot = path.resolve("resources/icons")
+const artifactArch = target.platform === "linux" && target.arch === "x64" ? "x86_64" : target.arch
 
 if (macSign?.keychain && !process.env.CSC_KEYCHAIN) {
 	process.env.CSC_KEYCHAIN = macSign.keychain
@@ -73,7 +74,7 @@ const config: Configuration = {
 			provider: "github",
 			owner: repository.owner,
 			repo: repository.name,
-			channel: target.arch,
+			...(target.platform === "linux" ? {} : { channel: target.arch }),
 			releaseType: "draft",
 			publishAutoUpdate: false,
 			tagNamePrefix: "v",
@@ -105,6 +106,47 @@ const config: Configuration = {
 				to: "windows-cli-installer.ps1",
 			},
 		],
+	},
+	linux: {
+		target: ["deb", "rpm"],
+		artifactName: `Cocode-\${version}-${artifactArch}.\${ext}`,
+		icon: path.join(iconRoot, "cocode.png"),
+		category: "Development",
+		// Keep the unqualified `cocode` command reserved for the terminal client.
+		// The desktop executable has an explicit name so the generated .desktop
+		// entry and the package alternative cannot shadow the TUI wrapper.
+		executableName: "cocode-gui",
+		syncDesktopName: true,
+		maintainer: "Cocode Contributors <support@cocode.agency>",
+	},
+	deb: {
+		depends: [
+			"libgtk-3-0",
+			"libnotify4",
+			"libnss3",
+			"libxss1",
+			"libxtst6",
+			"xdg-utils",
+			"libatspi2.0-0",
+			"libuuid1",
+		],
+		recommends: ["libappindicator3-1"],
+		afterInstall: path.resolve("resources/linux-after-install.sh"),
+		afterRemove: path.resolve("resources/linux-after-remove.sh"),
+	},
+	rpm: {
+		depends: [
+			"gtk3",
+			"libnotify",
+			"nss",
+			"libXScrnSaver",
+			"(libXtst or libXtst6)",
+			"xdg-utils",
+			"at-spi2-core",
+			"(libuuid or libuuid1)",
+		],
+		afterInstall: path.resolve("resources/linux-after-install.sh"),
+		afterRemove: path.resolve("resources/linux-after-remove.sh"),
 	},
 	nsis: {
 		oneClick: true,

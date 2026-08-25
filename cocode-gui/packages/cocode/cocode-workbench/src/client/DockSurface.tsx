@@ -3,10 +3,11 @@ import { Menu, Tooltip, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primit
 import type { WorkbenchController } from "./controller.ts"
 import type { WorkbenchDock, WorkbenchPanelDescriptor, WorkbenchPanelInstance, WorkbenchPanelProps, WorkbenchSplitNode } from "./model.ts"
 import { bindWorkbenchCwd } from "./runtime-api.ts"
+import { fileMentionText } from "./file-mention.ts"
 import { localeRevision, subscribeLocale, t } from "./locales.ts"
 import css from "./workbench.module.css"
 import { CloseIcon, FileGlyph, fileTypeIcon, PanelBottomIcon, PanelRightIcon, PlusIcon } from "./icons.tsx"
-import { baseName } from "../paths.ts"
+import { baseName, relativeTo } from "../paths.ts"
 
 interface SessionListSlice {
   readonly byId: Readonly<Record<string, { readonly cwd?: string } | undefined>>
@@ -112,6 +113,7 @@ function Tab(props: {
   instance: WorkbenchPanelInstance
   title: string
   icon?: ReactNode
+  dragText?: string
   active: boolean
   activate: () => void
   close: () => void
@@ -124,8 +126,12 @@ function Tab(props: {
     role="presentation"
     draggable
     onDragStart={event => {
-      event.dataTransfer.effectAllowed = "move"
+      event.dataTransfer.effectAllowed = props.dragText === undefined ? "move" : "copyMove"
       event.dataTransfer.setData("application/x-cocode-workbench-tab", props.instance.id)
+      if (props.dragText !== undefined) {
+        event.dataTransfer.setData("application/x-cocode-file-mention", props.dragText)
+        event.dataTransfer.setData("text/plain", props.dragText)
+      }
       document.body.dataset.cocodeWorkbenchDragging = ""
     }}
     onDragEnd={() => { delete document.body.dataset.cocodeWorkbenchDragging }}
@@ -229,15 +235,15 @@ function Pane(props: {
   const canRefresh = isFilePreview(menuInstance)
   const tabMenuItems: readonly MenuEntry[] = [
     ...(canRefresh ? [{ id: "refresh", label: t("preview.refresh") } satisfies MenuEntry] : []),
-    { id: "close", label: "Close" },
-    { id: "closeOthers", label: "Close Others", disabled: paneInstances.length <= 1 },
-    { id: "closeRight", label: "Close to the Right", disabled: menuIndex < 0 || menuIndex >= paneInstances.length - 1 },
-    { id: "closeAll", label: "Close All" },
+    { id: "close", label: t("tabMenu.close") },
+    { id: "closeOthers", label: t("tabMenu.closeOthers"), disabled: paneInstances.length <= 1 },
+    { id: "closeRight", label: t("tabMenu.closeRight"), disabled: menuIndex < 0 || menuIndex >= paneInstances.length - 1 },
+    { id: "closeAll", label: t("tabMenu.closeAll") },
     { type: "separator", id: "sep-split" },
-    { id: "splitRight", label: "Split Right", disabled: paneInstances.length <= 1 },
-    { id: "splitDown", label: "Split Down", disabled: paneInstances.length <= 1 },
+    { id: "splitRight", label: t("tabMenu.splitRight"), disabled: paneInstances.length <= 1 },
+    { id: "splitDown", label: t("tabMenu.splitDown"), disabled: paneInstances.length <= 1 },
     { type: "separator", id: "sep-move" },
-    { id: "move", label: props.dock === "right" ? "Move to Bottom Panel" : "Move to Right Panel" },
+    { id: "move", label: t(props.dock === "right" ? "tabMenu.moveBottom" : "tabMenu.moveRight") },
   ]
   const runTabMenu = (action: string): void => {
     const id = tabMenu?.id
@@ -273,7 +279,10 @@ function Pane(props: {
         {paneInstances.map(instance => {
           const descriptor = props.snapshot.catalog.find(item => item.id === instance.type)
           const title = tabTitle(descriptor, instance)
-          return <Tab key={instance.id} instance={instance} title={title} icon={tabIcon(descriptor, instance)} active={instance.id === activeId} activate={() => props.controller.activate(instance.id)} close={() => props.controller.close(instance.id)} drop={(draggedId, beforeId) => props.controller.moveToPane(draggedId, props.node.id, beforeId)} contextMenu={(x, y) => {
+          const dragText = descriptor?.id === "preview" && instance.target?.path !== undefined && props.cwd !== undefined
+            ? fileMentionText(relativeTo(props.cwd, instance.target.path))
+            : undefined
+          return <Tab key={instance.id} instance={instance} title={title} icon={tabIcon(descriptor, instance)} dragText={dragText} active={instance.id === activeId} activate={() => props.controller.activate(instance.id)} close={() => props.controller.close(instance.id)} drop={(draggedId, beforeId) => props.controller.moveToPane(draggedId, props.node.id, beforeId)} contextMenu={(x, y) => {
             props.controller.activate(instance.id)
             setTabMenu({ id: instance.id, x, y })
           }} />

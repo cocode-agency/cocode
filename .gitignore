@@ -60,6 +60,7 @@ out/
 /release/
 /cocode-gui/release/
 *.tsbuildinfo
+*.tgz
 
 # Cocode package build artifacts
 /cocode-host-supervisor/packages/host-supervisor/lib/
@@ -86,6 +87,20 @@ web-build/
 
 # Tests
 coverage/
+
+# Harbor / Terminal-Bench local runs
+jobs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
 # Env and secrets
 .env

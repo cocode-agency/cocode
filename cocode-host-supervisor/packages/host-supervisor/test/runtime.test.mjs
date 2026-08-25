@@ -31,6 +31,9 @@ test('repairs an incomplete DSH runtime slot before booting it', () => {
     const pluginPath = fileURLToPath(new URL('../lib/host-jsonrpc-plugin.js', import.meta.url))
     const slot = prepareRuntimeSlot(scope, '/tmp/cocode-incomplete-slot-jsonrpc.sock', pluginPath)
 
+    assert.equal(existsSync(join(slot.root, 'cocode-credentials-local-compat.mjs')), true)
+    assert.match(readFileSync(join(slot.root, 'cocode-credentials-local-compat.mjs'), 'utf8'), /loadCredentials/)
+
     for (const file of readdirSync(join(dshRoot, 'lib'))) {
       assert.equal(existsSync(join(slot.root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', file)), true, file)
     }
@@ -39,6 +42,11 @@ test('repairs an incomplete DSH runtime slot before booting it', () => {
     else process.env.COCODE_HOST_RUNTIME_HOME = previousRuntimeHome
     rmSync(runtimeHome, { recursive: true, force: true })
   }
+})
+
+test('Supervisor host launch disables the Web app default-browser handoff', () => {
+  const serviceSource = readFileSync(fileURLToPath(new URL('../src/service.ts', import.meta.url)), 'utf8')
+  assert.match(serviceSource, /args\.push\('--patch', slot\.patch, '--no-open', '--port', '0'\)/)
 })
 
 test('repairs a complete slot when a registered plugin package is missing', () => {
@@ -128,6 +136,25 @@ test('createRuntimePatch leaves shared DSH settings and credentials at their def
   assert.equal(parsed.some((entry) => entry?.id === 'settings'), false)
   assert.equal(parsed.some((entry) => entry?.id === 'credentials'), false)
   assert.equal(parsed.some((entry) => entry?.id === 'llm-pi-ai'), false)
+})
+
+test('createRuntimePatch disables the native credentials provider and inserts the Host provider', () => {
+  const patch = createRuntimePatch('file:///host-jsonrpc.mjs', '/tmp/host.sock', [], undefined, 'file:///credentials-compat.mjs', '/tmp/shared-dsh')
+  const parsed = YAML.parse(patch)
+  const nativeCredentials = parsed.find((entry) => entry?.id === 'credentials')
+  const hostCredentials = parsed.find((entry) => entry?.insert?.some((item) => item?.id === 'cocode-credentials'))?.insert
+    ?.find((item) => item?.id === 'cocode-credentials')
+  assert.equal(nativeCredentials?.name, '@deepseek-ai/dsh-credentials-local')
+  assert.equal(nativeCredentials?.disabled, true)
+  assert.equal(hostCredentials?.name, 'file:///credentials-compat.mjs')
+  assert.equal(hostCredentials?.config.path, '/tmp/shared-dsh/.credentials.yaml')
+  assert.equal(hostCredentials?.config.dshHome, '/tmp/shared-dsh')
+})
+
+test('createRuntimePatch keeps the native credentials name as a patch guard', () => {
+  const patch = createRuntimePatch('file:///host-jsonrpc.mjs', '/tmp/host.sock', [], undefined, 'file:///credentials-compat.mjs', '/tmp/shared-dsh')
+  assert.match(patch, /id: credentials\n  name: '@deepseek-ai\/dsh-credentials-local'\n  disabled: true/)
+  assert.match(patch, /id: cocode-credentials\n      name: "file:\/\/\/credentials-compat\.mjs"/)
 })
 
 test('createRuntimePatch mounts COCODE_LLM_PROVIDERS on llm-pi-ai', () => {

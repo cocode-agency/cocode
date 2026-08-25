@@ -1,3 +1,5 @@
+import { isStrictlyNewerApplicationVersion } from "./application-version-policy"
+
 export type ApplicationUpdateState = "idle" | "checking" | "downloading"
 
 type ApplicationUpdateEventName =
@@ -14,6 +16,7 @@ export interface ApplicationUpdateEventSource {
 		listener: (...args: unknown[]) => void,
 	) => unknown
 	checkForUpdates: () => void | PromiseLike<unknown>
+	downloadUpdate: () => void | PromiseLike<unknown>
 }
 
 export interface ApplicationUpdateCoordinatorOptions {
@@ -65,13 +68,31 @@ export function createApplicationUpdateCoordinator({
 		setState("idle")
 		if (showLatest) onLatest(version)
 	}
-	const onUpdateAvailable = (): void => {
+	const onUpdateAvailable = (...args: unknown[]): void => {
 		if (disposed) return
+		const candidateVersion = readUpdateVersion(args)
+		if (!isStrictlyNewerApplicationVersion(candidateVersion, version)) {
+			manualCheckPending = false
+			setState("idle")
+			return
+		}
 		manualCheckPending = false
 		setState("downloading")
+		try {
+			const result = updater.downloadUpdate()
+			if (isPromiseLike(result)) void result.then(undefined, onUpdaterError)
+		} catch (error) {
+			onUpdaterError(error)
+		}
 	}
 	const onUpdateDownloaded = (...args: unknown[]): void => {
 		if (disposed) return
+		const candidateVersion = readUpdateVersion(args)
+		if (!isStrictlyNewerApplicationVersion(candidateVersion, version)) {
+			manualCheckPending = false
+			setState("idle")
+			return
+		}
 		manualCheckPending = false
 		setState("idle")
 		const releaseName =
@@ -152,4 +173,19 @@ function isDownloadedUpdateEvent(value: unknown): value is { releaseName?: strin
 		(typeof (value as { releaseName?: unknown }).releaseName === "string" ||
 			(value as { releaseName?: unknown }).releaseName == null)
 	)
+}
+
+function readUpdateVersion(args: readonly unknown[]): string | undefined {
+	const first = args[0]
+	if (typeof first === "object" && first !== null && "version" in first) {
+		const version = (first as { version?: unknown }).version
+		if (typeof version === "string") return version
+	}
+	if (typeof args[2] === "string") return extractVersion(args[2])
+	if (isDownloadedUpdateEvent(first)) return extractVersion(first.releaseName)
+	return undefined
+}
+
+function extractVersion(value: string | undefined): string | undefined {
+	return value?.match(/\b\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\b/)?.[0]
 }

@@ -1,10 +1,11 @@
 import { constants } from "node:fs"
-import { chmod, lstat, mkdir, open, rename, rm, stat, unlink } from "node:fs/promises"
-import { homedir } from "node:os"
-import { dirname, join, resolve } from "pathe"
+import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises"
+import { dirname, join } from "pathe"
 import { parse, stringify } from "yaml"
 import type { IdentityState } from "../application/account-service"
-import { SecureVault } from "./secure-vault"
+import { withAccountLock } from "./account-lock"
+import { resolveCocodeHome } from "./file-vault"
+import { SecureVault, type SecureVaultStatus } from "./secure-vault"
 
 type AccountYaml = {
 	origin?: unknown
@@ -21,13 +22,11 @@ type AccountYaml = {
 type LegacyVault = {
 	read(): Promise<IdentityState | undefined>
 	clear(): Promise<void>
+	getStatus?: () => SecureVaultStatus
 }
 
 function accountHome(): string {
-	const configured = process.env.COCODE_HOME?.trim()
-	return resolve(
-		configured === undefined || configured === "" ? join(homedir(), ".cocode") : configured,
-	)
+	return resolveCocodeHome()
 }
 
 function accountPath(home: string): string {
@@ -90,10 +89,14 @@ function toYaml(value: IdentityState): AccountYaml {
 export class SharedAccountStore {
 	constructor(
 		private readonly home = accountHome(),
-		private readonly legacy: LegacyVault = new SecureVault<IdentityState>(
-			"cocode-account-identity.bin",
-		),
+		private readonly legacy: LegacyVault | undefined = process.platform === "linux"
+			? undefined
+			: new SecureVault<IdentityState>("cocode-account-identity.bin"),
 	) {}
+
+	getStatus(): SecureVaultStatus {
+		return this.legacy?.getStatus?.() ?? { state: "unknown" }
+	}
 
 	async read(): Promise<IdentityState | undefined> {
 		let value: IdentityState | undefined
@@ -113,7 +116,7 @@ export class SharedAccountStore {
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") value = undefined
 		}
-		if (value === undefined) {
+		if (value === undefined && this.legacy !== undefined) {
 			const legacy = await this.legacy.read()
 			if (legacy !== undefined) {
 				value = legacy
@@ -147,38 +150,10 @@ export class SharedAccountStore {
 		await unlink(accountPath(this.home)).catch((error) => {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 		})
-		await this.legacy.clear()
+		await this.legacy?.clear()
 	}
 
 	async withLock<T>(operation: () => Promise<T>): Promise<T> {
-		await mkdir(this.home, { recursive: true, mode: 0o700 })
-		const lock = `${accountPath(this.home)}.lock`
-		const deadline = Date.now() + 10_000
-		for (;;) {
-			try {
-				await mkdir(lock, { mode: 0o700 })
-				break
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-				try {
-					const age = Date.now() - (await stat(lock)).mtimeMs
-					if (age > 120_000) {
-						await rm(lock, { recursive: true, force: true })
-						continue
-					}
-				} catch (metadataError) {
-					if ((metadataError as NodeJS.ErrnoException).code === "ENOENT") continue
-					throw metadataError
-				}
-				if (Date.now() >= deadline)
-					throw new Error("Cocode account is busy in another client")
-				await new Promise((resolve) => setTimeout(resolve, 50))
-			}
-		}
-		try {
-			return await operation()
-		} finally {
-			await rm(lock, { recursive: true, force: true })
-		}
+		return withAccountLock(accountPath(this.home), operation)
 	}
 }

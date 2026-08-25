@@ -9,12 +9,14 @@ import type { WorkbenchPanelProps } from "./model.ts"
 import { ExternalIcon, PreviewIcon } from "./icons.tsx"
 import type { DesktopApi } from "../../../../../src/contracts/ipc/desktop.contract.ts"
 import { State, message, useRemote } from "./panel-state.tsx"
+import { CodeEditor } from "./code-editor.tsx"
 import { fileUrl, workbenchRequest } from "./runtime-api.ts"
 import { resolveMarkdownImages } from "./markdown-assets.ts"
 import { baseName, relativeTo } from "../paths.ts"
 import { GitDiffView } from "./git-diff.tsx"
 import type { GitGroup } from "./git-client.ts"
 import { t } from "./locales.ts"
+import { ExcelPreview } from "./excel-preview.tsx"
 import css from "./preview.module.css"
 
 /** Source is the editable face; preview is always read-only. */
@@ -61,6 +63,7 @@ const MARKDOWN_EXTENSIONS = new Set(["md", "markdown", "mdx"])
 const HTML_EXTENSIONS = new Set(["html", "htm"])
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"])
 const WORD_EXTENSIONS = new Set(["doc", "docx"])
+const EXCEL_EXTENSIONS = new Set(["xls", "xlsx"])
 
 interface FileRead {
   readonly kind: string
@@ -218,6 +221,7 @@ export function PreviewPanel(props: WorkbenchPanelProps) {
 function FilePreview(props: WorkbenchPanelProps) {
   const path = props.instance.target?.path
   const extension = path?.split(".").at(-1)?.toLowerCase()
+  if (path !== undefined && extension !== undefined && EXCEL_EXTENSIONS.has(extension)) return <ExcelPreview {...props} path={path} />
   if (path !== undefined && extension !== undefined && WORD_EXTENSIONS.has(extension)) return <WordPreview {...props} path={path} />
   return <RegularFilePreview {...props} />
 }
@@ -314,17 +318,13 @@ function RegularFilePreview(props: WorkbenchPanelProps) {
     void api.open({ path }).catch(error => setNotice(message(error))).finally(() => setOpeningExternal(false))
   }
 
-  const sourceView = <textarea
-    className={css.editor}
+  const sourceView = <CodeEditor
+    key={path}
     value={text}
+    lang={extension}
     readOnly={!editable}
-    spellCheck={false}
-    onChange={event => setDraft({ path, text: event.target.value })}
-    onKeyDown={event => {
-      if (event.key !== "s" || !(event.metaKey || event.ctrlKey)) return
-      event.preventDefault()
-      save()
-    }}
+    onChange={value => setDraft({ path, text: value })}
+    onSave={save}
   />
 
   const previewView = ((): ReactNode => {

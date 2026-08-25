@@ -896,6 +896,22 @@ describe('TuiApp', () => {
     expect(app.snapshot().notice?.tone).toBe('info')
   })
 
+  it('keeps command selection safe for ordinary text', async () => {
+    const runtime = fakeRuntime()
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+    })
+    await app.start()
+
+    expect(() => app.dispatch({ type: 'command.select', line: 'ordinary text' })).not.toThrow()
+    expect(runtime.prompts).toEqual([])
+    expect(app.snapshot().notice?.tone).toBe('error')
+  })
+
   it('namespaces discovered skill commands and keeps the wire invocation unprefixed', async () => {
     const runtime = fakeRuntime() as TuiRuntime & {
       listSkills(sessionId: string): Promise<{ name: string; description: string; source: string }[]>

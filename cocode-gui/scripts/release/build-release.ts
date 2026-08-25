@@ -7,12 +7,17 @@ import {
 	resolveReleaseTarget,
 	resolveWindowsSignMode,
 } from "./release-config"
+import { assertNativeReleaseHost } from "./assert-native-release-host.mjs"
+import {
+	ensureDarwinNodePtyNatives,
+	verifyDarwinNodePtyArchitecture,
+} from "../lib/workspace-dependencies.mjs"
 
 loadReleaseEnvironment()
 
 const platform = readOption("--platform")
 const arch = readOption("--arch")
-if (!platform || !arch) throw new Error("Usage: pnpm release:{mac|win}:{x64|arm64}")
+if (!platform || !arch) throw new Error("Usage: pnpm release:{mac|win|linux}:{x64|arm64}")
 
 const runtimeArtifactRoot =
 	process.env.COCODE_RUNTIME_ARTIFACT_ROOT ?? path.resolve(`release/${platform}/${arch}/runtime`)
@@ -23,7 +28,7 @@ const environment: NodeJS.ProcessEnv = {
 	...process.env,
 	RELEASE_PLATFORM: platform,
 	RELEASE_ARCH: arch,
-	RELEASE_REQUIRE_SIGNING: "1",
+	RELEASE_REQUIRE_SIGNING: process.env.RELEASE_REQUIRE_SIGNING ?? (platform === "linux" ? "0" : "1"),
 	RELEASE_REQUIRE_NATIVE_ARCH_MATCH: "1",
 	RELEASE_OUTPUT_DIR: process.env.RELEASE_OUTPUT_DIR ?? `release/${platform}/${arch}`,
 	COCODE_RUNTIME_ARTIFACT_ROOT: runtimeArtifactRoot,
@@ -35,15 +40,14 @@ environment.WINDOWS_SIGN_LEDGER_DIR = path.resolve(
 )
 delete environment.COREPACK_ROOT
 const target = resolveReleaseTarget(environment)
-if (target.platform !== process.platform)
-	throw new Error(
-		`Release builds must run on ${target.platform}; current host is ${process.platform}.`,
-	)
-if (target.arch !== process.arch)
-	throw new Error(
-		`Release builds must run on native ${target.arch}; current process is ${process.arch}.`,
-	)
+assertNativeReleaseHost({
+	targetPlatform: target.platform,
+	targetArch: target.arch,
+	environment,
+})
 requireReleaseCredentials(target, environment)
+
+if (target.platform === "linux") assertLinuxPackagingTools()
 
 if (target.platform === "darwin") {
 	const iconStatus = runPnpm(["run", "generate:mac-icons"])
@@ -64,19 +68,32 @@ if (target.platform === "win32" && resolveWindowsSignMode(environment) === "serv
 		throw new Error("Windows signing service credential preflight failed.")
 }
 
-if (target.platform === "win32") {
-	cleanWindowsNativeBuildOutputs()
+if (target.platform === "darwin" || target.platform === "win32" || target.platform === "linux") {
+	cleanNativeBuildOutputs()
 	const nativeDependencyStatus = runPnpm([
 		"exec",
 		"electron-builder",
 		"install-app-deps",
-		"--platform=win32",
+		`--platform=${target.platform}`,
 		`--arch=${target.arch}`,
 	])
 	if (nativeDependencyStatus !== 0) {
 		throw new Error(
-			`Windows ${target.arch} native dependency preparation exited with code ${String(nativeDependencyStatus)}.`,
+			`${target.platform} ${target.arch} native dependency preparation exited with code ${String(nativeDependencyStatus)}.`,
 		)
+	}
+	if (target.platform === "darwin") {
+		ensureDarwinNodePtyNatives({
+			root: process.cwd(),
+			platform: target.platform,
+			arch: target.arch,
+			force: true,
+		})
+		verifyDarwinNodePtyArchitecture({
+			root: process.cwd(),
+			platform: target.platform,
+			arch: target.arch,
+		})
 	}
 }
 
@@ -89,6 +106,13 @@ const runtimeStatus = runPnpm([
 	runtimeArtifactRoot,
 ])
 if (runtimeStatus !== 0) throw new Error(`Runtime build exited with code ${String(runtimeStatus)}.`)
+if (target.platform === "darwin") {
+	verifyDarwinNodePtyArchitecture({
+		root: runtimeArtifactRoot,
+		platform: target.platform,
+		arch: target.arch,
+	})
+}
 
 const tuiStatus = runPnpm(["run", "build:tui", "--", "--output", tuiArtifactRoot])
 if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiStatus)}.`)
@@ -96,7 +120,9 @@ if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiSta
 const viteStatus = runPnpm(["exec", "electron-vite", "build"])
 if (viteStatus !== 0) throw new Error(`Electron Vite build exited with code ${String(viteStatus)}.`)
 
-const builderPlatform = target.platform === "darwin" ? "--mac" : "--win"
+cleanBuilderOutput(target.platform, environment.RELEASE_OUTPUT_DIR)
+const builderPlatform =
+	target.platform === "darwin" ? "--mac" : target.platform === "win32" ? "--win" : "--linux"
 const builderArch = target.arch === "arm64" ? "--arm64" : "--x64"
 process.exitCode = runPnpm([
 	"exec",
@@ -108,9 +134,36 @@ process.exitCode = runPnpm([
 	...["--publish", "never"],
 ])
 
-function cleanWindowsNativeBuildOutputs(): void {
-	for (const relativePath of ["node_modules/better-sqlite3/build", "node_modules/keytar/build"]) {
+function cleanNativeBuildOutputs(): void {
+	for (const relativePath of [
+		"node_modules/better-sqlite3/build",
+		"node_modules/keytar/build",
+		"node_modules/node-pty/build",
+	]) {
 		rmSync(path.resolve(relativePath), { recursive: true, force: true })
+	}
+}
+
+function cleanBuilderOutput(platform: string, outputDirectory: string | undefined): void {
+	if (!outputDirectory) return
+	const directoryName =
+		platform === "darwin" ? "mac" : platform === "win32" ? "win-unpacked" : "linux-unpacked"
+	rmSync(path.resolve(outputDirectory, directoryName), { recursive: true, force: true })
+}
+
+function assertLinuxPackagingTools(): void {
+	const required = [
+		{ command: "dpkg-deb", packageName: "dpkg-dev" },
+		{ command: "rpmbuild", packageName: "rpm" },
+	]
+	const missing = required
+		.filter(({ command }) => spawnSync(command, ["--version"], { stdio: "ignore" }).status !== 0)
+		.map(({ command, packageName }) => `${command} (install ${packageName})`)
+	if (missing.length > 0) {
+		throw new Error(
+			`Linux DEB/RPM packaging tools are missing: ${missing.join(", ")}. ` +
+			"Install them before running the native Linux release command.",
+		)
 	}
 }
 

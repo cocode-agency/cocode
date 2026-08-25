@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import os from "node:os"
 // Exercises the native CLI registration (PATH entries, path.delimiter), so it
 // must match the OS semantics used by the implementation under test.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import path from "node:path"
 import test from "node:test"
 import { TuiLauncher } from "../../../src/main/contexts/tui/infrastructure/tui-launcher"
@@ -37,9 +37,11 @@ test("Desktop CLI installation is idempotent and preserves unmanaged commands", 
 			assert.equal(first.status.persistentPathConfigured, true)
 			assert.equal(first.status.registrationSource, "desktop-startup")
 			assert.equal(first.status.runtimeValid, true)
-			assert.match(readFileSync(fixture.shimPath, "utf8"), /DSH_PROFILE='cocode'/)
-			assert.doesNotMatch(readFileSync(fixture.shimPath, "utf8"), /DSH_PROFILE=web/)
-			assert.match(readFileSync(fixture.shimPath, "utf8"), /cocode-desktop-cli-shim:v1/)
+			const shim = readFileSync(fixture.shimPath, "utf8")
+			if (process.platform === "win32") assert.match(shim, /set "DSH_PROFILE=cocode"/i)
+			else assert.match(shim, /DSH_PROFILE='cocode'/)
+			assert.doesNotMatch(shim, /DSH_PROFILE=web/)
+			assert.match(shim, /cocode-desktop-cli-shim:v1/)
 
 			const second = await launcher.ensureCommandLineTool()
 			assert.equal(second.changed, false)
@@ -79,7 +81,9 @@ test("Desktop CLI installation is idempotent and preserves unmanaged commands", 
 			chmodSync(fixture.shimPath, 0o755)
 
 			const launcher = new TuiLauncher()
-			assert.equal((await launcher.getCommandLineToolStatus()).state, "stale")
+			const before = await launcher.getCommandLineToolStatus()
+			assert.equal(before.state, "stale")
+			assert.match(before.detail ?? "", /older Desktop installation|integrity check failed/)
 			const result = await launcher.ensureCommandLineTool()
 			assert.equal(result.changed, true)
 			assert.equal(result.status.state, "installed")

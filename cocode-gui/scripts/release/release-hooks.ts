@@ -37,6 +37,13 @@ import {
 	copyProductionDependencyClosure,
 	verifyProductionDependencyClosure,
 } from "./runtime-dependency-closure"
+import {
+	linuxPackageFiles,
+	verifyLinuxPackageArtifact,
+	verifyLinuxReleaseManifest,
+	writeLinuxReleaseManifest,
+} from "./verify-linux-packages.mjs"
+import { signLinuxPackages } from "./sign-linux-packages.mjs"
 
 interface WindowsSigningPolicy {
 	inspectAuthenticode(filePath: string): { Subject?: string; Thumbprint?: string }
@@ -121,10 +128,18 @@ export async function stageBuilderApplication(context: AfterPackContext): Promis
 		await signPackagedWindowsExecutables(resourcesRoot, signFile)
 	try {
 		await closePackagedAppStage(appStage)
+		if (target.platform === "linux") await hardenLinuxSandboxHelper(context.appOutDir)
 		verifyPackagedRuntimeLayout(context.appOutDir, target, appRoot)
 	} finally {
 		await cleanupPackagedAppStage(appStage)
 	}
+}
+
+async function hardenLinuxSandboxHelper(appOutDir: string): Promise<void> {
+	const sandboxHelper = path.join(appOutDir, "chrome-sandbox")
+	if (!existsSync(sandboxHelper))
+		throw new Error(`Packaged Linux sandbox helper is missing: ${sandboxHelper}`)
+	await fs.chmod(sandboxHelper, 0o4755)
 }
 
 interface PackagedAppStage {
@@ -282,6 +297,14 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		artifacts: finalizedArtifacts,
 	})
 
+	const linuxPackages = target.platform === "linux" ? linuxPackageFiles(finalizedArtifacts) : []
+	let linuxSignatures: string[] = []
+	if (target.platform === "linux") {
+		for (const artifact of linuxPackages) verifyLinuxPackageArtifact(artifact, target.arch)
+		linuxSignatures = signLinuxPackages(linuxPackages)
+		additional.push(...linuxSignatures)
+	}
+
 	let windowsSignature: { Subject?: string; Thumbprint?: string } | undefined
 	if (target.platform === "win32") {
 		const inspect =
@@ -304,6 +327,9 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		const installer = selectUpdateArtifact(target.platform, finalizedArtifacts)
 		windowsSignature = inspect ? inspect(installer) : undefined
 	}
+	const updateArtifact = selectUpdateArtifact(target.platform, finalizedArtifacts)
+	const updateArtifacts =
+		target.platform === "linux" ? linuxPackages : [updateArtifact]
 
 	const updateMetadata = writeArchitectureUpdateMetadata({
 		outDir: context.outDir,
@@ -311,13 +337,31 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		arch: target.arch,
 		version: packageMetadata.version,
 		artifacts: [...artifacts, ...additional],
+		updateArtifacts,
 	})
 	additional.push(...updateMetadata)
-	const updateArtifact = selectUpdateArtifact(target.platform, finalizedArtifacts)
 	for (const metadata of updateMetadata) {
-		verifyArchitectureUpdateMetadata(metadata, updateArtifact)
+		verifyArchitectureUpdateMetadata(metadata, updateArtifacts)
 	}
-	const checksum = appendChecksumManifest(context.outDir, [...artifacts, ...additional])
+	if (target.platform === "linux") {
+		const manifest = writeLinuxReleaseManifest({
+			packages: linuxPackages,
+			arch: target.arch,
+			version: packageMetadata.version,
+			metadataFiles: updateMetadata,
+			signatures: linuxSignatures,
+			outDir: context.outDir,
+			hostPlatform: process.platform,
+			hostArch: process.arch,
+		})
+		verifyLinuxReleaseManifest(manifest, linuxPackages, target.arch, updateMetadata, linuxSignatures)
+		additional.push(manifest)
+	}
+	const checksum = appendChecksumManifest(
+		context.outDir,
+		[...artifacts, ...additional],
+		target.platform === "linux" ? `SHA256SUMS-${target.arch}` : undefined,
+	)
 	additional.push(checksum)
 	if (target.platform === "win32") {
 		const evidence = writeWindowsReleaseEvidenceManifest({
@@ -370,47 +414,66 @@ export function writeArchitectureUpdateMetadata(options: {
 	readonly arch: ReleaseArchitecture
 	readonly version: string
 	readonly artifacts: readonly string[]
+	readonly updateArtifacts?: readonly string[]
 }): string[] {
-	const artifact = selectUpdateArtifact(options.platform, options.artifacts)
-	const sha512 = createHash("sha512").update(readFileSync(artifact)).digest("base64")
-	const fileName = path.basename(artifact)
-	const canonical =
-		options.platform === "darwin" ? `${options.arch}-mac.yml` : `${options.arch}.yml`
-	const requestedAlias =
-		options.platform === "darwin"
-			? `latest-mac-${options.arch}.yml`
-			: `latest-${options.arch}.yml`
+	const updateArtifacts = options.updateArtifacts?.length
+		? [...options.updateArtifacts]
+		: [selectUpdateArtifact(options.platform, options.artifacts)]
+	const rows = updateArtifacts.map((artifact) => ({
+		fileName: path.basename(artifact),
+		sha512: createHash("sha512").update(readFileSync(artifact)).digest("base64"),
+	}))
+	const names =
+		options.platform === "linux"
+			? [options.arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml"]
+			: [
+					options.platform === "darwin" ? `${options.arch}-mac.yml` : `${options.arch}.yml`,
+					options.platform === "darwin"
+						? `latest-mac-${options.arch}.yml`
+						: `latest-${options.arch}.yml`,
+				]
 	const metadata = [
 		`version: ${options.version}`,
 		"files:",
-		`  - url: ${yamlString(fileName)}`,
-		`    sha512: ${yamlString(sha512)}`,
-		`path: ${yamlString(fileName)}`,
-		`sha512: ${yamlString(sha512)}`,
+		...rows.flatMap(({ fileName, sha512 }) => [
+			`  - url: ${yamlString(fileName)}`,
+			`    sha512: ${yamlString(sha512)}`,
+		]),
+		`path: ${yamlString(rows[0]?.fileName ?? "")}`,
+		`sha512: ${yamlString(rows[0]?.sha512 ?? "")}`,
 		`releaseName: ${yamlString(`Cocode ${options.version}`)}`,
 		`releaseDate: ${yamlString(new Date().toISOString())}`,
 		"",
 	].join("\n")
 	mkdirSync(options.outDir, { recursive: true })
-	const files = [canonical, requestedAlias].map((name) => path.join(options.outDir, name))
+	const files = names.map((name) => path.join(options.outDir, name))
 	for (const file of files) writeFileSync(file, metadata)
 	return files
 }
 
-export function verifyArchitectureUpdateMetadata(metadataFile: string, artifact: string): void {
+export function verifyArchitectureUpdateMetadata(
+	metadataFile: string,
+	artifacts: string | readonly string[],
+): void {
 	const metadata = parseYaml(readFileSync(metadataFile, "utf8")) as {
 		files?: Array<{ url?: string; sha512?: string }>
 		path?: string
 		sha512?: string
 	}
-	const expectedFile = path.basename(artifact)
-	const expectedSha512 = createHash("sha512").update(readFileSync(artifact)).digest("base64")
+	const expectedArtifacts = typeof artifacts === "string" ? [artifacts] : [...artifacts]
+	const expected = new Map(
+		expectedArtifacts.map((artifact) => [
+			path.basename(artifact),
+			createHash("sha512").update(readFileSync(artifact)).digest("base64"),
+		]),
+	)
 	const firstFile = metadata.files?.[0]
 	if (
-		metadata.path !== expectedFile ||
-		firstFile?.url !== expectedFile ||
-		metadata.sha512 !== expectedSha512 ||
-		firstFile?.sha512 !== expectedSha512
+		metadata.path !== firstFile?.url ||
+		metadata.sha512 !== firstFile?.sha512 ||
+		!Array.isArray(metadata.files) ||
+		metadata.files.length !== expected.size ||
+		metadata.files.some((file) => expected.get(file.url ?? "") !== file.sha512)
 	) {
 		throw new Error(
 			`Updater metadata does not match the final signed artifact: ${metadataFile}`,
@@ -490,7 +553,11 @@ export function writeWindowsReleaseEvidenceManifest(options: {
 	return manifestPath
 }
 
-export function appendChecksumManifest(outDir: string, artifacts: readonly string[]): string {
+export function appendChecksumManifest(
+	outDir: string,
+	artifacts: readonly string[],
+	fileName = "SHA256SUMS",
+): string {
 	const uniqueArtifacts = [...new Set(artifacts.map((artifact) => path.resolve(artifact)))].filter(
 		existsSync,
 	)
@@ -502,7 +569,7 @@ export function appendChecksumManifest(outDir: string, artifacts: readonly strin
 					.digest("hex")}  ${path.relative(outDir, artifact)}`,
 		)
 		.sort()
-	const manifestPath = path.join(outDir, "SHA256SUMS")
+	const manifestPath = path.join(outDir, fileName)
 	writeFileSync(manifestPath, `${rows.join("\n")}\n`)
 	return manifestPath
 }
@@ -632,7 +699,7 @@ export function extractWindowsArchiveEntries(options: {
 function resolveBuilderTarget(): ReleaseTarget | undefined {
 	if (process.env.RELEASE_PLATFORM || process.env.RELEASE_ARCH) return resolveReleaseTarget()
 	if (
-		(process.platform === "darwin" || process.platform === "win32") &&
+		(process.platform === "darwin" || process.platform === "win32" || process.platform === "linux") &&
 		(process.arch === "x64" || process.arch === "arm64")
 	) {
 		return { platform: process.platform, arch: process.arch }
@@ -643,7 +710,7 @@ function resolveBuilderTarget(): ReleaseTarget | undefined {
 function resolveContextTarget(context: AfterPackContext): ReleaseTarget {
 	const platform = context.electronPlatformName
 	const arch = Arch[context.arch]
-	if (platform !== "darwin" && platform !== "win32")
+	if (platform !== "darwin" && platform !== "win32" && platform !== "linux")
 		throw new Error(`Unsupported Builder platform: ${platform}.`)
 	if (arch !== "x64" && arch !== "arm64")
 		throw new Error(`Unsupported Builder architecture: ${arch}.`)
@@ -660,7 +727,7 @@ function assertNativeStagingTarget(target: ReleaseTarget): void {
 }
 
 function resolvePackagedResourcesRoot(appOutDir: string, platform: ReleasePlatform): string {
-	if (platform === "win32") return path.join(appOutDir, "resources")
+	if (platform === "win32" || platform === "linux") return path.join(appOutDir, "resources")
 	const appPath = resolveMacAppPath(appOutDir)
 	return path.join(appPath, "Contents", "Resources")
 }
@@ -763,8 +830,13 @@ function verifySignedMacZip(file: string, arch: ReleaseArchitecture): void {
 	}
 }
 
+export function resolveMacLipoArchitecture(arch: ReleaseArchitecture): string {
+	return arch === "x64" ? "x86_64" : arch
+}
+
 function verifyMacPackagedArchitecture(appPath: string, arch: ReleaseArchitecture): void {
 	if (process.platform !== "darwin") return
+	const expectedArchitecture = resolveMacLipoArchitecture(arch)
 	const candidates = [
 		path.join(appPath, "Contents", "MacOS", "Cocode"),
 		path.join(appPath, "Contents", "Resources", "cocode-node"),
@@ -778,7 +850,7 @@ function verifyMacPackagedArchitecture(appPath: string, arch: ReleaseArchitectur
 		const architectures = execFileSync("lipo", ["-archs", file], { encoding: "utf8" })
 			.trim()
 			.split(/\s+/)
-		if (!architectures.includes(arch))
+		if (!architectures.includes(expectedArchitecture))
 			throw new Error(`Native packaged file architecture mismatch for ${arch}: ${file}`)
 	}
 }
@@ -794,11 +866,14 @@ function selectUpdateArtifact(
 	platform: ReleasePlatform,
 	artifacts: readonly string[],
 ): string {
-	const extension = platform === "darwin" ? ".zip" : ".exe"
-	const artifact = artifacts.find((candidate) => candidate.toLowerCase().endsWith(extension))
+	const extensions =
+		platform === "darwin" ? [".zip"] : platform === "win32" ? [".exe"] : [".deb", ".rpm"]
+	const artifact = artifacts.find((candidate) =>
+		extensions.some((extension) => candidate.toLowerCase().endsWith(extension)),
+	)
 	if (!artifact)
 		throw new Error(
-			`No ${platform === "darwin" ? "ZIP" : "NSIS"} update artifact was generated.`,
+			`No ${platform === "darwin" ? "ZIP" : platform === "win32" ? "NSIS" : "DEB/RPM"} update artifact was generated.`,
 		)
 	return artifact
 }

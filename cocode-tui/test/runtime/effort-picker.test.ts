@@ -13,9 +13,14 @@ const efforts = [
   { id: 'high', name: 'High' },
   { id: 'max', name: 'Max', description: 'Slowest' },
 ]
+const officialEfforts = [
+  { id: 'high', name: 'High' },
+  { id: 'max', name: 'Max' },
+  { id: 'off', name: 'Off' },
+]
 
 describe('effort picker state', () => {
-  it('selects the current effort and prepends a default choice when none is configured', () => {
+  it('selects the current effort and prepends the Off choice when none is configured', () => {
     const state = createEffortPicker({
       providerId: 'deepseek-official',
       modelId: 'deepseek-v4-flash',
@@ -24,6 +29,7 @@ describe('effort picker state', () => {
     })
 
     expect(state.items.map((item) => item.effort)).toEqual([undefined, 'high', 'max'])
+    expect(state.items[0]?.label).toBe('Off')
     expect(selectedEffort(state)).toEqual({
       key: 'effort:max',
       effort: 'max',
@@ -43,6 +49,17 @@ describe('effort picker state', () => {
 
     expect(state.items.map((item) => item.effort)).toEqual(['high', 'max'])
     expect(selectedEffort(state)?.effort).toBe('high')
+  })
+
+  it('orders the official effort vocabulary as Off, High, Max', () => {
+    const state = createEffortPicker({
+      providerId: 'cocode-nut',
+      modelId: 'deepseek-v4-flash',
+      efforts: officialEfforts,
+    })
+
+    expect(state.items.map((item) => item.label)).toEqual(['Off', 'High', 'Max'])
+    expect(selectedEffort(state)?.effort).toBe('off')
   })
 
   it('wraps selection and tracks pending, completion, failure, and close', () => {

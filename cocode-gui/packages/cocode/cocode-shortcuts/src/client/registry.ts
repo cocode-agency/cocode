@@ -79,6 +79,7 @@ export class ShortcutRegistry {
   private snapshot: ShortcutSnapshot
   private globalSyncGeneration = 0
   private globalError: string | undefined
+  private settingsWriteChain: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly ctx: ClientContext,
@@ -148,18 +149,26 @@ export class ShortcutRegistry {
       ...binding,
       ...(binding.combo === undefined ? {} : { disabled: false }),
     }
-    void this.settings.setBindings({
+    this.userBindings = {
       ...this.userBindings,
       [commandId]: nextBinding,
-    })
+    }
+    this.publish()
+    this.queueSettingsWrite()
   }
 
   resetBinding(commandId: string): Promise<void> {
-    return this.settings.resetBinding(commandId)
+    const next = { ...this.userBindings }
+    delete next[commandId]
+    this.userBindings = next
+    this.publish()
+    return this.queueSettingsWrite()
   }
 
   resetAllBindings(): Promise<void> {
-    return this.settings.setBindings({})
+    this.userBindings = {}
+    this.publish()
+    return this.queueSettingsWrite()
   }
 
   clearOrphaned(): Promise<void> {
@@ -174,7 +183,9 @@ export class ShortcutRegistry {
       changed = true
     }
     if (!changed) return Promise.resolve()
-    return this.settings.setBindings(next)
+    this.userBindings = next
+    this.publish()
+    return this.queueSettingsWrite()
   }
 
   reloadSettings(): void {
@@ -197,7 +208,13 @@ export class ShortcutRegistry {
 
   handle(event: KeyboardEvent): boolean {
     if (this.recording || event.isComposing || event.keyCode === 229) return false
-    const candidates = this.snapshot.bindings.filter(binding => binding.scope === "app")
+    // A browser build has no Electron globalShortcut transport. Treat a
+    // global preference as local in that carrier so a shortcut never becomes
+    // silently unusable when the preload bridge is unavailable.
+    const globalRuntimeAvailable = window.desktopApi?.shortcuts !== undefined
+    const candidates = this.snapshot.bindings.filter(
+      binding => binding.scope === "app" || !globalRuntimeAvailable,
+    )
     for (const binding of candidates) {
       const command = this.commandsById.get(binding.commandId)
       if (command === undefined) continue
@@ -217,7 +234,14 @@ export class ShortcutRegistry {
       if (user?.disabled === true) continue
       const combo = user?.combo ?? command.defaultCombo
       if (combo === undefined) continue
-      const scope = user?.scope === "global" && command.globalCapable === true ? "global" : user?.scope ?? command.defaultScope ?? "app"
+      // A persisted `global` value is not enough to make a command global.
+      // Older settings (or a command that later lost global capability) must
+      // fall back to the local app scope instead of becoming an inert binding:
+      // app dispatch intentionally ignores global bindings.
+      const requestedScope = user?.scope ?? command.defaultScope ?? "app"
+      const scope: ShortcutScope = requestedScope === "global" && command.globalCapable === true
+        ? "global"
+        : "app"
       const binding: EffectiveBinding = {
         commandId: command.id,
         combo,
@@ -257,6 +281,13 @@ export class ShortcutRegistry {
     this.snapshot = this.buildSnapshot()
     for (const listener of [...this.listeners]) listener()
     void this.syncGlobalShortcuts(this.snapshot)
+  }
+
+  /** Serialize writes so rapid shortcut edits cannot race the revision fence. */
+  private queueSettingsWrite(): Promise<void> {
+    const bindings = structuredClone(this.userBindings)
+    this.settingsWriteChain = this.settingsWriteChain.then(() => this.settings.setBindings(bindings))
+    return this.settingsWriteChain
   }
 
   private async syncGlobalShortcuts(snapshot: ShortcutSnapshot): Promise<void> {

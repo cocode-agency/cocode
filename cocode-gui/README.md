@@ -5,9 +5,8 @@ provides the workspace surface for sessions, files, terminals, diffs, and
 attachments while the Host owns agent execution and session persistence.
 
 > **Project status:** Developer preview. This package is a private Electron
-> workspace and is built from source as part of the Cocode repository. The
-> current release scripts target macOS and Windows artifacts; Linux is supported
-> for source builds.
+> workspace and is built from source as part of the Cocode repository. Release
+> scripts produce signed macOS/Windows artifacts and native Linux DEB/RPM packages.
 
 See the [repository README](../README.md) for the overall architecture,
 component boundaries, credentials, and TUI setup.
@@ -88,21 +87,69 @@ API key through the DSH credentials flow, or use a hosted Cocode account where
 that separate service is available. Credentials are kept outside the session
 log; do not commit local credential files or `.env` files.
 
-## Release behavior
+### Linux installed commands
 
-Platform-specific release scripts are:
+DEB and RPM packages reserve the unqualified command for the terminal client:
 
 ```sh
-corepack pnpm@10.34.5 run release:mac:x64
-corepack pnpm@10.34.5 run release:mac:arm64
-corepack pnpm@10.34.5 run release:win:x64
-corepack pnpm@10.34.5 run release:win:arm64
+cocode       # start the TUI without launching Desktop first
+cocode tui   # explicit TUI form
+cocode gui   # launch Desktop through the CLI
+cocode-gui   # launch Desktop directly
 ```
 
-Signed macOS ZIP and Windows NSIS builds use `electron-updater` with the shared
-GitHub Releases repository. x64 and ARM64 use independent metadata files, and a
-Draft Release must be published manually only after all platform artifacts pass
-verification. Development and Linux builds do not start the updater.
+The package installs `/usr/bin/cocode` as a system wrapper around the bundled
+Node.js runtime and TUI entry. It resolves `COCODE_HOME` and `COCODE_DSH_HOME`
+from the invoking user's `HOME`, so package installation never writes a root
+user path into the command. The wrapper does not depend on `/etc/profile.d` or
+on a Desktop first-run registration step.
+
+## Release behavior
+
+The canonical release entry is parameterized by target platform and architecture:
+
+```sh
+corepack pnpm@10.34.5 run release -- --platform darwin --arch arm64
+corepack pnpm@10.34.5 run release -- --platform win32 --arch x64
+corepack pnpm@10.34.5 run release -- --platform linux --arch arm64
+```
+
+The `release:<platform>:<arch>` commands remain as compatibility aliases for
+existing automation and local workflows.
+
+The Linux commands must run on a native Linux host matching the requested
+architecture. The release gate rejects macOS/Windows hosts, a mismatched
+`uname -m`, and cross-compilation overrides such as `npm_config_arch`; there is
+no x64-to-arm64 release path. Linux output is written under
+`release/linux/<arch>/` as signed `Cocode-<version>-x86_64.deb` and `.rpm`, or
+the corresponding `arm64` artifacts. Local commands always use `--publish never`.
+
+For a clean Linux checkout, install the three sibling workspaces before the
+release command (the CI workflow uses the same order):
+
+```sh
+cd ../cocode-host-supervisor && corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+cd ../cocode-tui && corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+cd ../cocode-gui && corepack pnpm@10.34.5 install --frozen-lockfile
+```
+
+The release verifier extracts the native packages and runs the unpacked
+`cocode-gui` executable under `xvfb-run` when a headless launch smoke is
+requested. It also checks package architecture, maintainer scripts, embedded
+runtime/TUI/native modules, updater metadata, signatures, checksums, and the
+architecture-scoped release manifest.
+
+Signed macOS ZIP and Windows NSIS builds, plus Linux DEB/RPM builds, use
+`electron-updater` with the shared GitHub Releases repository. Linux x86_64
+uses `latest-linux.yml`; Linux arm64 uses `latest-linux-arm64.yml`. The
+architecture-specific checksum and evidence files are named
+`SHA256SUMS-x64`/`SHA256SUMS-arm64` and
+`linux-release-manifest-x64.json`/`linux-release-manifest-arm64.json` so they
+can coexist in GitHub Release's flat asset namespace. A Draft Release is
+published only by the protected GitHub Actions publish job after both native
+architectures pass verification. Development builds and Linux `--dir` or
+unpacked AppDirs do not start the updater; automatic updates require a native
+package installation.
 
 Windows x64 and ARM64 releases are per-user NSIS installers. Formal releases
 must use the configured team signing service; the release and update path does

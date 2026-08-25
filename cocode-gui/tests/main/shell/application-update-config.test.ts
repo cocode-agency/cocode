@@ -15,11 +15,14 @@ const base = {
 test("enables packaged macOS updates on the native architecture channel", () => {
 	assert.deepEqual(resolveApplicationUpdateConfig(base), {
 		enabled: true,
+		platform: "darwin",
 		repository: "cocode-agency/cocode",
 		updateInterval: "10 minutes",
 		channel: "arm64",
 	})
-	assert.equal(resolveApplicationUpdateConfig({ ...base, architecture: "x64" }).channel, "x64")
+	const x64Config = resolveApplicationUpdateConfig({ ...base, architecture: "x64" })
+	assert.equal(x64Config.enabled, true)
+	if (x64Config.enabled) assert.equal(x64Config.channel, "x64")
 })
 
 test("honors the repository and interval environment overrides", () => {
@@ -31,7 +34,13 @@ test("honors the repository and interval environment overrides", () => {
 				ELECTRON_UPDATE_INTERVAL: "1 hour",
 			},
 		}),
-		{ enabled: true, repository: "acme/desktop", updateInterval: "1 hour", channel: "arm64" },
+		{
+			enabled: true,
+			platform: "darwin",
+			repository: "acme/desktop",
+			updateInterval: "1 hour",
+			channel: "arm64",
+		},
 	)
 })
 
@@ -44,6 +53,7 @@ test("enables packaged Windows x64 and arm64 updates on architecture channels", 
 		}),
 		{
 			enabled: true,
+			platform: "win32",
 			repository: "cocode-agency/cocode",
 			updateInterval: "10 minutes",
 			channel: "x64",
@@ -57,6 +67,7 @@ test("enables packaged Windows x64 and arm64 updates on architecture channels", 
 		}),
 		{
 			enabled: true,
+			platform: "win32",
 			repository: "cocode-agency/cocode",
 			updateInterval: "10 minutes",
 			channel: "arm64",
@@ -74,6 +85,7 @@ test("uses the shared repository override for both Windows architectures", () =>
 		}),
 		{
 			enabled: true,
+			platform: "win32",
 			repository: "acme/desktop",
 			updateInterval: "10 minutes",
 			channel: "arm64",
@@ -81,12 +93,25 @@ test("uses the shared repository override for both Windows architectures", () =>
 	)
 })
 
+test("disables packaged Linux updates because DEB and RPM are package-manager managed", () => {
+	for (const architecture of ["x64", "arm64"]) {
+		assert.deepEqual(
+			resolveApplicationUpdateConfig({
+				...base,
+				platform: "linux",
+				architecture,
+			}),
+			{ enabled: false, reason: "managed-by-package-manager" },
+		)
+	}
+})
+
 test("disables development, unsupported platforms, and unsupported architectures", () => {
 	assert.deepEqual(resolveApplicationUpdateConfig({ ...base, packaged: false }), {
 		enabled: false,
 		reason: "development",
 	})
-	assert.deepEqual(resolveApplicationUpdateConfig({ ...base, platform: "linux" }), {
+	assert.deepEqual(resolveApplicationUpdateConfig({ ...base, platform: "freebsd" }), {
 		enabled: false,
 		reason: "unsupported-platform",
 	})

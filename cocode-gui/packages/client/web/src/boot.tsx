@@ -77,6 +77,7 @@ export class AppWebEntry {
   private modules!: ClientModuleSystem
   private manifest!: BootManifest
   private root: Root | undefined
+  private static readonly recoveryKey = 'cocode:web-boot-recovery-attempted'
 
   /**
    * Hold the mount point; all work happens in {@link run}.
@@ -118,6 +119,7 @@ export class AppWebEntry {
         settled={this.settled}
         status={this.status}
         error={this.error}
+        onRetry={() => this.reloadForRecovery()}
         renderApp={() => {
           const shell = this.ctx.get('appShell')
           // Unreachable after a clean settle (the app-shell entry is in every graph).
@@ -135,12 +137,37 @@ export class AppWebEntry {
     this.ctx = new Context()
     try {
       await this.runPluginBoot(prefetching)
+      this.clearRecoveryMarker()
       this.settled.set(true)
     } catch (reason) {
       // Stay on the loading page; surface the sweep report (fail loud).
       console.error(reason)
       this.error.set(reason instanceof Error ? reason.message : String(reason))
+      this.tryAutomaticRecovery()
     }
+  }
+
+  /** Retry once automatically: a stale index or plugin bundle is the common boot failure. */
+  private tryAutomaticRecovery(): void {
+    try {
+      if (sessionStorage.getItem(AppWebEntry.recoveryKey) === '1') return
+      sessionStorage.setItem(AppWebEntry.recoveryKey, '1')
+      window.setTimeout(() => this.reloadForRecovery(), 250)
+    } catch {
+      // Storage can be unavailable in privacy-restricted webviews; the manual action remains.
+    }
+  }
+
+  /** Reload with a cache-busting query so the host serves a fresh graph and bundles. */
+  private reloadForRecovery(): void {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.set('boot-retry', String(Date.now()))
+    window.location.assign(url.toString())
+  }
+
+  private clearRecoveryMarker(): void {
+    try { sessionStorage.removeItem(AppWebEntry.recoveryKey) } catch { /* unavailable storage is harmless */ }
   }
 
   /** Unmount the shell (loading page or settled UI). */

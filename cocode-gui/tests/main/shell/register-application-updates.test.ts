@@ -9,6 +9,7 @@ import {
 class FakeElectronUpdater extends EventEmitter {
 	autoDownload = false
 	autoInstallOnAppQuit = true
+	allowDowngrade = true
 	channel: string | null = null
 	feed: ElectronUpdaterFeed | null = null
 
@@ -31,6 +32,7 @@ test("configures electron-updater with the GitHub repository and architecture ch
 
 	configureElectronUpdater(updater, {
 		enabled: true,
+		platform: "win32",
 		repository: "acme/desktop",
 		updateInterval: "10 minutes",
 		channel: "arm64",
@@ -43,6 +45,7 @@ test("configures electron-updater with the GitHub repository and architecture ch
 		channel: "arm64",
 	})
 	assert.equal(updater.channel, "arm64")
-	assert.equal(updater.autoDownload, true)
+	assert.equal(updater.autoDownload, false)
 	assert.equal(updater.autoInstallOnAppQuit, false)
+	assert.equal(updater.allowDowngrade, false)
 })

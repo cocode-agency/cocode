@@ -2,7 +2,7 @@
 
 DSH_DIR ?= cocode-host-supervisor
 
-.PHONY: help dev gui gui-dev gui-build gui-web tui tui-preflight dsh install-gui install-tui install-dsh
+.PHONY: help dev gui gui-dev gui-build gui-web tui tui-preflight dsh install-gui install-tui install-dsh benchmark-terminal
 
 .DEFAULT_GOAL := help
 
@@ -20,6 +20,7 @@ help:
 	@echo "Install GUI:     make install-gui"
 	@echo "Install TUI:     make install-tui"
 	@echo "Install DSH:     make install-dsh    → install @deepseek-ai/dsh dependencies"
+	@echo "Benchmark:       make benchmark-terminal → run Cocode through Harbor / Terminal-Bench"
 
 # Anchor target so `make dev gui` runs the GUI dev server.
 dev:
@@ -54,3 +55,6 @@ install-tui:
 
 install-dsh:
 	cd $(DSH_DIR) && pnpm install
+
+benchmark-terminal:
+	bash benchmarks/harbor/run-terminal-bench.sh $(ARGS)

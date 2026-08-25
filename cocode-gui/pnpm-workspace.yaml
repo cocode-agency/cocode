@@ -6,5 +6,4 @@ onlyBuiltDependencies:
     - electron
     - electron-winstaller
     - esbuild
-    - keytar
     - node-pty

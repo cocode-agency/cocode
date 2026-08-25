@@ -14,9 +14,9 @@ import {
   FILE_CUT_COMMAND, FILE_DELETE_COMMAND, FILE_EXPAND_COMMAND, FILE_OPEN_COMMAND,
   FILE_PASTE_COMMAND, FILE_RENAME_COMMAND, FILE_SELECT_NEXT_COMMAND,
   FILE_SELECT_PREVIOUS_COMMAND, fileShortcutBindingsSnapshot, fileShortcutLabel,
-  setActiveFileShortcutTarget, subscribeFileShortcutBindings,
+  removeActiveFileShortcutTarget, setActiveFileShortcutTarget, subscribeFileShortcutBindings,
 } from "./file-shortcuts.ts"
-import { treeMentionPath } from "./file-mention.ts"
+import { fileMentionText, treeMentionPath } from "./file-mention.ts"
 import { ChevronIcon, FileGlyph, FolderGlyph, SearchIcon } from "./icons.tsx"
 import { localeRevision, subscribeLocale, t } from "./locales.ts"
 import css from "./panels.module.css"
@@ -343,7 +343,7 @@ export function FilesPanel(props: WorkbenchPanelProps) {
     }
     setActiveFileShortcutTarget(target)
     return () => {
-      if (activeFileShortcutTarget() === target) setActiveFileShortcutTarget(undefined)
+      removeActiveFileShortcutTarget(target)
     }
   })
 
@@ -403,6 +403,7 @@ export function FilesPanel(props: WorkbenchPanelProps) {
         <div
           key={entry.path}
           className={css.treeRow}
+          draggable={!entry.isDir}
           data-selected={selected === entry.path || undefined}
           data-cut={(clipboard?.cut === true && clipboard.path === entry.path) || undefined}
           style={{ paddingLeft: 8 + depth * 12 }}
@@ -410,6 +411,16 @@ export function FilesPanel(props: WorkbenchPanelProps) {
           aria-expanded={entry.isDir ? open : undefined}
           aria-selected={selected === entry.path}
           onClick={() => { setTreeFocused(true); treeRef.current?.focus(); openEntry(entry) }}
+          onDragStart={event => {
+            if (entry.isDir) {
+              event.preventDefault()
+              return
+            }
+            event.dataTransfer.effectAllowed = "copy"
+            const mention = fileMentionText(treeMentionPath(cwd, entry.path, false))
+            event.dataTransfer.setData("application/x-cocode-file-mention", mention)
+            event.dataTransfer.setData("text/plain", mention)
+          }}
           onContextMenu={event => openMenu(event, entry)}
         >
           {entry.isDir

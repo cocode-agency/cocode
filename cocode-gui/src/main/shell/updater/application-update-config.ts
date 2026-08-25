@@ -1,10 +1,12 @@
 export type ApplicationUpdateDisabledReason =
 	| "development"
 	| "disabled-by-environment"
+	| "managed-by-package-manager"
 	| "unsupported-platform"
 	| "unsupported-architecture"
 
 export type ApplicationUpdateChannel = "x64" | "arm64"
+export type ApplicationUpdatePlatform = "darwin" | "win32" | "linux"
 
 export type ApplicationUpdateConfig =
 	| {
@@ -13,9 +15,10 @@ export type ApplicationUpdateConfig =
 	  }
 	| {
 			readonly enabled: true
+			readonly platform: ApplicationUpdatePlatform
 			readonly repository: string
 			readonly updateInterval: string
-			readonly channel: ApplicationUpdateChannel
+			readonly channel: ApplicationUpdateChannel | null
 	  }
 
 export interface ResolveApplicationUpdateConfigOptions {
@@ -37,27 +40,26 @@ export function resolveApplicationUpdateConfig({
 	if (isDisabled(environment.ELECTRON_AUTO_UPDATE)) {
 		return { enabled: false, reason: "disabled-by-environment" }
 	}
-	if (platform !== "darwin" && platform !== "win32") {
+	if (platform !== "darwin" && platform !== "win32" && platform !== "linux") {
 		return { enabled: false, reason: "unsupported-platform" }
 	}
-	if (platform === "win32" && architecture !== "x64" && architecture !== "arm64") {
+	if (architecture !== "x64" && architecture !== "arm64") {
 		return { enabled: false, reason: "unsupported-architecture" }
 	}
-	if (platform === "darwin" && architecture !== "x64" && architecture !== "arm64") {
-		return { enabled: false, reason: "unsupported-architecture" }
+	if (platform === "linux") {
+		return { enabled: false, reason: "managed-by-package-manager" }
 	}
 
 	const repository = environment.ELECTRON_UPDATE_REPOSITORY?.trim() || defaultRepository
 	assertGitHubRepository(repository)
 	const updateInterval = environment.ELECTRON_UPDATE_INTERVAL?.trim() || "10 minutes"
 	assertUpdateInterval(updateInterval)
-	const channel = architecture as ApplicationUpdateChannel
-
 	return {
 		enabled: true,
+		platform,
 		repository,
 		updateInterval,
-		channel,
+		channel: architecture as ApplicationUpdateChannel,
 	}
 }
 

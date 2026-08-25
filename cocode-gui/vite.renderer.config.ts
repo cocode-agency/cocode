@@ -35,35 +35,27 @@ export default defineConfig({
 			},
 			{
 				find: /^@deepseek-ai\/dsh-client-web$/,
-				replacement: localClient("web/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-web-react$/,
-				replacement: localClient("web-react/src/index.ts"),
+				replacement: localClient("client/web/src/index.ts"),
 			},
 			{
 				find: /^@deepseek-ai\/dsh-client-ui-slots$/,
-				replacement: localClient("ui-slots/src/index.ts"),
+				replacement: localClient("client/ui-slots/src/index.ts"),
 			},
 			{
 				find: /^@deepseek-ai\/dsh-client-ui-primitives$/,
-				replacement: localClient("ui-primitives/src/index.ts"),
+				replacement: localClient("client/ui-primitives/src/index.ts"),
 			},
 			{
 				find: /^@deepseek-ai\/dsh-client-ui-attachment$/,
-				replacement: localClient("ui-attachment/src/index.ts"),
+				replacement: localClient("client/ui-attachment/src/index.ts"),
 			},
 			{
 				find: /^@deepseek-ai\/dsh-client-ui-theme\/styles\/(.+)$/,
-				replacement: `${localClient("ui-theme/src/styles")}/$1`,
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-schema-form$/,
-				replacement: localClient("schema-form/src/index.ts"),
+				replacement: `${localClient("client/ui-theme/src/styles")}/$1`,
 			},
 			{
 				find: /^@deepseek-ai\/dsh-client-modules\/client$/,
-				replacement: localClient("modules/src/client/index.ts"),
+				replacement: localClient("client/modules/src/client/index.ts"),
 			},
 			{
 				find: /^@deepseek-ai\/cordis$/,
@@ -90,16 +82,21 @@ export default defineConfig({
 	},
 })
 
-function normalizeRuntimeUrl(value: string | undefined): string | undefined {
+export function normalizeRuntimeUrl(value: string | undefined): string | undefined {
 	const trimmed = value?.trim()
 	if (trimmed === undefined || trimmed.length === 0) return undefined
 	return trimmed.replace(/\/$/, "")
 }
 
-function createDshRuntimeProxy(runtimeUrl: string): Record<string, ProxyOptions> {
+export function createDshRuntimeProxy(runtimeUrl: string): Record<string, ProxyOptions> {
+	// changeOrigin must stay false: the /api trust fence (client-connection)
+	// requires the request Host header to match the browser's Origin host, and
+	// the page always calls same-origin through this proxy (localhost:5273).
+	// Rewriting Host to the target would 403 every /api RPC — pickDirectory
+	// and the other loopback-pinned methods fail first, then the rest.
 	const proxy: ProxyOptions = {
 		target: runtimeUrl,
-		changeOrigin: true,
+		changeOrigin: false,
 		ws: true,
 	}
 	return {
@@ -155,7 +152,7 @@ function dshWebDevPlugin(): Plugin {
 	}
 }
 
-function findDshClientBundles(): {
+export function findDshClientBundles(): {
 	readonly bundles: ReadonlyMap<string, string>
 	readonly missing: readonly string[]
 } {
@@ -166,27 +163,48 @@ function findDshClientBundles(): {
 		{ root: cocodeClientRoot, prefix: "cocode" },
 	]) {
 		if (!existsSync(source.root)) continue
-		for (const entry of readdirSync(source.root, { withFileTypes: true })) {
-			if (!entry.isDirectory()) continue
-			const packageRoot = path.join(source.root, entry.name)
-			const manifestPath = path.join(packageRoot, "package.json")
-			const clientBundle = path.join(packageRoot, "lib", "client.js")
-			if (!existsSync(manifestPath)) continue
-			const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-				dsh?: { client?: { platform?: string } }
-			}
-			if (manifest.dsh?.client?.platform !== "web") continue
-			const directory = source.prefix
-				? path.posix.join(source.prefix, entry.name)
-				: entry.name
-			if (!existsSync(clientBundle)) {
-				missing.push(directory)
-				continue
-			}
-			bundles.set(directory, clientBundle)
-		}
+		visitDshClientPackages(source.root, source, source.root, bundles, missing)
 	}
 	return { bundles, missing }
+}
+
+function visitDshClientPackages(
+	directory: string,
+	source: { readonly root: string; readonly prefix: string },
+	root: string,
+	bundles: Map<string, string>,
+	missing: string[],
+): void {
+	for (const entry of readdirSync(directory, { withFileTypes: true })) {
+		if (!entry.isDirectory() || entry.name === "node_modules" || entry.name === "lib") continue
+		const packageRoot = path.join(directory, entry.name)
+		const manifestPath = path.join(packageRoot, "package.json")
+		if (!existsSync(manifestPath)) {
+			visitDshClientPackages(packageRoot, source, root, bundles, missing)
+			continue
+		}
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+			name?: string
+			dsh?: { client?: { platform?: string } }
+		}
+		if (manifest.dsh?.client?.platform !== "web" || typeof manifest.name !== "string") continue
+		const relativeDirectory = path.relative(root, packageRoot).split(path.sep).join("/")
+		const bundleDirectory = source.prefix
+			? path.posix.join(source.prefix, relativeDirectory)
+			: clientBundleDirectory(manifest.name, relativeDirectory)
+		const clientBundle = path.join(packageRoot, "lib", "client.js")
+		if (!existsSync(clientBundle)) {
+			missing.push(bundleDirectory)
+			continue
+		}
+		bundles.set(bundleDirectory, clientBundle)
+	}
+}
+
+function clientBundleDirectory(packageName: string, relativeDirectory: string): string {
+	const prefix = "@deepseek-ai/dsh-client-"
+	if (packageName.startsWith(prefix)) return packageName.slice(prefix.length)
+	return relativeDirectory
 }
 
 function dshClientBundlePlugin(): Plugin {
