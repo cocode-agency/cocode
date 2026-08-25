@@ -78,6 +78,9 @@
   z-index: 10;
   overflow: hidden;
   padding: 7px 28px 7px 20px;
+  /* The row is above .headerDrag in the stacking order. Keep its empty
+     surface draggable as well; controls and selectable text opt out below. */
+  -webkit-app-region: drag;
 }
 
 .titleCluster {
@@ -86,6 +89,9 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  /* .titleRow sits above .headerDrag. Keep the actual painted row a drag
+     surface too; the nested controls/text below explicitly opt out. */
+  -webkit-app-region: drag;
 }
 
 .crumbs {
@@ -256,6 +262,10 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  /* Anchor .scrollBodyDrag to this scrollport. Without a positioned
+     containing block, the absolute strip resolves against the page/frame and
+     can remain over the header after the transcript scrolls. */
+  position: relative;
   overflow-y: auto;
   /* The column scrolls on ONE axis. Stating `hidden` rather than leaving the
      initial `visible` is what removes the horizontal bar: a box that scrolls in
@@ -272,12 +282,17 @@
   scrollbar-gutter: stable;
 }
 
-/* Electron windows use the conversation scroll surface as a safe drag
-   fallback when the pointer is over empty space. Descendants opt out so the
-   transcript, composer, links, controls, and images retain normal mouse
-   events and selection behavior. */
-:global([data-conversation-scroll]) {
+/* Only the blank new-topic hero uses the conversation scroll surface as a
+   drag fallback. The active transcript deliberately stays no-drag: applying
+   drag to the whole scrollport and then overriding every message descendant
+   makes Chromium/Electron maintain a native drag region for the full message
+   tree, and long conversations can steal or invalidate the titlebar hit test. */
+.root[data-phase='hero'] :global([data-conversation-scroll]) {
   -webkit-app-region: drag;
+}
+
+.root[data-phase='active'] :global([data-conversation-scroll]) {
+  -webkit-app-region: no-drag;
 }
 
 /* A fixed Settings overlay is rendered from the sidebar but can cover this
@@ -287,8 +302,13 @@
   -webkit-app-region: no-drag;
 }
 
-:global([data-conversation-scroll]) :where(*) {
+.root[data-phase='hero'] :global([data-conversation-scroll]) :where(*) {
   -webkit-app-region: no-drag;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.root[data-phase='active'] :global([data-conversation-scroll]) :where(*) {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -444,6 +464,7 @@
 }
 
 .scrollBodyDrag {
+  display: none;
   position: absolute;
   top: 0;
   left: 0;
@@ -454,6 +475,14 @@
   /* The parent is the drag target; this layer must not sit above hero/chat
      content and swallow its clicks or text selection. */
   pointer-events: none;
+}
+
+.root[data-phase='active'] .scrollBodyDrag {
+  display: none;
+}
+
+.root[data-phase='hero'] .scrollBodyDrag {
+  display: block;
 }
 
 /* Settling (session replaying, hero/docked unknown): keep the composer seat

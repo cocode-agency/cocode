@@ -22,4 +22,8 @@ describe('dark theme surface tokens', () => {
     expect(darkTheme).toContain('--dsw-alias-bg-module-platform: #101012;')
     expect(darkTheme).toContain('--dsw-specific-sidebar-nav-item-active: #242428;')
   })
+
+  it('uses the requested dark overlay surface', () => {
+    expect(darkTheme).toContain('--dsw-alias-bg-overlay: #161619;')
+  })
 })

@@ -257,7 +257,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-bg-mask-drop: rgba(39, 39, 48, 0.7);
   --dsw-alias-bg-module-platform: #101012;
   --dsw-alias-bg-multi-select: var(--dsw-static-neutral-850);
-  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-bg-overlay: #161619;
   --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
   --dsw-alias-border-inverted2: rgba(255, 255, 255, 0.08);
   --dsw-alias-border-inverted: rgba(255, 255, 255, 0.06);
