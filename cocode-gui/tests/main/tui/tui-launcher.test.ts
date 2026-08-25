@@ -81,7 +81,9 @@ test("Desktop CLI installation is idempotent and preserves unmanaged commands", 
 			chmodSync(fixture.shimPath, 0o755)
 
 			const launcher = new TuiLauncher()
-			assert.equal((await launcher.getCommandLineToolStatus()).state, "stale")
+			const before = await launcher.getCommandLineToolStatus()
+			assert.equal(before.state, "stale")
+			assert.match(before.detail ?? "", /older Desktop installation|integrity check failed/)
 			const result = await launcher.ensureCommandLineTool()
 			assert.equal(result.changed, true)
 			assert.equal(result.status.state, "installed")

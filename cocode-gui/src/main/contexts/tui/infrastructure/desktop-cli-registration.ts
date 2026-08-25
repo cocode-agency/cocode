@@ -116,10 +116,8 @@ export class DesktopCliRegistrationService {
 				this.options.buildInvocation(),
 				parseSource(existing.contents),
 			)
-			const installed =
-				stripSourceMarker(existing.contents) === stripSourceMarker(expected) &&
-				existing.executable &&
-				metadata.runtimeValid
+			const shimCurrent = stripSourceMarker(existing.contents) === stripSourceMarker(expected)
+			const installed = shimCurrent && existing.executable && metadata.runtimeValid
 			return createStatus(
 				candidate.shimPath,
 				candidate.directory,
@@ -128,7 +126,9 @@ export class DesktopCliRegistrationService {
 				installed ? "installed" : "stale",
 				true,
 				true,
-				installed ? undefined : "The Desktop CLI shim or bundled runtime is stale.",
+				installed
+					? undefined
+					: staleDetail(shimCurrent, existing.executable, metadata.runtimeValid),
 				metadata,
 				parseSource(existing.contents),
 			)
@@ -270,6 +270,18 @@ function createStatus(
 			: { manifestFingerprint: metadata.manifestFingerprint }),
 		...(detail === undefined ? {} : { detail }),
 	}
+}
+
+function staleDetail(shimCurrent: boolean, executable: boolean, runtimeValid: boolean): string {
+	const reasons: string[] = []
+	if (!shimCurrent) reasons.push("the CLI shim points to an older Desktop installation")
+	if (!executable) reasons.push("the CLI shim is not executable")
+	if (!runtimeValid) reasons.push("the bundled runtime integrity check failed")
+	return reasons.length === 0
+		? "The Desktop CLI needs repair."
+		: `The Desktop CLI needs repair because ${reasons.join(
+				" and ",
+		  )}. This is not a version upgrade.`
 }
 
 async function readExistingShim(file: string): Promise<ExistingShim | undefined> {

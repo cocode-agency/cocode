@@ -1,0 +1,154 @@
+/* Boot page styles are self-contained: the theme base stylesheets are linked
+   by the shell, but the loading page must render acceptably even before/without
+   them, so this file uses tokens with Cocode light-palette fallbacks (the one
+   sanctioned fallback site — plugin packages must not do this). */
+
+.boot {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--dsw-alias-bg-base, #ffffff);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.wordmark {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--dsw-alias-label-primary, #0a0a0a);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #a1a1aa);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--dsw-alias-border-l2, #d4d4d8);
+  border-top-color: var(--dsw-alias-state-business-primary, #2563eb);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.failed {
+  width: min(520px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.failedIcon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--dsw-alias-state-danger-primary, #b42318);
+  background: var(--dsw-alias-state-danger-secondary, #fef3f2);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.failedTitle {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #0a0a0a);
+}
+
+.failedMessage {
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, #71717a);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.primaryAction,
+.secondaryAction {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.primaryAction {
+  color: var(--dsw-alias-label-inverse, #ffffff);
+  background: var(--dsw-alias-state-business-primary, #2563eb);
+}
+
+.secondaryAction {
+  color: var(--dsw-alias-label-secondary, #71717a);
+  background: var(--dsw-alias-fill-tertiary, #f4f4f5);
+}
+
+.primaryAction:hover:not(:disabled),
+.secondaryAction:hover {
+  opacity: 0.86;
+}
+
+.primaryAction:active:not(:disabled),
+.secondaryAction:active {
+  transform: scale(0.96);
+}
+
+.primaryAction:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.details {
+  width: 100%;
+  margin-top: 4px;
+  text-align: left;
+  color: var(--dsw-alias-label-tertiary, #a1a1aa);
+  font-size: 11px;
+}
+
+.details summary {
+  cursor: pointer;
+  text-align: center;
+}
+
+.detailBody {
+  max-height: 180px;
+  overflow: auto;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-fill-tertiary, #f4f4f5);
+}
+
+.failedItem {
+  margin: 0;
+  font-family: var(--ds-font-family-code, ui-monospace, 'SF Mono', Menlo, Consolas, 'Courier New');
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #71717a);
+}

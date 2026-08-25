@@ -15,16 +15,20 @@ export type CocodeClientIdentity = {
 }
 
 const installation = process.platform === "linux" ? undefined : new SecureVault<string>("installation-id.bin")
+let processInstallationId: string | undefined
 
 export async function guiClientIdentity(): Promise<CocodeClientIdentity> {
-	let installationId = installation === undefined ? undefined : await installation.read()
-	if (installationId === undefined) {
-		try {
-			installationId = (
-				await readFile(`${app.getPath("userData")}/installation-id.txt`, "utf8")
-			).trim()
-		} catch {
-			installationId = undefined
+	let installationId = processInstallationId
+	if (installationId === undefined || installationId === "") {
+		installationId = installation === undefined ? undefined : await installation.read()
+		if (installationId === undefined || installationId === "") {
+			try {
+				installationId = (
+					await readFile(`${app.getPath("userData")}/installation-id.txt`, "utf8")
+				).trim()
+			} catch {
+				installationId = undefined
+			}
 		}
 		if (installationId === undefined || installationId === "") {
 			installationId = randomUUID()
@@ -38,6 +42,7 @@ export async function guiClientIdentity(): Promise<CocodeClientIdentity> {
 			}
 		}
 	}
+	processInstallationId = installationId
 	const currentPlatform = platform()
 	const currentArch = arch()
 	return {

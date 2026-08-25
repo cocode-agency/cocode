@@ -2,7 +2,7 @@
  * RFC 8628 device authorization against the Cocode agency.
  */
 
-import { jsonRequest, problemCode } from './agency.ts'
+import { isManagedClientMismatch, jsonRequest, problemCode } from './agency.ts'
 import { TuiError } from '../errors/index.ts'
 import { normalizeAgencyOrigin, validateVerificationUrl } from './origin.ts'
 import { DEVICE_SCOPES, KEY_NAME, KEY_TTL_DAYS, type CloudModel, type MeProfile } from './types.ts'
@@ -180,6 +180,9 @@ export async function mintPersonalKey(
       signal,
     },
   )
+  if (isManagedClientMismatch(created.status, created.value)) {
+    throw new TuiError('AUTH_KEY_CREATE_FAILED', { detail: 'managed_client_mismatch' })
+  }
   if (
     !isRecord(created.value) ||
     (created.status !== 201 && created.status !== 200) ||

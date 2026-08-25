@@ -18,6 +18,58 @@
   line-height: 1.5;
 }
 
+.statusPanel {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.status-stale,
+.status-missing,
+.status-conflict,
+.status-unavailable {
+  border-color: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.statusPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.statusEyebrow {
+  display: block;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.statusValue {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.statusExplanation {
+  max-width: 640px;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.primaryAction {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -45,6 +97,7 @@
 .metricValue {
   min-width: 0;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
   font-size: 14px;
   line-height: 20px;
 }

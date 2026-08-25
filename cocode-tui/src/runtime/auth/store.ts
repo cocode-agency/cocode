@@ -140,23 +140,29 @@ class AuthStoreImpl implements AuthStore {
     try {
       await this.refreshCloudAccount(signal)
       if (signal?.aborted) return
-      const account = await readAccount(this.accountHome)
+      let account = await readAccount(this.accountHome)
       const credentials = await readCredentialsRecovering(this.dshHome)
-      const cloudKey = nonempty(credentials[CLOUD_KEY_REF])
-      if (
-        account !== undefined &&
-        this.cloudModels === undefined &&
-        cloudKey !== undefined
-      ) {
-        try {
-          this.cloudModels = await listHostedModels(
-            account.origin,
-            cloudKey,
-            this.client,
-            signal,
-          )
-        } catch {
-          this.cloudModels = []
+      let cloudKey = nonempty(credentials[CLOUD_KEY_REF])
+      if (account !== undefined && this.cloudModels === undefined) {
+        if (cloudKey !== undefined) {
+          try {
+            this.cloudModels = await listHostedModels(
+              account.origin,
+              cloudKey,
+              this.client,
+              signal,
+            )
+          } catch (error) {
+            if (!(error instanceof TuiError) || error.code !== 'AUTH_KEY_REJECTED') {
+              this.cloudModels = []
+            }
+          }
+        }
+        if (this.cloudModels === undefined) {
+          this.cloudModels = await this.recoverCloudKey(account, signal)
+          if (signal?.aborted) return
+          account = await readAccount(this.accountHome)
+          cloudKey = nonempty((await readCredentialsRecovering(this.dshHome))[CLOUD_KEY_REF])
         }
       }
       if (signal?.aborted) return
@@ -587,6 +593,43 @@ class AuthStoreImpl implements AuthStore {
         : patchCredential(this.dshHome, CLOUD_KEY_REF, cloudKey),
       restoreCloudSettings(this.dshHome, settingsBackup),
     ])
+  }
+
+  private async recoverCloudKey(
+    account: AccountRecord,
+    signal?: AbortSignal,
+  ): Promise<CloudModel[] | undefined> {
+    try {
+      const identity = await tuiClientIdentity(this.accountHome, this.env)
+      const minted = await mintPersonalKey(
+        account.origin,
+        account.accessToken,
+        this.client,
+        signal,
+        identity,
+      )
+      if (signal?.aborted) return undefined
+      const models = await listHostedModels(account.origin, minted.secret, this.client, signal)
+      if (signal?.aborted) return undefined
+      await patchCredential(this.dshHome, CLOUD_KEY_REF, minted.secret)
+      await writeAccount(this.accountHome, {
+        ...account,
+        personalKeyId: minted.id,
+        personalKeyName: KEY_NAME,
+      })
+      return models
+    } catch (error) {
+      if (signal?.aborted) return undefined
+      if (
+        error instanceof TuiError &&
+        (error.code === 'AUTH_SESSION_EXPIRED' ||
+          (error.code === 'AUTH_KEY_CREATE_FAILED' &&
+            error.params.detail === 'managed_client_mismatch'))
+      ) {
+        await this.clearCloudState()
+      }
+      return undefined
+    }
   }
 
   private async refreshCloudAccount(signal?: AbortSignal): Promise<void> {

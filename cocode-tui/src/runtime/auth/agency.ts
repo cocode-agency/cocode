@@ -77,3 +77,10 @@ export function problemTitle(value: unknown, fallback: string): string {
   }
   return fallback
 }
+
+export function isManagedClientMismatch(status: number, value: unknown): boolean {
+  if (status !== 422) return false
+  return /managed client metadata does not match/i.test(
+    `${problemCode(value) ?? ''} ${problemTitle(value, '')}`,
+  )
+}

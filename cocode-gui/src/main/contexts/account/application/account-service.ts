@@ -430,6 +430,12 @@ export class AccountService {
 				await this.handleInvalidIdentity(state)
 				return
 			}
+			if (isManagedClientMismatch(error)) {
+				await this.handleInvalidIdentity(state)
+				if (this.snapshotValue.error?.code === "cleanup-pending") return
+				await this.signIn()
+				return
+			}
 			this.publish({
 				phase: "error",
 				profile: state.profile ?? null,
@@ -643,11 +649,13 @@ export class AccountService {
 				await this.cloudKey.clear()
 			}
 			let state = await this.identity.read()
+			let reusedExisting = false
 			if (state !== undefined) {
 				try {
 					this.stage = "identity-refresh"
 					this.assertIdentityOrigin(state)
 					state = await this.ensureIdentityAccess(state)
+					reusedExisting = true
 				} catch (error) {
 					if (!(error instanceof InvalidIdentityError)) throw error
 					// An explicit retry should be able to recover from a stale or rotated
@@ -658,71 +666,22 @@ export class AccountService {
 				}
 			}
 			if (state === undefined) {
-				this.stage = "callback-server"
-				const callback = await this.listenForCallback("/auth/callback")
-				// Closing the listener is what releases the wait below, so this is
-				// also the cancel handle for as long as the browser round trip runs.
-				this.signInCallback = callback
-				try {
-					const { verifier, challenge } = createPkce()
-					const stateValue = base64Url(randomBytes(24))
-					this.stage = "authorization"
-					const authorizationUrl = await this.agency.startAuthorization({
-						redirectUri: callback.redirectUri,
-						state: stateValue,
-						codeChallenge: challenge,
-					})
-					await this.openExternal(authorizationUrl)
-					const arrived = await callback.wait()
-					if (arrived.searchParams.get("state") !== stateValue)
-						throw new Error("login state mismatch")
-					const code = arrived.searchParams.get("code")
-					if (code === null || code === "") throw new Error("login was not approved")
-					this.stage = "exchange-code"
-					const token = await this.agency.exchangeCode({
-						code,
-						redirectUri: callback.redirectUri,
-						verifier,
-					})
-					state = {
-						origin: this.agency.getOrigin(),
-						accessToken: token.access_token,
-						refreshToken: token.refresh_token,
-						accessExpiresAt: Date.now() + token.expires_in * 1000,
-					}
-					await this.identity.write(state)
-				} finally {
-					this.signInCallback = undefined
-					callback.close()
-				}
+				state = await this.authorizeNativeSession()
 			}
-			this.stage = "identity-refresh"
-			this.assertIdentityOrigin(state)
-			state = await this.ensureIdentityAccess(state)
-			this.stage = "profile"
-			const profile = await this.loadIdentityProfile(state.accessToken)
-			state = { ...state, profile }
-			this.stage = "default-model"
-			const currentDefault = await this.dsh.currentDefault()
-			if (state.preLoginDefault === undefined)
-				state = { ...state, preLoginDefault: currentDefault }
-			await this.identity.write(state)
-			this.publish({
-				phase: "provisioning",
-				profile,
-				cloud: { status: "absent", providerId: CLOUD_PROVIDER },
-			})
-			const snapshot = await this.provision(state)
-			if (snapshot.phase === "signed-in") {
-				try {
-					await this.switchToPaidNutFlash(state.accessToken)
-				} catch (error) {
-					// Sign-in already landed the managed route. Switching the picker
-					// is a preference and must not roll the account back to an error.
-					this.logFailure("paid-nut-default", error)
-				}
+			try {
+				return await this.completeSignedInSession(state)
+			} catch (error) {
+				if (!reusedExisting || !isManagedClientMismatch(error)) throw error
+				const invalid = (await this.identity.read()) ?? state
+				await this.handleInvalidIdentity(invalid)
+				if (this.snapshotValue.error?.code === "cleanup-pending") return this.snapshotValue
+				this.publish({
+					phase: "signing-in",
+					profile: null,
+					cloud: { status: "absent", providerId: CLOUD_PROVIDER },
+				})
+				return await this.completeSignedInSession(await this.authorizeNativeSession())
 			}
-			return snapshot
 		} catch (error) {
 			if (error instanceof SignInCancelledError) {
 				// Abandoning a sign-in leaves the account exactly where it started.
@@ -733,6 +692,10 @@ export class AccountService {
 				return snapshot
 			}
 			this.logFailure("sign-in", error)
+			if (isManagedClientMismatch(error)) {
+				const invalid = await this.identity.read()
+				if (invalid !== undefined) await this.handleInvalidIdentity(invalid)
+			}
 			if (isReauthenticationRequired(error)) {
 				const invalid = await this.identity.read()
 				return this.handleBrowserReauthentication(invalid)
@@ -762,6 +725,77 @@ export class AccountService {
 			this.publish(snapshot)
 			return snapshot
 		}
+	}
+
+	private async authorizeNativeSession(): Promise<IdentityState> {
+		this.stage = "callback-server"
+		const callback = await this.listenForCallback("/auth/callback")
+		// Closing the listener is what releases the wait below, so this is
+		// also the cancel handle for as long as the browser round trip runs.
+		this.signInCallback = callback
+		try {
+			const { verifier, challenge } = createPkce()
+			const stateValue = base64Url(randomBytes(24))
+			this.stage = "authorization"
+			const authorizationUrl = await this.agency.startAuthorization({
+				redirectUri: callback.redirectUri,
+				state: stateValue,
+				codeChallenge: challenge,
+			})
+			await this.openExternal(authorizationUrl)
+			const arrived = await callback.wait()
+			if (arrived.searchParams.get("state") !== stateValue)
+				throw new Error("login state mismatch")
+			const code = arrived.searchParams.get("code")
+			if (code === null || code === "") throw new Error("login was not approved")
+			this.stage = "exchange-code"
+			const token = await this.agency.exchangeCode({
+				code,
+				redirectUri: callback.redirectUri,
+				verifier,
+			})
+			const state: IdentityState = {
+				origin: this.agency.getOrigin(),
+				accessToken: token.access_token,
+				refreshToken: token.refresh_token,
+				accessExpiresAt: Date.now() + token.expires_in * 1000,
+			}
+			await this.identity.write(state)
+			return state
+		} finally {
+			this.signInCallback = undefined
+			callback.close()
+		}
+	}
+
+	private async completeSignedInSession(state: IdentityState): Promise<AccountSnapshot> {
+		this.stage = "identity-refresh"
+		this.assertIdentityOrigin(state)
+		state = await this.ensureIdentityAccess(state)
+		this.stage = "profile"
+		const profile = await this.loadIdentityProfile(state.accessToken)
+		state = { ...state, profile }
+		this.stage = "default-model"
+		const currentDefault = await this.dsh.currentDefault()
+		if (state.preLoginDefault === undefined)
+			state = { ...state, preLoginDefault: currentDefault }
+		await this.identity.write(state)
+		this.publish({
+			phase: "provisioning",
+			profile,
+			cloud: { status: "absent", providerId: CLOUD_PROVIDER },
+		})
+		const snapshot = await this.provision(state)
+		if (snapshot.phase === "signed-in") {
+			try {
+				await this.switchToPaidNutFlash(state.accessToken)
+			} catch (error) {
+				// Sign-in already landed the managed route. Switching the picker
+				// is a preference and must not roll the account back to an error.
+				this.logFailure("paid-nut-default", error)
+			}
+		}
+		return snapshot
 	}
 
 	private async provision(state: IdentityState): Promise<AccountSnapshot> {
@@ -1405,6 +1439,14 @@ function isReauthenticationRequired(error: unknown): boolean {
 		/reauthentication[_\s-]*required|reauthenticate(?:d)?\s+(?:this\s+)?browser\s+session/i.test(
 			error.message,
 		)
+	)
+}
+
+function isManagedClientMismatch(error: unknown): boolean {
+	return (
+		error instanceof AgencyHttpError &&
+		error.status === 422 &&
+		/managed client metadata does not match/i.test(error.message)
 	)
 }
 

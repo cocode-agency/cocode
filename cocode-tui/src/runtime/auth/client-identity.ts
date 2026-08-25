@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { readYamlUnknown, writeYamlFile } from './io.ts'
 
 const packageVersion = resolvePackageVersion(import.meta.url)
+let processInstallationId: string | undefined
 
 export type CocodeClientIdentity = {
   product: 'cocode'
@@ -25,9 +26,10 @@ export async function tuiClientIdentity(
   const loaded = await readYamlUnknown(path, { secret: true })
   const record = isRecord(loaded.value) ? loaded.value : {}
   const stored = typeof record.installation_id === 'string' ? record.installation_id : undefined
-  const installationId = stored !== undefined && /^[0-9a-f-]{36}$/i.test(stored)
-    ? stored
-    : randomUUID()
+  const installationId =
+    processInstallationId ??
+    (stored !== undefined && /^[0-9a-f-]{36}$/i.test(stored) ? stored : randomUUID())
+  processInstallationId = installationId
   if (stored !== installationId) {
     try {
       await writeYamlFile(path, { installation_id: installationId }, 0o600)
