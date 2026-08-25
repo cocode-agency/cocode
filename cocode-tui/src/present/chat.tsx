@@ -84,6 +84,7 @@ import {
   SESSION_TREE_WINDOW_SIZE,
   visibleSessionTreeItems,
 } from '../runtime/session-tree-picker.ts'
+import { visibleSubagents } from '../runtime/subagent-picker.ts'
 import { REWIND_WINDOW_SIZE } from '../runtime/rewind-picker.ts'
 import { SKILLS_WINDOW_SIZE, visibleSkills } from '../runtime/skills-picker.ts'
 import {
@@ -115,6 +116,7 @@ import { ReviewPicker } from './components/ReviewPicker.tsx'
 import { ApprovalPanel } from './components/ApprovalPanel.tsx'
 import { QueuePicker } from './components/QueuePicker.tsx'
 import { RemoteQueuePicker } from './components/RemoteQueuePicker.tsx'
+import { SubagentPicker } from './components/SubagentPicker.tsx'
 import { ChecklistPanel } from './components/ChecklistPanel.tsx'
 import { QuitConfirmation } from './components/QuitConfirmation.tsx'
 import {
@@ -267,6 +269,7 @@ export function Chat(props: {
   )
   const resumeOpen = snap.resumePicker?.open === true
   const sessionTreeOpen = snap.sessionTreePicker?.open === true
+  const subagentOpen = snap.subagentPicker?.open === true
   const queueOpen = snap.queuePicker?.open === true
   const checklistOpen = snap.checklist?.open === true
   const queueItems =
@@ -304,6 +307,7 @@ export function Chat(props: {
     !effortOpen &&
     !resumeOpen &&
     !sessionTreeOpen &&
+    !subagentOpen &&
     !queueOpen &&
     !checklistOpen &&
     !historySearchOpen &&
@@ -326,6 +330,7 @@ export function Chat(props: {
     !effortOpen &&
     !resumeOpen &&
     !sessionTreeOpen &&
+    !subagentOpen &&
     !queueOpen &&
     !checklistOpen &&
     !historySearchOpen &&
@@ -566,6 +571,10 @@ export function Chat(props: {
         ? snap.sessionTreePicker === undefined
           ? 0
           : snap.sessionTreePicker.items.length
+        : subagentOpen
+          ? snap.subagentPicker === undefined
+            ? 0
+            : visibleSubagents(snap.subagentPicker).length
         : resumeOpen
           ? resumeItems.length
           : undefined,
@@ -573,6 +582,8 @@ export function Chat(props: {
       ? snap.queuePicker?.selected
       : sessionTreeOpen
         ? snap.sessionTreePicker?.selected
+        : subagentOpen
+          ? snap.subagentPicker?.selected
         : resumeOpen
           ? snap.resumePicker?.selected
           : undefined,
@@ -1914,6 +1925,35 @@ export function Chat(props: {
       return
     }
 
+    if (snap.subagentPicker?.open === true) {
+      if (key.escape) {
+        app.dispatch({ type: 'subagents.close' })
+        return
+      }
+      if (key.upArrow || key.downArrow) {
+        app.dispatch({ type: 'subagents.move', delta: key.upArrow ? -1 : 1 })
+        return
+      }
+      if (key.return) {
+        app.dispatch({ type: 'subagents.confirm' })
+        return
+      }
+      if (key.backspace || key.delete) {
+        app.dispatch({
+          type: 'subagents.setQuery',
+          query: snap.subagentPicker.query.slice(0, -1),
+        })
+        return
+      }
+      if (input !== '' && !key.ctrl && !key.super) {
+        app.dispatch({
+          type: 'subagents.setQuery',
+          query: snap.subagentPicker.query + input,
+        })
+      }
+      return
+    }
+
     if (snap.remoteQueuePicker?.open === true) {
       if (key.escape) {
         app.dispatch({ type: 'remoteQueue.close' })
@@ -2464,6 +2504,13 @@ export function Chat(props: {
         <SessionTreePicker
           state={snap.sessionTreePicker}
           currentSessionId={snap.header.sessionId}
+          locale={snap.locale}
+          maxRows={layout.rows.overlay}
+        />
+      ) : null}
+      {subagentOpen && snap.subagentPicker !== undefined ? (
+        <SubagentPicker
+          state={snap.subagentPicker}
           locale={snap.locale}
           maxRows={layout.rows.overlay}
         />

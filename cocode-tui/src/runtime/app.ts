@@ -188,6 +188,14 @@ import {
   type SessionTreePickerItem,
   type SessionTreePickerState,
 } from './session-tree-picker.ts'
+import {
+  closeSubagentPicker,
+  createSubagentPicker,
+  moveSubagentSelection,
+  selectedSubagent,
+  setSubagentQuery,
+  type SubagentPickerState,
+} from './subagent-picker.ts'
 import { buildSessionTree, flattenSessionTree } from './session-tree.ts'
 import { listSessionSummaries } from './sessions-fs.ts'
 import { basename } from 'node:path'
@@ -244,6 +252,10 @@ export type TuiAction =
   | { type: 'sessionTree.move'; delta: number }
   | { type: 'sessionTree.close' }
   | { type: 'sessionTree.confirm' }
+  | { type: 'subagents.setQuery'; query: string }
+  | { type: 'subagents.move'; delta: number }
+  | { type: 'subagents.close' }
+  | { type: 'subagents.confirm' }
   | { type: 'rewind.open' }
   | { type: 'rewind.move'; delta: number }
   | { type: 'rewind.close' }
@@ -408,6 +420,7 @@ export type TuiSnapshot = {
   }[]
   resumePicker?: ResumePickerState
   sessionTreePicker?: SessionTreePickerState
+  subagentPicker?: SubagentPickerState
   rewindPicker?: RewindPickerState
   forkPicker?: RewindPickerState
   skillsPicker?: SkillsPickerState
@@ -592,6 +605,7 @@ class TuiAppImpl implements TuiApp {
   private closePromise: Promise<void> | undefined
   private resumePicker: ResumePickerState | undefined
   private sessionTreePicker: SessionTreePickerState | undefined
+  private subagentPicker: SubagentPickerState | undefined
   private sessionTreeSourceItems: SessionTreePickerItem[] = []
   private sessionTreeSearchGeneration = 0
   private readonly sessionActivities = new Map<string, 'idle' | 'running'>()
@@ -864,6 +878,7 @@ class TuiAppImpl implements TuiApp {
       })),
       resumePicker: this.resumePicker,
       sessionTreePicker: this.sessionTreePicker,
+      subagentPicker: this.subagentPicker,
       rewindPicker: this.rewindPicker,
       forkPicker: this.forkPicker,
       skillsPicker: this.skillsPicker,
@@ -1089,6 +1104,32 @@ class TuiAppImpl implements TuiApp {
         const selected = selectedSessionTreeItem(this.sessionTreePicker)
         this.sessionTreePicker = closeSessionTreePicker(this.sessionTreePicker)
         if (selected !== undefined) void this.openSessionTreeItem(selected)
+        this.emit()
+        return
+      }
+      case 'subagents.setQuery':
+        if (this.subagentPicker !== undefined) {
+          this.subagentPicker = setSubagentQuery(this.subagentPicker, action.query)
+          this.emit()
+        }
+        return
+      case 'subagents.move':
+        if (this.subagentPicker !== undefined) {
+          this.subagentPicker = moveSubagentSelection(this.subagentPicker, action.delta)
+          this.emit()
+        }
+        return
+      case 'subagents.close':
+        if (this.subagentPicker !== undefined) {
+          this.subagentPicker = closeSubagentPicker(this.subagentPicker)
+          this.emit()
+        }
+        return
+      case 'subagents.confirm': {
+        if (this.subagentPicker === undefined) return
+        const selected = selectedSubagent(this.subagentPicker)
+        this.subagentPicker = closeSubagentPicker(this.subagentPicker)
+        if (selected !== undefined) void this.showSubagentHistory(selected.id)
         this.emit()
         return
       }
@@ -1843,12 +1884,9 @@ class TuiAppImpl implements TuiApp {
       if (catalog.entries.length === 0) {
         this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前会话没有 direct child。' : 'This session has no direct children.' }
       } else {
-        const lines = catalog.entries.map((entry) => {
-          const label = entry.label ?? entry.id.slice(0, 8)
-          const state = entry.activity === 'running' ? 'running' : 'inactive'
-          return `${label} · ${entry.mode} · ${state}`
-        })
-        this.notice = { tone: 'info', message: lines.join(' | ') }
+        this.helpOpen = false
+        this.notice = undefined
+        this.subagentPicker = createSubagentPicker(catalog.entries)
       }
     } catch (error) {
       this.notice = { tone: 'error', message: errorMessage(error) }

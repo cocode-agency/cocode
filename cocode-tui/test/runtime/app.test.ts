@@ -2924,6 +2924,34 @@ describe('TuiApp', () => {
     })
   })
 
+  it('opens a direct-child picker and reads the selected child history', async () => {
+    const runtime = fakeRuntime()
+    runtime.listSubagents = async () => ({
+      entries: [{ kind: 'child', id: 'child-1', label: 'worker', activity: 'inactive', mode: 'one-shot', hasChildren: false }],
+      parentAvailable: true,
+    })
+    runtime.subagentHistory = async () => ({
+      events: [{ type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: 'child task' }] } }],
+      hasMore: false,
+    })
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, subagentList: true, subagentHistory: true },
+    })
+    await app.start()
+
+    app.dispatch({ type: 'command', line: '/subagents' })
+    await vi.waitFor(() => expect(app.snapshot().subagentPicker?.open).toBe(true))
+    expect(app.snapshot().subagentPicker?.entries[0]?.label).toBe('worker')
+    app.dispatch({ type: 'subagents.confirm' })
+    await vi.waitFor(() => expect(app.snapshot().header.sessionId).toBe('child-1'))
+    expect(app.snapshot().header.readOnly).toBe(true)
+  })
+
   it('doctor redacts credentials and reports launch state', async () => {
     const runtime = fakeRuntime()
     runtime.failStart = new Error('API_KEY=sk-secret')
