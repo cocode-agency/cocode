@@ -22,6 +22,8 @@ const compatSource = join(packageRoot, 'src/credentials-local-provider.ts')
 const lib = join(packageRoot, 'lib')
 rmSync(lib, { recursive: true, force: true })
 mkdirSync(lib, { recursive: true })
+const generatedManifest = join(packageRoot, 'package.json')
+rmSync(generatedManifest, { force: true })
 
 execFileSync(process.execPath, [resolve(workspaceRoot, 'node_modules/typescript/bin/tsc'), '-p', join(packageRoot, 'tsconfig.build.json')], { cwd: workspaceRoot, stdio: 'inherit' })
 
@@ -29,7 +31,7 @@ execFileSync(process.execPath, [resolve(workspaceRoot, 'node_modules/typescript/
 // lib/index.js. Materialize the package manifest beside the build output so
 // the bundle keeps working in tests and packaged Supervisor installs.
 const dshLlmManifest = join(workspaceRoot, 'node_modules/@deepseek-ai/dsh-llm/package.json')
-if (existsSync(dshLlmManifest)) cpSync(dshLlmManifest, join(packageRoot, 'package.json'))
+if (existsSync(dshLlmManifest)) cpSync(dshLlmManifest, generatedManifest)
 
 await build({
   absWorkingDir: workspaceRoot,

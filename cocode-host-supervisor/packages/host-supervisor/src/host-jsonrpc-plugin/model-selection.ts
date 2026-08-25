@@ -3,7 +3,7 @@ import {
   type ModelSelection,
   type ModelSelectionRef,
 } from "@deepseek-ai/dsh-agent";
-import type { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
+import type { ReasoningEffortId } from "@deepseek-ai/dsh-llm/brand";
 import type { Agent } from "./types.js";
 
 type AgentWithContext = Agent & { ctx?: unknown };
