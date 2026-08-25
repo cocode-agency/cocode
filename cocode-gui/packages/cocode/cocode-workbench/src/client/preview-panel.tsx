@@ -16,6 +16,7 @@ import { baseName, relativeTo } from "../paths.ts"
 import { GitDiffView } from "./git-diff.tsx"
 import type { GitGroup } from "./git-client.ts"
 import { t } from "./locales.ts"
+import { ExcelPreview } from "./excel-preview.tsx"
 import css from "./preview.module.css"
 
 /** Source is the editable face; preview is always read-only. */
@@ -62,6 +63,7 @@ const MARKDOWN_EXTENSIONS = new Set(["md", "markdown", "mdx"])
 const HTML_EXTENSIONS = new Set(["html", "htm"])
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"])
 const WORD_EXTENSIONS = new Set(["doc", "docx"])
+const EXCEL_EXTENSIONS = new Set(["xls", "xlsx"])
 
 interface FileRead {
   readonly kind: string
@@ -219,6 +221,7 @@ export function PreviewPanel(props: WorkbenchPanelProps) {
 function FilePreview(props: WorkbenchPanelProps) {
   const path = props.instance.target?.path
   const extension = path?.split(".").at(-1)?.toLowerCase()
+  if (path !== undefined && extension !== undefined && EXCEL_EXTENSIONS.has(extension)) return <ExcelPreview {...props} path={path} />
   if (path !== undefined && extension !== undefined && WORD_EXTENSIONS.has(extension)) return <WordPreview {...props} path={path} />
   return <RegularFilePreview {...props} />
 }
