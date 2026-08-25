@@ -1,0 +1,30 @@
+export const patterns = [
+	"tests/main/account/**/*.test.ts",
+	"tests/main/database/**/*.test.ts",
+	"tests/main/dsh-runtime/**/*.test.ts",
+	"tests/main/local-files/**/*.test.ts",
+	"tests/main/logging/diagnostics-schema.test.ts",
+	"tests/main/observability/**/*.test.ts",
+	"tests/main/shell/**/*.test.ts",
+	"tests/main/shortcuts/**/*.test.ts",
+	"tests/main/unified-logging.test.ts",
+	"tests/renderer/**/*.test.ts",
+	"tests/scripts/**/*.test.ts",
+	"tests/shared/**/*.test.ts",
+	"tests/release/github-release-assets.test.ts",
+	"tests/release/release-config.test.ts",
+	"tests/release/release-hooks.test.ts",
+	"tests/release/release-workflow.test.ts",
+	"tests/release/finalize-linux-release-assets.test.ts",
+	"tests/release/linux-repository.test.ts",
+	"tests/release/sign-linux-packages.test.ts",
+	"tests/release/verify-rpm-signatures.test.mjs",
+	"tests/release/verify-linux-repository.test.ts",
+	"tests/release/vite-main-config.test.ts",
+	"tests/release/icon-pipeline.contract.test.ts",
+]
+
+export const excludes = [
+	"tests/main/logging/logging-core.test.ts",
+	"tests/main/tui/tui-launcher.test.ts",
+]

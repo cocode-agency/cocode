@@ -200,9 +200,15 @@ DSH_DISABLE_RUNTIME_CACHE=1 make dev gui  # isolated runtime, no cache
 make gui-build      # Electron Forge installers for the current platform
 ```
 
-Platform-specific release builds live in `cocode-gui`, as
-`release:mac:x64`, `release:mac:arm64`, `release:win:x64`, and
-`release:win:arm64`.
+The canonical GUI release command is parameterized by platform and architecture:
+
+```sh
+cd cocode-gui
+corepack pnpm@10.34.5 run release -- --platform darwin --arch arm64
+```
+
+The legacy `release:<platform>:<arch>` commands remain as compatibility aliases
+for existing automation.
 
 The GUI is a private Electron workspace rather than an npm application package.
 The TUI and Host Supervisor have public publish configuration, but registry

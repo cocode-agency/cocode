@@ -8,15 +8,25 @@ import {
 
 class FakeUpdater extends EventEmitter {
 	checkCalls = 0
+	downloadCalls = 0
 
 	checkForUpdates(): void {
 		this.checkCalls += 1
+	}
+
+	downloadUpdate(): Promise<void> {
+		this.downloadCalls += 1
+		return Promise.resolve()
 	}
 }
 
 class AsyncRejectingUpdater extends EventEmitter {
 	checkForUpdates(): Promise<void> {
 		return Promise.reject(new Error("network unavailable"))
+	}
+
+	downloadUpdate(): Promise<void> {
+		return Promise.resolve()
 	}
 }
 
@@ -101,11 +111,52 @@ test("available and downloaded events expose downloading state and the existing 
 		onDownloaded: (releaseName) => releaseNames.push(releaseName),
 	})
 
-	updater.emit("update-available")
-	updater.emit("update-downloaded", undefined, undefined, "Cocode 1.1.0")
+	updater.emit("update-available", { version: "1.1.0" })
+	updater.emit("update-downloaded", { version: "1.1.0", releaseName: "Cocode 1.1.0" })
 
 	assert.deepEqual(states, ["downloading", "idle"])
 	assert.deepEqual(releaseNames, ["Cocode 1.1.0"])
+	coordinator.dispose()
+})
+
+test("downloads only a strictly newer update version", async () => {
+	const updater = new FakeUpdater()
+	const coordinator = createApplicationUpdateCoordinator({
+		enabled: true,
+		version: "1.0.0",
+		updater,
+		onStateChange: () => undefined,
+		onLatest: () => undefined,
+		onError: () => undefined,
+		onDownloaded: () => undefined,
+	})
+
+	updater.emit("update-available", { version: "1.0.0" })
+	updater.emit("update-available", { version: "0.9.9" })
+	updater.emit("update-available", { version: "1.1.0" })
+	await new Promise<void>((resolve) => setImmediate(resolve))
+
+	assert.equal(updater.downloadCalls, 1)
+	coordinator.dispose()
+})
+
+test("ignores a downloaded update that is not newer than the current version", () => {
+	const updater = new FakeUpdater()
+	const releaseNames: string[] = []
+	const coordinator = createApplicationUpdateCoordinator({
+		enabled: true,
+		version: "1.0.0",
+		updater,
+		onStateChange: () => undefined,
+		onLatest: () => undefined,
+		onError: () => undefined,
+		onDownloaded: (releaseName) => {
+			if (releaseName) releaseNames.push(releaseName)
+		},
+	})
+
+	updater.emit("update-downloaded", { version: "0.9.9", releaseName: "Cocode 0.9.9" })
+	assert.deepEqual(releaseNames, [])
 	coordinator.dispose()
 })
 
@@ -122,7 +173,7 @@ test("electron-updater downloaded events expose their release name", () => {
 		onDownloaded: (releaseName) => releaseNames.push(releaseName),
 	})
 
-	updater.emit("update-downloaded", { releaseName: "Cocode 1.1.0" })
+	updater.emit("update-downloaded", { version: "1.1.0", releaseName: "Cocode 1.1.0" })
 
 	assert.deepEqual(releaseNames, ["Cocode 1.1.0"])
 	coordinator.dispose()

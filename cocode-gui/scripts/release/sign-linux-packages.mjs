@@ -1,8 +1,12 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import os from "node:os"
 import * as path from "node:path"
 
 const PACKAGE_EXTENSIONS = new Set([".deb", ".rpm"])
+
+/** @type {(...args: any[]) => any} */
+const runCommand = (...args) => execFileSync(...args)
 
 export function signLinuxPackages(
 	files,
@@ -11,7 +15,7 @@ export function signLinuxPackages(
 		passphrase = process.env.LINUX_SIGNING_PASSPHRASE,
 		gpgHome = process.env.LINUX_GPG_HOME?.trim(),
 		required = process.env.RELEASE_REQUIRE_SIGNING === "1" || process.env.RELEASE_REQUIRE_SIGNING === "true",
-		run = execFileSync,
+		run = runCommand,
 	} = {},
 ) {
 	const packages = [...new Set(files.map((file) => path.resolve(file)))].filter((file) =>
@@ -26,6 +30,9 @@ export function signLinuxPackages(
 
 	const signatures = []
 	for (const file of packages) {
+		if (path.extname(file).toLowerCase() === ".rpm") {
+			signEmbeddedRpm(file, { key, passphrase, gpgHome, run })
+		}
 		const signature = `${file}.asc`
 		const args = [
 			"--batch",
@@ -55,6 +62,41 @@ export function signLinuxPackages(
 		signatures.push(signature)
 	}
 	return signatures
+}
+
+function signEmbeddedRpm(file, { key, passphrase, gpgHome, run }) {
+	const args = ["--addsign", "--define", `_gpg_name ${key}`]
+	if (gpgHome) args.push("--define", `_gpg_path ${path.resolve(gpgHome)}`)
+
+	let wrapperRoot
+	let options = { stdio: "inherit" }
+	if (passphrase !== undefined) {
+		wrapperRoot = mkdtempSync(path.join(os.tmpdir(), "cocode-rpmsign-"))
+		const wrapper = path.join(wrapperRoot, "gpg")
+		const gpgBinary = process.env.LINUX_GPG_BINARY?.trim() || "/usr/bin/gpg"
+		const homedir = gpgHome ? ` --homedir ${quoteShellArg(path.resolve(gpgHome))}` : ""
+		writeFileSync(
+			wrapper,
+			`#!/bin/sh\nexec ${quoteShellArg(gpgBinary)} --batch --pinentry-mode loopback --passphrase "$LINUX_SIGNING_PASSPHRASE"${homedir} "$@"\n`,
+			{ mode: 0o700 },
+		)
+		chmodSync(wrapper, 0o700)
+		args.push("--define", `__gpg ${wrapper}`)
+		options = {
+			stdio: ["ignore", "inherit", "inherit"],
+			env: { ...process.env, LINUX_SIGNING_PASSPHRASE: passphrase },
+		}
+	}
+	args.push(file)
+	try {
+		run("rpmsign", args, options)
+	} finally {
+		if (wrapperRoot) rmSync(wrapperRoot, { recursive: true, force: true })
+	}
+}
+
+function quoteShellArg(value) {
+	return `'${String(value).replaceAll("'", "'\\''")}'`
 }
 
 function cli() {

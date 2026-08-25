@@ -1,0 +1,3 @@
+# Keep GitHub Actions YAML stable across Windows and Unix checkouts.
+.github/workflows/*.yml text eol=lf
+.github/workflows/*.yaml text eol=lf

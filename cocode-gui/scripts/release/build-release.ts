@@ -8,6 +8,10 @@ import {
 	resolveWindowsSignMode,
 } from "./release-config"
 import { assertNativeReleaseHost } from "./assert-native-release-host.mjs"
+import {
+	ensureDarwinNodePtyNatives,
+	verifyDarwinNodePtyArchitecture,
+} from "../lib/workspace-dependencies.mjs"
 
 loadReleaseEnvironment()
 
@@ -64,7 +68,7 @@ if (target.platform === "win32" && resolveWindowsSignMode(environment) === "serv
 		throw new Error("Windows signing service credential preflight failed.")
 }
 
-if (target.platform === "win32" || target.platform === "linux") {
+if (target.platform === "darwin" || target.platform === "win32" || target.platform === "linux") {
 	cleanNativeBuildOutputs()
 	const nativeDependencyStatus = runPnpm([
 		"exec",
@@ -78,6 +82,19 @@ if (target.platform === "win32" || target.platform === "linux") {
 			`${target.platform} ${target.arch} native dependency preparation exited with code ${String(nativeDependencyStatus)}.`,
 		)
 	}
+	if (target.platform === "darwin") {
+		ensureDarwinNodePtyNatives({
+			root: process.cwd(),
+			platform: target.platform,
+			arch: target.arch,
+			force: true,
+		})
+		verifyDarwinNodePtyArchitecture({
+			root: process.cwd(),
+			platform: target.platform,
+			arch: target.arch,
+		})
+	}
 }
 
 const runtimeStatus = runPnpm([
@@ -89,6 +106,13 @@ const runtimeStatus = runPnpm([
 	runtimeArtifactRoot,
 ])
 if (runtimeStatus !== 0) throw new Error(`Runtime build exited with code ${String(runtimeStatus)}.`)
+if (target.platform === "darwin") {
+	verifyDarwinNodePtyArchitecture({
+		root: runtimeArtifactRoot,
+		platform: target.platform,
+		arch: target.arch,
+	})
+}
 
 const tuiStatus = runPnpm(["run", "build:tui", "--", "--output", tuiArtifactRoot])
 if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiStatus)}.`)
@@ -96,6 +120,7 @@ if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiSta
 const viteStatus = runPnpm(["exec", "electron-vite", "build"])
 if (viteStatus !== 0) throw new Error(`Electron Vite build exited with code ${String(viteStatus)}.`)
 
+cleanBuilderOutput(target.platform, environment.RELEASE_OUTPUT_DIR)
 const builderPlatform =
 	target.platform === "darwin" ? "--mac" : target.platform === "win32" ? "--win" : "--linux"
 const builderArch = target.arch === "arm64" ? "--arm64" : "--x64"
@@ -110,9 +135,20 @@ process.exitCode = runPnpm([
 ])
 
 function cleanNativeBuildOutputs(): void {
-	for (const relativePath of ["node_modules/better-sqlite3/build", "node_modules/keytar/build"]) {
+	for (const relativePath of [
+		"node_modules/better-sqlite3/build",
+		"node_modules/keytar/build",
+		"node_modules/node-pty/build",
+	]) {
 		rmSync(path.resolve(relativePath), { recursive: true, force: true })
 	}
+}
+
+function cleanBuilderOutput(platform: string, outputDirectory: string | undefined): void {
+	if (!outputDirectory) return
+	const directoryName =
+		platform === "darwin" ? "mac" : platform === "win32" ? "win-unpacked" : "linux-unpacked"
+	rmSync(path.resolve(outputDirectory, directoryName), { recursive: true, force: true })
 }
 
 function assertLinuxPackagingTools(): void {

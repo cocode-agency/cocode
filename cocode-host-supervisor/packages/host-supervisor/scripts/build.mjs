@@ -18,11 +18,10 @@ import { assertBuiltRuntimePlugin } from './runtime-plugins.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workspaceRoot = resolve(packageRoot, '../..')
-const compatSource = join(packageRoot, 'src/credentials-local-compat.mjs')
+const compatSource = join(packageRoot, 'src/credentials-local-provider.ts')
 const lib = join(packageRoot, 'lib')
 rmSync(lib, { recursive: true, force: true })
 mkdirSync(lib, { recursive: true })
-cpSync(compatSource, join(lib, 'credentials-local-compat.mjs'))
 
 execFileSync(process.execPath, [resolve(workspaceRoot, 'node_modules/typescript/bin/tsc'), '-p', join(packageRoot, 'tsconfig.build.json')], { cwd: workspaceRoot, stdio: 'inherit' })
 
@@ -33,7 +32,20 @@ await build({
   bundle: true,
   // Pino is loaded as a normal runtime dependency. Its package uses Node
   // compatibility paths that should not be inlined into the ESM bundle.
-  external: ['pino'],
+  external: ['pino', 'yaml'],
+  format: 'esm',
+  platform: 'node',
+  target: 'node22',
+  sourcemap: true,
+  tsconfig: join(packageRoot, 'tsconfig.json'),
+})
+
+await build({
+  absWorkingDir: workspaceRoot,
+  entryPoints: [compatSource],
+  outfile: join(lib, 'credentials-local-compat.mjs'),
+  bundle: true,
+  external: ['@deepseek-ai/*', 'chokidar', 'yaml'],
   format: 'esm',
   platform: 'node',
   target: 'node22',
@@ -51,7 +63,7 @@ await build({
   // file makes esbuild emit a runtime-incompatible `__require` shim. The
   // staging step materializes the Supervisor dependency closure, so the
   // external import remains self-contained in packaged Desktop builds.
-  external: ['pino'],
+  external: ['pino', 'yaml'],
   format: 'esm',
   platform: 'node',
   target: 'node22',

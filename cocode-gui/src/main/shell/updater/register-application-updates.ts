@@ -15,8 +15,6 @@ import {
 import { resolveUpdateIntervalMilliseconds } from "./update-interval"
 import type { ApplicationLocale } from "../../shared/locale/application-locale"
 
-const { autoUpdater } = electronUpdater
-
 export interface ApplicationUpdateLifecycle {
 	readonly requestQuitForUpdate: (installUpdate: () => void) => boolean
 }
@@ -33,7 +31,9 @@ export interface ElectronUpdaterFeed {
 interface ElectronUpdaterAdapter extends ApplicationUpdateEventSource {
 	autoDownload: boolean
 	autoInstallOnAppQuit: boolean
+	allowDowngrade: boolean
 	channel: string | null
+	downloadUpdate: () => void | PromiseLike<unknown>
 	setFeedURL: (options: ElectronUpdaterFeed) => void
 	quitAndInstall: () => void
 }
@@ -41,7 +41,7 @@ interface ElectronUpdaterAdapter extends ApplicationUpdateEventSource {
 export function configureElectronUpdater(
 	updater: Pick<
 		ElectronUpdaterAdapter,
-		"autoDownload" | "autoInstallOnAppQuit" | "channel" | "setFeedURL"
+		"autoDownload" | "autoInstallOnAppQuit" | "allowDowngrade" | "channel" | "setFeedURL"
 	>,
 	config: Extract<ApplicationUpdateConfig, { enabled: true }>,
 ): void {
@@ -49,9 +49,13 @@ export function configureElectronUpdater(
 	if (!owner || !repo) {
 		throw new Error(`GitHub repository must use the owner/name format: ${config.repository}`)
 	}
-	updater.autoDownload = true
+	updater.autoDownload = false
 	updater.autoInstallOnAppQuit = false
 	updater.channel = config.channel
+	// Setting channel enables downgrade support inside electron-updater. Cocode
+	// only accepts strictly newer releases, so restore the safer invariant after
+	// configuring the architecture channel.
+	updater.allowDowngrade = false
 	const feed: ElectronUpdaterFeed = {
 		provider: "github",
 		owner,
@@ -82,7 +86,7 @@ export function registerApplicationUpdates(
 		return createInactiveRegistration()
 	}
 
-	const updater = autoUpdater as unknown as ElectronUpdaterAdapter
+	const updater = electronUpdater.autoUpdater as unknown as ElectronUpdaterAdapter
 	try {
 		configureElectronUpdater(updater, config)
 	} catch (error) {

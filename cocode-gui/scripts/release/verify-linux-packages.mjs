@@ -1,12 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse as parseYaml } from "yaml"
 
 const PACKAGE_EXTENSIONS = new Set([".deb", ".rpm"])
 const PACKAGE_LISTING_MAX_BUFFER = 64 * 1024 * 1024
+const packageMetadata = createRequire(import.meta.url)("../../package.json")
 const EXPECTED_ARCH = {
 	x64: { deb: "amd64", rpm: "x86_64" },
 	arm64: { deb: "arm64", rpm: "aarch64" },
@@ -125,11 +127,16 @@ export function verifyLinuxPackageSignature(
 	return { packageFile: packagePath, signatureFile: signaturePath }
 }
 
-export function verifyLinuxUpdateMetadata(metadataFile, artifacts, arch) {
+export function verifyLinuxUpdateMetadata(metadataFile, artifacts, arch, expectedVersion) {
 	const expectedMetadata = linuxUpdateMetadataName(arch)
 	if (path.basename(metadataFile) !== expectedMetadata)
 		throw new Error(`Linux updater metadata filename must be ${expectedMetadata}: ${metadataFile}`)
 	const metadata = parseYaml(readFileSync(metadataFile, "utf8"))
+	if (expectedVersion !== undefined && String(metadata?.version) !== String(expectedVersion)) {
+		throw new Error(
+			`Linux updater metadata version ${String(metadata?.version)} does not match ${expectedVersion}: ${metadataFile}`,
+		)
+	}
 	const expected = new Map(linuxPackageFiles(artifacts).map((file) => [
 		path.basename(file), createHash("sha512").update(readFileSync(file)).digest("base64"),
 	]))
@@ -219,7 +226,7 @@ if (invokedPath && path.resolve(invokedPath) === path.resolve(fileURLToPath(impo
 	if (files.length !== 2) throw new Error(`Expected one .deb and one .rpm under ${root}; found ${files.length}.`)
 	for (const file of files) verifyLinuxPackageArtifact(file, arch)
 	const metadata = path.join(root, linuxUpdateMetadataName(arch))
-	verifyLinuxUpdateMetadata(metadata, files, arch)
+	verifyLinuxUpdateMetadata(metadata, files, arch, packageMetadata.version)
 	const signatures = files.map((file) => `${file}.asc`)
 	for (const [index, file] of files.entries()) verifyLinuxPackageSignature(file, signatures[index])
 	const manifest = path.join(root, `linux-release-manifest-${arch}.json`)

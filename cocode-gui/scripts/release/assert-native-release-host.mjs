@@ -20,7 +20,7 @@ export function assertNativeReleaseHost({
 	targetArch,
 	platform = process.platform,
 	arch = process.arch,
-	machine = readMachine(),
+	machine = platform === "linux" ? readMachine() : "",
 	environment = process.env,
 } = {}) {
 	if (targetPlatform !== platform) {

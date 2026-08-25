@@ -4,6 +4,7 @@ import * as path from "pathe"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
 import {
+	ensureDarwinNodePtyNatives,
 	ensureLinuxNodePtyNatives,
 	ensureWindowsNodePtyNatives,
 	ensureWorkspaceDependencies,
@@ -88,6 +89,7 @@ export function buildSupervisor({ clean = false, manifestPath = defaultManifestP
 	}
 	ensureWindowsNodePtyNatives(nativeOptions)
 	ensureLinuxNodePtyNatives(nativeOptions)
+	ensureDarwinNodePtyNatives(nativeOptions)
 	if (!valid) {
 		console.log("[supervisor-build] building @cocode-agency/host-supervisor")
 		execFileSync(

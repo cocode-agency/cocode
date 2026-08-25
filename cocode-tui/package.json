@@ -1,6 +1,6 @@
 {
   "name": "@cocode-agency/tui",
-  "version": "0.1.0",
+  "version": "1.0.2",
   "description": "Cocode terminal client for DeepSeek DSH sessions",
   "license": "MIT",
   "repository": {

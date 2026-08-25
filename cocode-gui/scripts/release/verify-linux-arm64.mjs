@@ -8,6 +8,7 @@ import {
 	rmSync,
 	statSync,
 } from "node:fs"
+import { createRequire } from "node:module"
 import os from "node:os"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,6 +24,7 @@ import {
 const ARCH = "arm64"
 const EXPECTED_ELF_MACHINE = /aarch64/i
 const DEFAULT_SMOKE_TIMEOUT_MS = 20_000
+const packageMetadata = createRequire(import.meta.url)("../../package.json")
 
 export function verifyLinuxArm64Release({
 	root = path.resolve("release", "linux", ARCH),
@@ -64,7 +66,7 @@ export function verifyLinuxArm64Release({
 		verifyLinuxPackageSignature(file, signatures[index])
 
 	const metadataFile = path.join(releaseRoot, linuxUpdateMetadataName(ARCH))
-	verifyLinuxUpdateMetadata(metadataFile, packages, ARCH)
+	verifyLinuxUpdateMetadata(metadataFile, packages, ARCH, packageMetadata.version)
 
 	const manifestFile = path.join(releaseRoot, `linux-release-manifest-${ARCH}.json`)
 	verifyLinuxReleaseManifest(manifestFile, packages, ARCH, [metadataFile], signatures)

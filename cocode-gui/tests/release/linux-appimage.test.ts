@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import os from "node:os"
+import * as nativePath from "node:path"
 import * as path from "pathe"
 import test from "node:test"
 import {
@@ -73,7 +74,10 @@ test("writes architecture-scoped Linux release evidence manifests", () => {
 			arch: "arm64",
 			version: "1.2.3",
 		})
-		assert.equal(manifest, path.join(root, "linux-release-manifest-arm64.json"))
+		assert.equal(
+			nativePath.resolve(manifest),
+			nativePath.resolve(root, "linux-release-manifest-arm64.json"),
+		)
 		assert.doesNotThrow(() => verifyLinuxReleaseManifest(manifest, appImage, "arm64"))
 		writeFileSync(manifest, "{}\n")
 		assert.throws(

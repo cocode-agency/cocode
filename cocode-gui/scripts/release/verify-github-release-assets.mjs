@@ -24,7 +24,11 @@ export function verifyLocalGitHubReleaseAssets(tag, root, { packageVersion = pac
 	]) {
 		const packages = [...byName.values()].filter((file) => {
 			const name = path.basename(file).toLowerCase()
-			return [".deb", ".rpm"].some((extension) => name.endsWith(extension)) && packageMatchesArch(name, arch)
+			return (
+				[".deb", ".rpm"].some((extension) => name.endsWith(extension)) &&
+				packageMatchesArch(name, arch) &&
+				packageMatchesVersion(name, packageVersion)
+			)
 		})
 		const metadata = byName.get(metadataName)
 		if (packages.length !== 2 || !metadata) {
@@ -32,11 +36,11 @@ export function verifyLocalGitHubReleaseAssets(tag, root, { packageVersion = pac
 		}
 		const signatures = packages.map((file) => byName.get(`${path.basename(file)}.asc`))
 		if (signatures.some((file) => !file)) throw new Error(`Missing Linux package signature for ${arch}.`)
-		verifyLinuxUpdateMetadata(metadata, packages, arch)
+		verifyLinuxUpdateMetadata(metadata, packages, arch, packageVersion)
 		architectureAssets.push({ arch, packages, metadata, signatures })
 	}
 	for (const { arch, packages, metadata, signatures } of architectureAssets)
-		verifyLocalEvidence(arch, packages, metadata, signatures)
+		verifyLocalEvidence(arch, packages, metadata, signatures, packageVersion)
 	return [...byName.keys()].sort()
 }
 
@@ -61,7 +65,12 @@ export function verifyGitHubReleaseAssets(
 	const missing = required.filter((name) => !names.includes(name))
 	if (missing.length > 0) throw new Error(`GitHub Release is missing assets: ${missing.join(", ")}`)
 	for (const arch of ["x64", "arm64"]) {
-		const packages = names.filter((name) => [".deb", ".rpm"].some((extension) => name.toLowerCase().endsWith(extension)) && packageMatchesArch(name, arch))
+		const packages = names.filter(
+			(name) =>
+				[".deb", ".rpm"].some((extension) => name.toLowerCase().endsWith(extension)) &&
+				packageMatchesArch(name, arch) &&
+				packageMatchesVersion(name, packageVersion),
+		)
 		if (packages.length !== 2) throw new Error(`GitHub Release must contain one .deb and one .rpm for ${arch}.`)
 		const missingSignatures = packages.map((name) => `${name}.asc`).filter((name) => !names.includes(name))
 		if (missingSignatures.length > 0) throw new Error(`GitHub Release is missing Linux signatures: ${missingSignatures.join(", ")}`)
@@ -75,7 +84,7 @@ function assertTagVersion(tag, packageVersion) {
 	}
 }
 
-function verifyLocalEvidence(arch, packages, metadata, signatures) {
+function verifyLocalEvidence(arch, packages, metadata, signatures, packageVersion) {
 	const metadataName = path.basename(metadata)
 	const checksumName = `SHA256SUMS-${arch}`
 	const manifestName = `linux-release-manifest-${arch}.json`
@@ -106,6 +115,11 @@ function verifyLocalEvidence(arch, packages, metadata, signatures) {
 	}
 
 	const manifest = JSON.parse(readFileSync(manifestFile, "utf8"))
+	if (String(manifest.version) !== String(packageVersion)) {
+		throw new Error(
+			`Linux release manifest version ${String(manifest.version)} does not match ${packageVersion}: ${manifestFile}`,
+		)
+	}
 	if (
 		manifest.schemaVersion !== 2 ||
 		manifest.target?.platform !== "linux" ||
@@ -127,6 +141,10 @@ function packageMatchesArch(name, arch) {
 	const normalized = name.toLowerCase()
 	if (arch === "x64") return /(?:x86_64|amd64|x64)(?:[._-]|\.)/.test(normalized)
 	return /(?:arm64|aarch64)(?:[._-]|\.)/.test(normalized)
+}
+
+function packageMatchesVersion(name, version) {
+	return name.toLowerCase().startsWith(`cocode-${String(version).toLowerCase()}-`)
 }
 
 function createSha256(file) {

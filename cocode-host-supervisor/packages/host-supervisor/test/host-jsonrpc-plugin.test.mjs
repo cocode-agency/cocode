@@ -42,6 +42,11 @@ function createContext(options = {}) {
       async create(options) {
         const agent = {
           id: `agent-${options.sessionId}`,
+          ctx: {
+            on() {
+              return () => {}
+            },
+          },
           session: {
             id: options.sessionId,
             events: [],

@@ -9,6 +9,10 @@ import { AgencyHttpError } from "../../../src/main/contexts/account/infrastructu
 import type { CleanupPendingState } from "../../../src/main/contexts/account/infrastructure/cleanup-pending"
 import { SignInCancelledError } from "../../../src/main/contexts/account/infrastructure/sign-in-cancelled-error"
 import {
+	guiClientIdentity,
+	harnessClientIdentity,
+} from "../../../src/main/contexts/account/infrastructure/client-identity"
+import {
 	DshCloudConfigUnavailableError,
 	type DefaultSelection,
 	type ModelGroup,
@@ -62,6 +66,10 @@ function validIdentity(overrides: Partial<IdentityState> = {}): IdentityState {
 		accessExpiresAt: Date.now() + 60_000,
 		...overrides,
 	}
+}
+
+async function currentCocodeClient(): Promise<Record<string, string>> {
+	return harnessClientIdentity(await guiClientIdentity())
 }
 
 function agency(overrides: Record<string, unknown> = {}): {
@@ -306,12 +314,14 @@ test("reuses a ready device cloud route without minting another API key", async 
 		}),
 	)
 	const { client, createdKeys } = agency()
+	const cocodeClient = await currentCocodeClient()
 	let writes = 0
 	const route = {
 		displayName: "Cocode Nut",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
 		models: [{ id: "cloud-model", name: "Cloud Model" }],
 	}
@@ -376,6 +386,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 		}),
 	)
 	const { client } = agency()
+	const cocodeClient = await currentCocodeClient()
 	let current: DefaultSelection = { provider: "deepseek-official", model: "deepseek-v4-flash" }
 	const selected: { sessionId: string; selection: DefaultSelection }[] = []
 	const defaultOps: { op: string; path: readonly string[]; value?: unknown }[] = []
@@ -384,6 +395,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
 		models: [
 			{ id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro" },
@@ -481,12 +493,14 @@ test("free sign-in keeps a custom default model", async () => {
 			syncedAt: "2026-08-15T00:00:00.000Z",
 		}),
 	})
+	const cocodeClient = await currentCocodeClient()
 	let writes = 0
 	const route = {
 		displayName: "Cocode Nut",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
 		models: [{ id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" }],
 	}

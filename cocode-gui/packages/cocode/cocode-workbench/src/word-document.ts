@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 import { tmpdir } from "node:os"
 import { resolve as resolvePath, sep, win32 } from "node:path"
 import { extname, join } from "pathe"
+import { pathToFileURL } from "node:url"
 
 const MAX_WORD_BYTES = 24 * 1024 * 1024
 const MAX_WORD_HTML_BYTES = 8 * 1024 * 1024
@@ -89,15 +90,21 @@ async function findOffice(): Promise<string | undefined> {
 async function runOffice(args: readonly string[]): Promise<void> {
   const office = await findOffice()
   if (office === undefined) throw new Error("LibreOffice is not installed")
-  await execFile(office, [
-    "--headless",
-    "--invisible",
-    "--nodefault",
-    "--nologo",
-    "--nolockcheck",
-    "--norestore",
-    ...args,
-  ], { timeout: OFFICE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 })
+  const profile = await mkdtemp(join(tmpdir(), "cocode-libreoffice-profile-"))
+  try {
+    await execFile(office, [
+      "--headless",
+      "--invisible",
+      "--nodefault",
+      "--nologo",
+      "--nolockcheck",
+      "--norestore",
+      `-env:UserInstallation=${pathToFileURL(profile).href}`,
+      ...args,
+    ], { timeout: OFFICE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 })
+  } finally {
+    await rm(profile, { recursive: true, force: true })
+  }
 }
 
 function bodyHtml(documentHtml: string): string {

@@ -106,16 +106,16 @@ on a Desktop first-run registration step.
 
 ## Release behavior
 
-Platform-specific release scripts are:
+The canonical release entry is parameterized by target platform and architecture:
 
 ```sh
-corepack pnpm@10.34.5 run release:mac:x64
-corepack pnpm@10.34.5 run release:mac:arm64
-corepack pnpm@10.34.5 run release:win:x64
-corepack pnpm@10.34.5 run release:win:arm64
-corepack pnpm@10.34.5 run release:linux:x64
-corepack pnpm@10.34.5 run release:linux:arm64
+corepack pnpm@10.34.5 run release -- --platform darwin --arch arm64
+corepack pnpm@10.34.5 run release -- --platform win32 --arch x64
+corepack pnpm@10.34.5 run release -- --platform linux --arch arm64
 ```
+
+The `release:<platform>:<arch>` commands remain as compatibility aliases for
+existing automation and local workflows.
 
 The Linux commands must run on a native Linux host matching the requested
 architecture. The release gate rejects macOS/Windows hosts, a mismatched

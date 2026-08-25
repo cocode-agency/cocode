@@ -136,15 +136,23 @@ describe("Cocode Workbench host API", () => {
     const route = createWorkbenchApi(context(cwd))
 
     const preview = await invoke(route, "word.read", { sessionId: "s1", path: "rich.docx" })
-    const html = (preview.value?.value as { html?: string }).html ?? ""
+    const previewValue = preview.value?.value as { engine?: string; html?: string; warnings?: string[] }
+    const html = previewValue.html ?? ""
     expect(html).toContain("Rich title")
     expect(html).toContain("<ol")
     expect(html).toContain("<table")
-    expect(html).toContain('width="602"')
-    expect(html).toContain("border: 1px solid #000000")
-    expect(html).toContain("line-height: 100%")
     expect(html).toContain("<sub>")
     expect(html).toContain("<sup>")
+    if (previewValue.engine === "libreoffice") {
+      expect(html).toContain('width="602"')
+      expect(html).toContain("border: 1px solid #000000")
+      expect(html).toContain("line-height: 100%")
+    } else {
+      expect(previewValue.engine).toBe("mammoth")
+      expect(previewValue.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/Full-fidelity Word conversion unavailable/),
+      ]))
+    }
 
     const save = await invoke(route, "word.write", {
       sessionId: "s1",
