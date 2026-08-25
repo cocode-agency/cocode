@@ -3,6 +3,7 @@ import {
   moveCredentialRef as moveHostCredentialRef,
   patchCredential as patchHostCredential,
   readCredentials as readHostCredentials,
+  withCredentialsLock,
 } from '@cocode-agency/host-supervisor'
 import { credentialsPath } from './paths.ts'
 import { TuiError } from '../errors/index.ts'
@@ -31,7 +32,7 @@ export async function readCredentials(home: string): Promise<Record<string, stri
  * name, then let the next write create a clean document.
  */
 export async function readCredentialsRecovering(home: string): Promise<Record<string, string>> {
-  return withCredentialsLock(home, async () => {
+  return withCredentialsLock(credentialsPath(home), async () => {
     try {
       return await readCredentials(home)
     } catch (error) {
@@ -70,5 +71,9 @@ function toTuiCredentialError(error: unknown): TuiError {
 }
 
 function isRecoverableCredentialError(error: unknown): boolean {
-  return error instanceof TuiError && (error.code === 'AUTH_CREDENTIALS_PARSE' || error.code === 'IO_PARSE')
+  return error instanceof TuiError && (
+    error.code === 'AUTH_CREDENTIALS_PARSE'
+    || error.code === 'AUTH_CREDENTIAL_EMPTY'
+    || error.code === 'IO_PARSE'
+  )
 }

@@ -53,7 +53,7 @@ const COCODE_WORDMARK_WIDTH = COCODE_WORDMARK_LINES.reduce(
   (width, line) => Math.max(width, line.length),
   0,
 )
-const COCODE_WORDMARK = COCODE_WORDMARK_LINES.map(line => line.padEnd(COCODE_WORDMARK_WIDTH))
+const COCODE_WORDMARK = COCODE_WORDMARK_LINES.map((line) => line.padEnd(COCODE_WORDMARK_WIDTH))
 const HORIZONTAL_WORDMARK = [...COCODE_WORDMARK, ' '.repeat(COCODE_WORDMARK_WIDTH)]
 
 const HORIZONTAL_WHALE_WIDTH = 34

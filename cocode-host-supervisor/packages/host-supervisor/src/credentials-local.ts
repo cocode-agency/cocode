@@ -278,3 +278,7 @@ export async function readCredentials(filename: string): Promise<Record<string, 
 export async function patchCredential(filename: string, ref: string, value: string | undefined): Promise<void> {
   await writeCredentialRef(filename, ref, value)
 }
+
+export function withCredentialsLock<T>(filename: string, operation: () => Promise<T>): Promise<T> {
+  return withFileLock(filename, operation)
+}

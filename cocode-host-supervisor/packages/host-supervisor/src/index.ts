@@ -31,6 +31,7 @@ export {
   refreshCredentials,
   readCredentials,
   patchCredential,
+  withCredentialsLock,
   type CredentialRefMap,
   type CredentialRecord,
   type CredentialRecordMap,

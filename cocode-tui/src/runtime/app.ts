@@ -3398,7 +3398,7 @@ class TuiAppImpl implements TuiApp {
   private selectCommand(line: string): void {
     const parsed = parseSlash(line)
     const skill = parsed === null ? undefined : this.findSkillCommand(parsed.name)
-    if (skill === undefined) {
+    if (parsed === null || skill === undefined) {
       this.runCommand(line)
       return
     }

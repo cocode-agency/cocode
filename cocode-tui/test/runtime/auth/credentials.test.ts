@@ -1,8 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { patchCredential, readCredentials } from '../../../src/runtime/auth/credentials.ts'
+import {
+  patchCredential,
+  readCredentials,
+  readCredentialsRecovering,
+} from '../../../src/runtime/auth/credentials.ts'
 import { credentialsPath } from '../../../src/runtime/auth/paths.ts'
 
 const homes: string[] = []
