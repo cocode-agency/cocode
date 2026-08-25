@@ -8,12 +8,28 @@ import { applyBrowserHost } from "./browser/host.ts"
 import { absolutePath, assertWritable, canWrite, readablePath, sessionCwd, writablePath } from "./file-access.ts"
 import { gitDispatch } from "./git-api.ts"
 import { searchWorkspace } from "./fs-search.ts"
+import { WorkerFileSearchService, type FileSearchService } from "./file-search-service.ts"
 import { readWordDocument, writeWordDocument } from "./word-document.ts"
 import { readExcelDocument, writeExcelDocument } from "./excel-document.ts"
 
 const exec = promisify(execFile)
 const MAX_FILE_BYTES = 4 * 1024 * 1024
 const MAX_DIRECTORY_ENTRIES = 1000
+const WORKTREE_MUTATIONS = new Set([
+  "git.init",
+  "git.discard",
+  "git.discardAll",
+  "git.pull",
+  "git.sync",
+  "git.checkout",
+  "git.stashPush",
+  "git.stashPop",
+  "git.stashApply",
+  "git.ignore",
+  "git.mergeAbort",
+  "git.revert",
+  "git.cherryPick",
+])
 
 function reply(response: WorkbenchResponse, status: number, body: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" })
@@ -226,31 +242,44 @@ async function fileReveal(ctx: WorkbenchContext, payload: Record<string, unknown
   return { revealed: true }
 }
 
-async function dispatch(ctx: WorkbenchContext, method: string, payload: Record<string, unknown>): Promise<unknown> {
+async function dispatch(
+  ctx: WorkbenchContext,
+  method: string,
+  payload: Record<string, unknown>,
+  fileSearch: FileSearchService,
+  signal?: AbortSignal,
+): Promise<unknown> {
   // Source control owns a large surface of its own; it lives in git-api.ts and
   // claims the whole `git.` namespace here.
-  if (method.startsWith("git.")) return gitDispatch(ctx, method, payload)
+  if (method.startsWith("git.")) {
+    const value = await gitDispatch(ctx, method, payload)
+    if (WORKTREE_MUTATIONS.has(method)) fileSearch.invalidate(sessionCwd(ctx, payload))
+    return value
+  }
   switch (method) {
     case "session.cwd": return { cwd: sessionCwd(ctx, payload) }
     case "fs.tree": return tree(ctx, payload)
-    case "fs.search": return searchWorkspace(ctx, payload)
+    case "fs.search": return searchWorkspace(ctx, payload, fileSearch, signal)
     case "fs.read": return fileRead(ctx, payload)
-    case "fs.write": return fileWrite(ctx, payload)
+    case "fs.write": return mutateWorkspace(ctx, payload, fileSearch, () => fileWrite(ctx, payload))
     case "word.read": return wordRead(ctx, payload)
-    case "word.write": return wordWrite(ctx, payload)
+    case "word.write": return mutateWorkspace(ctx, payload, fileSearch, () => wordWrite(ctx, payload))
     case "excel.read": return excelRead(ctx, payload)
-    case "excel.write": return excelWrite(ctx, payload)
-    case "fs.mkdir": return fileMkdir(ctx, payload)
-    case "fs.rename": return fileRename(ctx, payload)
-    case "fs.copy": return fileCopy(ctx, payload)
-    case "fs.delete": return fileDelete(ctx, payload)
+    case "excel.write": return mutateWorkspace(ctx, payload, fileSearch, () => excelWrite(ctx, payload))
+    case "fs.mkdir": return mutateWorkspace(ctx, payload, fileSearch, () => fileMkdir(ctx, payload))
+    case "fs.rename": return mutateWorkspace(ctx, payload, fileSearch, () => fileRename(ctx, payload))
+    case "fs.copy": return mutateWorkspace(ctx, payload, fileSearch, () => fileCopy(ctx, payload))
+    case "fs.delete": return mutateWorkspace(ctx, payload, fileSearch, () => fileDelete(ctx, payload))
     case "fs.reveal": return fileReveal(ctx, payload)
     case "jobs.list": return { jobs: [] }
     default: throw Object.assign(new Error(`unknown workbench method: ${method}`), { status: 404 })
   }
 }
 
-export function createWorkbenchApi(ctx: WorkbenchContext): WorkbenchRoute {
+export function createWorkbenchApi(
+  ctx: WorkbenchContext,
+  fileSearch: FileSearchService,
+): WorkbenchRoute {
   return {
     // One prefix seat covers both faces of the API: the JSON methods under
     // /api and the media route under /file.
@@ -278,21 +307,65 @@ export function createWorkbenchApi(ctx: WorkbenchContext): WorkbenchRoute {
         reply(response, 404, { ok: false, error: { message: "not found" } })
         return
       }
+      const requestLifetime = requestAbortSignal(request, response)
       try {
         const method = match[1]
         if (method === undefined) throw new Error("missing workbench method")
-        const value = await dispatch(ctx, decodeURIComponent(method), await bodyOf(request))
+        const value = await dispatch(ctx, decodeURIComponent(method), await bodyOf(request), fileSearch, requestLifetime.signal)
+        if (requestLifetime.signal.aborted || response.destroyed === true) return
         reply(response, 200, { ok: true, value })
       } catch (error) {
+        if (requestLifetime.signal.aborted || response.destroyed === true) return
         const status = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number" ? error.status : 400
         reply(response, status, { ok: false, error: { message: error instanceof Error ? error.message : String(error) } })
+      } finally {
+        requestLifetime.dispose()
       }
     },
   }
 }
 
 export function applyWorkbenchHost(ctx: WorkbenchContext): void {
-  const route = createWorkbenchApi(ctx)
-  ctx.effect(() => ctx.webServer.register(route), "cocode-workbench: api")
+  const fileSearch = new WorkerFileSearchService()
+  const route = createWorkbenchApi(ctx, fileSearch)
+  ctx.effect(() => {
+    const unregister = ctx.webServer.register(route)
+    return () => {
+      unregister()
+      fileSearch.dispose()
+    }
+  }, "cocode-workbench: api")
   applyBrowserHost(ctx)
+}
+
+async function mutateWorkspace<T>(
+  ctx: WorkbenchContext,
+  payload: Record<string, unknown>,
+  fileSearch: FileSearchService,
+  mutation: () => Promise<T>,
+): Promise<T> {
+  const value = await mutation()
+  fileSearch.invalidate(sessionCwd(ctx, payload))
+  return value
+}
+
+function requestAbortSignal(request: WorkbenchRequest, response: WorkbenchResponse): {
+  readonly signal: AbortSignal
+  dispose(): void
+} {
+  const controller = new AbortController()
+  const abortRequest = (): void => controller.abort()
+  const closeResponse = (): void => {
+    if (response.writableEnded !== true) controller.abort()
+  }
+  if (request.aborted === true || response.destroyed === true) controller.abort()
+  request.on?.("aborted", abortRequest)
+  response.on?.("close", closeResponse)
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      request.off?.("aborted", abortRequest)
+      response.off?.("close", closeResponse)
+    },
+  }
 }

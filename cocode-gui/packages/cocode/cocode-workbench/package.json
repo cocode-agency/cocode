@@ -83,8 +83,7 @@
     "vitest": "^2.1.9"
   },
   "files": [
-    "lib/index.js",
-    "lib/client.js",
+    "lib/*.js",
     "lib/types/**/*.d.ts"
   ],
   "dependencies": {

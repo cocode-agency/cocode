@@ -5,10 +5,17 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools"
 export interface WorkbenchRequest {
   readonly method: string
   readonly url?: string
+  readonly aborted?: boolean
+  on?(event: "aborted", listener: () => void): unknown
+  off?(event: "aborted", listener: () => void): unknown
   readonly [Symbol.asyncIterator]: () => AsyncIterator<Uint8Array | string>
 }
 
 export interface WorkbenchResponse {
+  readonly destroyed?: boolean
+  readonly writableEnded?: boolean
+  on?(event: "close", listener: () => void): unknown
+  off?(event: "close", listener: () => void): unknown
   writeHead(status: number, headers?: Record<string, string>): void
   end(body?: string | Uint8Array): void
 }
