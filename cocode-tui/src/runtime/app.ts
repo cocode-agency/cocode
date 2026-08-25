@@ -349,6 +349,7 @@ type PreviousSessionView = {
   capabilities: TuiCapabilities
   skills: SkillEntry[]
   remoteCommands: TuiCommandDescriptor[]
+  projectionStore: ReturnType<typeof createSessionProjectionStore>
 }
 
 export type TuiSnapshot = {
@@ -600,7 +601,7 @@ class TuiAppImpl implements TuiApp {
   private readonly promptQueue = new PromptQueueCoordinator()
   private remoteQueue: TuiRemoteQueueItem[] = []
   private remoteQueuePicker: RemoteQueuePickerState | undefined
-  private readonly projectionStore = createSessionProjectionStore()
+  private projectionStore = createSessionProjectionStore()
   private capturingByok = false
   private emitScheduled = false
   private closePromise: Promise<void> | undefined
@@ -829,12 +830,12 @@ class TuiAppImpl implements TuiApp {
         ...(assemblerStats.evictedNodes === 0
           ? {}
           : { transcript: { evicted: assemblerStats.evictedNodes } }),
-      subagents: {
+        subagents: {
           running: this.activeSubagents.size,
           ...(this.lastSubagent === undefined ? {} : { last: this.lastSubagent }),
-      },
-      queueCount: this.promptQueue.size,
-      remoteQueueCount: this.remoteQueue.length,
+        },
+        queueCount: this.promptQueue.size,
+        remoteQueueCount: this.remoteQueue.length,
         focusMode: this.focusMode,
         permissionMode: this.permissionMode,
         planMode: this.planMode,
@@ -1964,9 +1965,12 @@ class TuiAppImpl implements TuiApp {
         capabilities: this.capabilities,
         skills: this.skills,
         remoteCommands: this.remoteCommands,
+        projectionStore: this.projectionStore,
       }
+      this.projectionStore = createSessionProjectionStore()
       this.replaceSessionProjection(
         await markUnavailableHistoryAttachments(this.runtime, childId, history.events),
+        history.projections,
       )
       this.sessionId = childId
       this.externalSession = {
@@ -2286,7 +2290,9 @@ class TuiAppImpl implements TuiApp {
         capabilities: this.capabilities,
         skills: this.skills,
         remoteCommands: this.remoteCommands,
+        projectionStore: this.projectionStore,
       }
+      this.projectionStore = createSessionProjectionStore()
       this.replaceSessionProjection(
         await markUnavailableHistoryAttachments(this.runtime, this.sessionId, history.events.map(toSessionEvent)),
       )
@@ -2362,6 +2368,7 @@ class TuiAppImpl implements TuiApp {
       this.capabilities = previous.capabilities
       this.skills = previous.skills
       this.remoteCommands = previous.remoteCommands
+      this.projectionStore = previous.projectionStore
       this.previousSessionView = undefined
       this.agent = 'idle'
       this.notice = {

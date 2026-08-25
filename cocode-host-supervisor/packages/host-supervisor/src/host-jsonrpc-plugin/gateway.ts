@@ -387,8 +387,8 @@ export class TuiCompanionGateway {
     options: { registerQuestionProvider?: boolean } = {},
   ) {
     this.disposers.push(
-        ctx.on(
-          "session/event",
+      ctx.on(
+        "session/event",
         (session: Agent["session"], event: SessionEvent) => {
           if (event.type === "turn/start" || event.type === "turn/end") {
             this.turnAllowances.delete(String(session.id));
