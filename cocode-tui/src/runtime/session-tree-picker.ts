@@ -6,6 +6,9 @@ export type SessionTreePickerItem = SessionTreeRow & {
   externalSessionId?: string
   updatedAt?: number
   activity?: 'idle' | 'running'
+  blank?: boolean
+  origin?: 'subagent'
+  agentPreset?: string
 }
 
 export type SessionTreePickerState = {
@@ -28,6 +31,13 @@ export function setSessionTreeQuery(
   query: string,
 ): SessionTreePickerState {
   return { ...state, query, selected: 0 }
+}
+
+export function replaceSessionTreeItems(
+  state: SessionTreePickerState,
+  items: readonly SessionTreePickerItem[],
+): SessionTreePickerState {
+  return { ...state, items: [...items], selected: 0 }
 }
 
 export function moveSessionTreeSelection(

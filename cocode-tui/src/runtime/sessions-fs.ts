@@ -20,6 +20,10 @@ export type SessionSummary = {
   title?: string
   parentSession?: string
   seedLength?: number
+  running?: boolean
+  blank?: boolean
+  origin?: 'subagent'
+  agentPreset?: string
   path: string
 }
 

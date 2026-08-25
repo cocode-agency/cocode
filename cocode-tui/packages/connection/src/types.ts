@@ -138,8 +138,12 @@ export type TuiSessionSummary = {
   sessionId: string
   createdAt: number
   updatedAt?: number
+  running?: boolean
+  blank?: boolean
   cwd?: string
   parentSessionId?: string
+  origin?: 'subagent'
+  agentPreset?: string
   seedLength?: number
   title?: string
   eventCount?: number

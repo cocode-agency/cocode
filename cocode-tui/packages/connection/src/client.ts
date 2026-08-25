@@ -1222,10 +1222,14 @@ function parseSessionSummary(value: unknown): TuiSessionSummary {
     sessionId: value.sessionId,
     createdAt: value.createdAt,
     ...(typeof value.updatedAt === 'number' ? { updatedAt: value.updatedAt } : {}),
+    ...(typeof value.running === 'boolean' ? { running: value.running } : {}),
+    ...(typeof value.blank === 'boolean' ? { blank: value.blank } : {}),
     ...(typeof value.cwd === 'string' ? { cwd: value.cwd } : {}),
     ...(typeof value.parentSessionId === 'string'
       ? { parentSessionId: value.parentSessionId }
       : {}),
+    ...(value.origin === 'subagent' ? { origin: value.origin } : {}),
+    ...(typeof value.agentPreset === 'string' ? { agentPreset: value.agentPreset } : {}),
     ...(typeof value.seedLength === 'number' ? { seedLength: value.seedLength } : {}),
     ...(typeof value.title === 'string' ? { title: value.title } : {}),
     ...(typeof value.eventCount === 'number' ? { eventCount: value.eventCount } : {}),

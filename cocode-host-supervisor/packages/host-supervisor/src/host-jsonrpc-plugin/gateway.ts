@@ -229,6 +229,7 @@ type PersistenceService = {
       parentSession?: string;
       origin?: "subagent";
       seedLength?: number;
+      agentPreset?: string;
     }[]
   >;
   inspect(id: string): Promise<{
@@ -649,16 +650,22 @@ export class TuiCompanionGateway {
       headers.map(async (header) => {
         const inspection = await persistence.inspect(header.id);
         const last = inspection.events.at(-1);
+        const live = this.ctx.agents.get(String(header.id));
+        const blank = !inspection.events.some((event) => event.type === "turn/start");
+        const agentPreset = resolveSessionPreset(inspection.meta, inspection.events);
         const title = readSessionTitle(inspection.events);
         return {
           sessionId: String(header.id),
           createdAt: header.createdAt,
           ...(last === undefined ? {} : { updatedAt: last.time }),
+          running: live?.status === "running",
+          blank,
           ...(header.cwd === undefined ? {} : { cwd: header.cwd }),
           ...(header.parentSession === undefined
             ? {}
             : { parentSessionId: String(header.parentSession) }),
           ...(header.origin === undefined ? {} : { origin: header.origin }),
+          ...(agentPreset === undefined ? {} : { agentPreset }),
           ...(header.seedLength === undefined
             ? {}
             : { seedLength: header.seedLength }),
@@ -813,12 +820,23 @@ export class TuiCompanionGateway {
   }
 
   async sessionModels(params: { sessionId: string }): Promise<Record<string, unknown>> {
-    const record = await this.getOrCreateSession(params.sessionId);
-    this.assertLive(params.sessionId, record);
-    const selected = installAgentModelSelection(record.handle.agent, {
-      provider: this.provider,
-      model: this.model,
-    }).current ?? { provider: this.provider, model: this.model };
+    this.assertInitialized();
+    const live = this.sessions.get(params.sessionId)?.handle.agent ?? this.ctx.agents.get(params.sessionId);
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    let selected: { provider: string; model: string; reasoningEffort?: string } | undefined;
+    if (live !== undefined) {
+      this.assertOrdinarySession(live);
+      selected = installAgentModelSelection(live, {
+        provider: this.provider,
+        model: this.model,
+      }).current;
+    } else {
+      if (persistence === undefined) throw new Error(`session "${params.sessionId}" was not found`);
+      const inspection = await persistence.inspect(params.sessionId);
+      if (inspection.meta.origin === "subagent") throw new Error("session models are unavailable for subagent sessions");
+      selected = readSessionModelSelection(inspection.events);
+    }
+    selected ??= { provider: this.provider, model: this.model };
     const catalog = await this.listModels();
     const providers = this.ctx.get("llm") as LlmDirectory | undefined;
     const routable = providers?.listProviders?.().some((entry) => entry.id === selected.provider) === true;
@@ -2214,6 +2232,26 @@ function resolveSessionPreset(
     }
   }
   return header.agentPreset;
+}
+
+function readSessionModelSelection(
+  events: readonly SessionEvent[],
+): { provider: string; model: string; reasoningEffort?: string } | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== "request/header" || !isRecord(event.data)) continue;
+    const header = isRecord(event.data.header) ? event.data.header : undefined;
+    const config = header !== undefined && isRecord(header.config) ? header.config : undefined;
+    if (typeof config?.provider !== "string" || typeof config.model !== "string") continue;
+    return {
+      provider: config.provider,
+      model: config.model,
+      ...(typeof config.reasoningEffort === "string" && config.reasoningEffort.trim() !== ""
+        ? { reasoningEffort: config.reasoningEffort }
+        : {}),
+    };
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

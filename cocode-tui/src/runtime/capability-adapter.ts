@@ -29,7 +29,17 @@ export function applyRuntimeCapabilities(
     commands: runtime.capabilities.commands,
     plugins: runtime.capabilities.plugins,
     pluginsMutate: runtime.capabilities.pluginsMutate,
+    sessionSearch: runtime.capabilities.sessionSearch === true,
+    sessionHistory: runtime.capabilities.sessionHistory === true,
+    sessionModels: runtime.capabilities.sessionModels === true,
     sessionRename: runtime.capabilities.sessionRename === true,
+    queueMutation: runtime.capabilities.queueMutation === true,
+    attachmentRead: runtime.capabilities.attachmentRead === true,
+    sessionCreate: runtime.capabilities.sessionCreate === true,
+    subagentList: runtime.capabilities.subagentList === true,
+    subagentHistory: runtime.capabilities.subagentHistory === true,
+    subagentPrompt: runtime.capabilities.subagentPrompt === true,
+    subagentInterrupt: runtime.capabilities.subagentInterrupt === true,
     sessionList: runtime.capabilities.sessionList
       ? 'rpc'
       : configured.sessionList === 'jsonl'

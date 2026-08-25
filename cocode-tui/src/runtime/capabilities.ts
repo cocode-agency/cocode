@@ -19,7 +19,17 @@ export type TuiCapabilities = {
   commands: boolean
   plugins: boolean
   pluginsMutate: boolean
-  sessionRename?: boolean
+  sessionSearch: boolean
+  sessionHistory: boolean
+  sessionModels: boolean
+  sessionRename: boolean
+  queueMutation: boolean
+  attachmentRead: boolean
+  sessionCreate: boolean
+  subagentList: boolean
+  subagentHistory: boolean
+  subagentPrompt: boolean
+  subagentInterrupt: boolean
 }
 
 export const P0_CAPABILITIES: TuiCapabilities = {
@@ -39,4 +49,15 @@ export const P0_CAPABILITIES: TuiCapabilities = {
   commands: false,
   plugins: false,
   pluginsMutate: false,
+  sessionSearch: false,
+  sessionHistory: false,
+  sessionModels: false,
+  sessionRename: false,
+  queueMutation: false,
+  attachmentRead: false,
+  sessionCreate: false,
+  subagentList: false,
+  subagentHistory: false,
+  subagentPrompt: false,
+  subagentInterrupt: false,
 }

@@ -225,6 +225,53 @@ test('exposes session create, history, and content search through the companion'
   })
 })
 
+test('reads cold session metadata and model selection without creating an Agent', async () => {
+  const { ctx, created } = createContext({
+    sessionPersistence: {
+      async list() {
+        return [{ id: 'cold-1', createdAt: 1, cwd: '/tmp', agentPreset: 'minimal' }]
+      },
+      async inspect() {
+        return {
+          meta: { id: 'cold-1', createdAt: 1, cwd: '/tmp', agentPreset: 'minimal' },
+          events: [
+            {
+              type: 'request/header',
+              seq: 1,
+              time: 2,
+              data: { header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } } },
+            },
+          ],
+        }
+      },
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  assert.deepEqual((await gateway.listSessions({ cwd: '/tmp' })).sessions[0], {
+    sessionId: 'cold-1',
+    createdAt: 1,
+    updatedAt: 2,
+    running: false,
+    blank: true,
+    cwd: '/tmp',
+    agentPreset: 'minimal',
+    eventCount: 1,
+  })
+  assert.deepEqual(await gateway.sessionModels({ sessionId: 'cold-1' }), {
+    current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+    routable: true,
+    groups: [{
+      id: 'deepseek-official',
+      name: 'DeepSeek',
+      models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }],
+    }],
+    failures: [],
+  })
+  assert.equal(created.length, 0)
+})
+
 test('rejects unsupported images before they enter the session', async () => {
   const { ctx, followed, created } = createContext()
   const gateway = createGateway(ctx)

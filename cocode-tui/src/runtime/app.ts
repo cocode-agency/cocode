@@ -169,6 +169,7 @@ import {
   closeSessionTreePicker,
   createSessionTreePicker,
   moveSessionTreeSelection,
+  replaceSessionTreeItems,
   selectedSessionTreeItem,
   setSessionTreeActivity,
   setSessionTreeQuery,
@@ -559,6 +560,8 @@ class TuiAppImpl implements TuiApp {
   private closePromise: Promise<void> | undefined
   private resumePicker: ResumePickerState | undefined
   private sessionTreePicker: SessionTreePickerState | undefined
+  private sessionTreeSourceItems: SessionTreePickerItem[] = []
+  private sessionTreeSearchGeneration = 0
   private readonly sessionActivities = new Map<string, 'idle' | 'running'>()
   private sessionTitleOverride: string | undefined
   private rewindPicker: RewindPickerState | undefined
@@ -1031,6 +1034,7 @@ class TuiAppImpl implements TuiApp {
       case 'sessionTree.setQuery':
         if (this.sessionTreePicker !== undefined) {
           this.sessionTreePicker = setSessionTreeQuery(this.sessionTreePicker, action.query)
+          void this.refreshSessionTreeSearch(action.query)
           this.emit()
         }
         return
@@ -1522,7 +1526,9 @@ class TuiAppImpl implements TuiApp {
           this.emit()
           return
         }
-        void renameSession(this.runtime, this.capabilities, this.sessionId, title).then(
+        void this.ensureRemoteSession()
+          .then(() => renameSession(this.runtime, this.capabilities, this.sessionId, title))
+          .then(
           (outcome) => {
             if (outcome.kind === 'unavailable' || outcome.result === undefined) {
               this.notice = { tone: 'info', message: 'Session rename is unavailable for this session.' }
@@ -1735,8 +1741,10 @@ class TuiAppImpl implements TuiApp {
       const items = [...ownItems, ...externalItems]
       if (items.length === 0) {
         this.sessionTreePicker = undefined
+        this.sessionTreeSourceItems = []
         this.notice = { tone: 'info', message: text(this.locale, 'sessionTreeEmpty') }
       } else {
+        this.sessionTreeSourceItems = items
         this.sessionTreePicker = createSessionTreePicker(items)
         this.notice = undefined
       }
@@ -1809,6 +1817,10 @@ class TuiAppImpl implements TuiApp {
         path: '',
         preview: undefined,
         updatedAt: summary.updatedAt,
+        running: summary.running,
+        blank: summary.blank,
+        origin: summary.origin,
+        agentPreset: summary.agentPreset,
       })),
       'rpc',
       this.currentSessionIdentity(),
@@ -1910,6 +1922,47 @@ class TuiAppImpl implements TuiApp {
       this.notice = { tone: 'error', message: errorMessage(error) }
     }
     this.emit()
+  }
+
+  private async refreshSessionTreeSearch(query: string): Promise<void> {
+    const generation = ++this.sessionTreeSearchGeneration
+    const normalized = query.trim()
+    if (normalized === '' || !this.capabilities.sessionSearch || this.runtime.searchSessions === undefined) {
+      if (this.sessionTreePicker !== undefined && generation === this.sessionTreeSearchGeneration) {
+        this.sessionTreePicker = replaceSessionTreeItems(this.sessionTreePicker, this.sessionTreeSourceItems)
+        this.sessionTreePicker = setSessionTreeQuery(this.sessionTreePicker, query)
+      }
+      return
+    }
+    try {
+      const result = await this.runtime.searchSessions(normalized)
+      if (generation !== this.sessionTreeSearchGeneration || this.sessionTreePicker === undefined) return
+      const snippets = new Map(result.items.map((item) => [item.sessionId, item.snippet]))
+      const items = this.sessionTreeSourceItems
+        .filter((item) =>
+          item.source === 'rpc'
+            ? snippets.has(item.session.id)
+            : `${item.session.id} ${item.session.title ?? ''} ${item.session.preview ?? ''} ${item.session.cwd ?? ''}`
+                .toLocaleLowerCase()
+                .includes(normalized.toLocaleLowerCase()),
+        )
+        .map((item) => ({
+          ...item,
+          session: {
+            ...item.session,
+            ...(snippets.get(item.session.id) === undefined
+              ? {}
+              : { preview: snippets.get(item.session.id) }),
+          },
+      }))
+      this.sessionTreePicker = replaceSessionTreeItems(this.sessionTreePicker, items)
+      this.sessionTreePicker = setSessionTreeQuery(this.sessionTreePicker, query)
+      this.emit()
+    } catch {
+      // Local filtering remains available when a runtime search provider is
+      // absent or fails; the visible picker must not disappear on a search
+      // backend error.
+    }
   }
 
   private async openExternalSession(item: SessionTreePickerItem): Promise<void> {
@@ -2502,7 +2555,25 @@ class TuiAppImpl implements TuiApp {
 
   private async refreshSessionControls(): Promise<void> {
     this.resetSessionControls()
-    await Promise.all([this.refreshPermissionMode(), this.refreshPlanMode()])
+    await Promise.all([
+      this.refreshPermissionMode(),
+      this.refreshPlanMode(),
+      this.refreshSessionModels(),
+    ])
+  }
+
+  private async refreshSessionModels(): Promise<void> {
+    if (!this.capabilities.sessionModels || this.runtime.sessionModels === undefined) return
+    try {
+      const result = await this.runtime.sessionModels(this.sessionId)
+      this.modelCatalog = { groups: result.groups, failures: result.failures }
+      this.provider = result.current.provider
+      this.model = result.current.model
+      this.reasoningEffort = result.current.reasoningEffort
+    } catch {
+      // Legacy runtimes and sessions that have not been materialized yet keep
+      // the launch selection until the ordinary model catalog is opened.
+    }
   }
 
   private async togglePlanMode(): Promise<void> {
@@ -2556,7 +2627,9 @@ class TuiAppImpl implements TuiApp {
       this.emit()
       return
     }
-    if (!this.capabilities.modelList || this.runtime.listModels === undefined) {
+    const sessionModelsReader = this.capabilities.sessionModels ? this.runtime.sessionModels : undefined
+    const canReadSessionModels = sessionModelsReader !== undefined
+    if (!canReadSessionModels && (!this.capabilities.modelList || this.runtime.listModels === undefined)) {
       this.modelInputOpen = true
       this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
       this.emit()
@@ -2565,7 +2638,19 @@ class TuiAppImpl implements TuiApp {
     this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogLoading') }
     this.emit()
     try {
-      const catalog = await this.runtime.listModels()
+      let catalog: TuiModelCatalog
+      if (canReadSessionModels) {
+        const sessionModels = await sessionModelsReader(this.sessionId)
+        catalog = { groups: sessionModels.groups, failures: sessionModels.failures }
+        this.provider = sessionModels.current.provider
+        this.model = sessionModels.current.model
+        this.reasoningEffort = sessionModels.current.reasoningEffort
+        if (!sessionModels.routable) {
+          this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
+        }
+      } else {
+        catalog = await this.runtime.listModels!()
+      }
       if (catalog.groups.every((group) => group.models.length === 0)) {
         this.modelInputOpen = true
         this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogEmpty') }
@@ -2598,6 +2683,7 @@ class TuiAppImpl implements TuiApp {
     }
     this.emit()
     try {
+      await this.ensureRemoteSession()
       const selected = await this.runtime.selectModel?.(
         this.sessionId,
         provider,
@@ -2845,6 +2931,12 @@ class TuiAppImpl implements TuiApp {
     this.pendingSkillInvocation = undefined
     this.attachments = []
     this.images = []
+  }
+
+  private async ensureRemoteSession(): Promise<void> {
+    if (this.externalSession !== undefined) return
+    if (!this.capabilities.sessionCreate || this.runtime.createSession === undefined) return
+    await this.runtime.createSession(this.sessionId, this.cwd)
   }
 
   private async resumeSession(sessionId: string, path: string | undefined): Promise<void> {
@@ -3707,7 +3799,17 @@ function runtimeCapabilityEntries(
     'commands',
     'plugins',
     'pluginsMutate',
+    'sessionSearch',
+    'sessionHistory',
+    'sessionModels',
     'sessionRename',
+    'queueMutation',
+    'attachmentRead',
+    'sessionCreate',
+    'subagentList',
+    'subagentHistory',
+    'subagentPrompt',
+    'subagentInterrupt',
     'promptMode',
     'queueMode',
   ]
@@ -3743,6 +3845,10 @@ function makeSessionTreeItems(
     preview?: string
     parentSession?: string
     seedLength?: number
+    running?: boolean
+    blank?: boolean
+    origin?: 'subagent'
+    agentPreset?: string
     path: string
     externalSessionId?: string
   }>,
@@ -3761,6 +3867,10 @@ function makeSessionTreeItems(
         ? {}
         : { path: sourceSession.path }),
       ...(sourceSession?.updatedAt === undefined ? {} : { updatedAt: sourceSession.updatedAt }),
+      ...(sourceSession?.running === undefined ? {} : { activity: sourceSession.running ? 'running' : 'idle' }),
+      ...(sourceSession?.blank === undefined ? {} : { blank: sourceSession.blank }),
+      ...(sourceSession?.origin === undefined ? {} : { origin: sourceSession.origin }),
+      ...(sourceSession?.agentPreset === undefined ? {} : { agentPreset: sourceSession.agentPreset }),
       ...(sourceSession?.externalSessionId === undefined
         ? {}
         : { externalSessionId: sourceSession.externalSessionId }),
