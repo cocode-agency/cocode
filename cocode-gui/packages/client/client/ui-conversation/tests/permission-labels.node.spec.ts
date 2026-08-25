@@ -9,5 +9,7 @@ describe('permission labels', () => {
     expect(en['access.readOnly']).toBe('Read Only')
     expect(en['access.workspaceWrite']).toBe('Workspace Write')
     expect(en['access.fullAccess']).toBe('Full access')
+    expect(zh['hero.defaultWorkspace']).toBe('默认工作区')
+    expect(en['hero.defaultWorkspace']).toBe('Default workspace')
   })
 })
