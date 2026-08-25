@@ -252,7 +252,7 @@ test('reads cold session metadata and model selection without creating an Agent'
   assert.deepEqual((await gateway.listSessions({ cwd: '/tmp' })).sessions[0], {
     sessionId: 'cold-1',
     createdAt: 1,
-    updatedAt: 2,
+    updatedAt: 1,
     running: false,
     blank: true,
     cwd: '/tmp',

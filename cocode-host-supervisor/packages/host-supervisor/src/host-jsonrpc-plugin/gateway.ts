@@ -696,7 +696,7 @@ export class TuiCompanionGateway {
     const sessions = await Promise.all(
       headers.map(async (header) => {
         const inspection = await persistence.inspect(header.id);
-        const last = inspection.events.at(-1);
+        const updatedAt = readSessionUpdatedAt(header.createdAt, inspection.events);
         const live = this.ctx.agents.get(String(header.id));
         const blank = !inspection.events.some((event) => event.type === "turn/start");
         const agentPreset = resolveSessionPreset(inspection.meta, inspection.events);
@@ -708,7 +708,7 @@ export class TuiCompanionGateway {
         return {
           sessionId: String(header.id),
           createdAt: header.createdAt,
-          ...(last === undefined ? {} : { updatedAt: last.time }),
+          updatedAt,
           running: live?.status === "running",
           blank,
           ...(header.cwd === undefined ? {} : { cwd: header.cwd }),
@@ -753,7 +753,7 @@ export class TuiCompanionGateway {
       const first = lower.indexOf(terms[0] ?? query);
       const start = Math.max(0, first - 80);
       const snippet = text.slice(start, start + 240).replace(/\s+/g, " ").trim();
-      items.push({ sessionId: String(header.id), snippet, updatedAt: inspection.events.at(-1)?.time ?? header.createdAt });
+      items.push({ sessionId: String(header.id), snippet, updatedAt: readSessionUpdatedAt(header.createdAt, inspection.events) });
     }
     items.sort((left, right) => right.updatedAt - left.updatedAt || left.sessionId.localeCompare(right.sessionId));
     const hasMore = items.length > 20;
@@ -2068,6 +2068,15 @@ function readSessionTitle(events: readonly SessionEvent[]): string | undefined {
       return event.data.title;
   }
   return undefined;
+}
+
+function readSessionUpdatedAt(createdAt: number, events: readonly SessionEvent[]): number {
+  let updatedAt = createdAt;
+  for (const event of events) {
+    if (event.type !== "user/message" && event.type !== "steering/message") continue;
+    if (Number.isFinite(event.time)) updatedAt = Math.max(updatedAt, event.time);
+  }
+  return updatedAt;
 }
 
 function isHistoryMessage(event: SessionEvent): boolean {
