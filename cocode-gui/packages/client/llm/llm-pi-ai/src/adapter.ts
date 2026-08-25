@@ -134,9 +134,9 @@ function profileOptions(
  * throwing: `resolveModel` builds the model catalog, and a catalog that fails
  * takes its whole provider out of every picker — so one mis-set profile field
  * would hide every model on the route, including the ones that support the
- * level. The request path still refuses, which is where a bad configuration
- * belongs: describing what a model can do must not fail because a deployment
- * asked it for something it cannot.
+ * level. The request path makes the same distinction: an explicit request is
+ * rejected, while a stale provider default is ignored for this model. That
+ * keeps describing what a model can do independent from legacy route state.
  * @param model - the resolved model descriptor.
  * @param effort - the profile's configured level, if any.
  * @returns the level when this model supports it, otherwise undefined.
@@ -151,7 +151,7 @@ function describableReasoningLevel(
     : undefined
 }
 
-/** Validate an explicit Harness/profile effort without invoking pi-ai's clamp. */
+/** Validate an explicit Harness effort without invoking pi-ai's clamp. */
 function resolveReasoningLevel(
   model: Model<Api>,
   effort: ReasoningEffortIdType | ModelThinkingLevel | undefined,
@@ -333,10 +333,14 @@ export class PiAiAdapter extends LlmAdapter {
     // the one it started with and the next call picks up the new one.
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
-    const reasoning = resolveReasoningLevel(
-      model,
-      options.reasoningEffort ?? profile.reasoning,
-    )
+    // An effort supplied on the call is an explicit user/request choice and
+    // must remain strict. The profile value is older provider-level state,
+    // however, so only inherit it when this exact model advertises it. This
+    // keeps a legacy `reasoning: high` from breaking a model that has no
+    // reasoning capability (or offers a different set of levels).
+    const reasoning = options.reasoningEffort === undefined
+      ? describableReasoningLevel(model, profile.reasoning)
+      : resolveReasoningLevel(model, options.reasoningEffort)
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
     const consumer = new AbortController()

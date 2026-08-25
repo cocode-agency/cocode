@@ -169,6 +169,49 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.requests).toHaveLength(2)
   })
 
+  it('ignores an unsupported legacy profile effort for the selected model', async () => {
+    vi.stubEnv('PI_TEST_KEY', 'test-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: `${server.url}/v1`,
+          // This is the stale route-level default that used to leak into every
+          // model on the provider, even when the selected model did not offer it.
+          reasoning: 'high',
+          models: [{
+            id: 'acme-chat',
+            reasoningEfforts: false,
+          }],
+        },
+      },
+    })
+
+    await assemble(ctx, {
+      provider: 'acme-gateway',
+      model: 'acme-chat',
+      messages: [],
+    })
+    expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
+    expect(server.requests[0]).not.toHaveProperty('thinking')
+
+    const unsupported = await assemble(ctx, {
+      provider: 'acme-gateway',
+      model: 'acme-chat',
+      reasoningEffort: ReasoningEffortId('high'),
+      messages: [],
+    })
+    expect(unsupported.finish).toMatchObject({
+      kind: 'error',
+      failure: { code: 'UNSUPPORTED_REASONING_EFFORT' },
+    })
+    expect(server.requests).toHaveLength(1)
+  })
+
   it('preserves omitted profile options when constructing the adapter directly', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = new Context()
@@ -502,7 +545,7 @@ describe('provider profile lifecycle', () => {
     expect((await ctx.llm.resolveModelInfo('openai', 'gpt-4.1')).reasoning).toBeUndefined()
   })
 
-  it('uses a supported profile reasoning value as the model default and rejects an unsupported one', async () => {
+  it('uses a supported profile reasoning value as the model default and ignores an unsupported legacy one', async () => {
     const supported = new Context()
     await supported.plugin(LlmRuntime)
     await supported.plugin(LlmPiAi, {
@@ -515,20 +558,27 @@ describe('provider profile lifecycle', () => {
     // than failing: resolveModelInfo builds the model catalog, and a catalog
     // that throws takes its whole provider out of every picker — one mis-set
     // field would hide every model on the route, including the ones that do
-    // support the level. The request path below is where it is refused.
+    // support the level. The request path ignores this legacy provider value
+    // and lets the exact model use its own default behavior.
+    const server = await mockServer([{ events: textEvents }])
     const unsupported = new Context()
     await unsupported.plugin(LlmRuntime)
     await unsupported.plugin(LlmPiAi, {
-      providers: { deepseek: { reasoning: 'medium' } },
+      providers: {
+        deepseek: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          baseURL: server.url,
+          reasoning: 'medium',
+        },
+      },
     })
     const described = await unsupported.llm.resolveModelInfo('deepseek', 'deepseek-v4-flash')
     expect(described.reasoning?.defaultEffort).toBeUndefined()
     expect(described.reasoning?.efforts.length).toBeGreaterThan(0)
     await expect(assemble(unsupported, {
       provider: 'deepseek', model: 'deepseek-v4-flash', messages: [],
-    })).resolves.toMatchObject({
-      finish: { kind: 'error', failure: { code: 'UNSUPPORTED_REASONING_EFFORT' } },
-    })
+    })).resolves.toMatchObject({ finish: { kind: 'stop' } })
+    expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
 
     const disabled = new Context()
     await disabled.plugin(LlmRuntime)
