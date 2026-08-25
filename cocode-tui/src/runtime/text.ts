@@ -4,12 +4,21 @@
 
 export function blocksToText(blocks: unknown): string {
   if (!Array.isArray(blocks)) return ''
-  return blocks
-    .filter((block): block is { type: string; text: string } => {
-      return isRecord(block) && block.type === 'text' && typeof block.text === 'string'
-    })
-    .map((block) => block.text)
-    .join('')
+  return blocks.map(blockToText).filter((value) => value !== '').join('')
+}
+
+function blockToText(block: unknown): string {
+  if (!isRecord(block)) return ''
+  if (block.type === 'text' && typeof block.text === 'string') return block.text
+  if (block.type !== 'image') return ''
+  const attachment = isRecord(block.attachment) ? block.attachment : block
+  const name = typeof attachment.name === 'string' && attachment.name.trim() !== ''
+    ? attachment.name.trim()
+    : undefined
+  const width = typeof attachment.width === 'number' && attachment.width > 0 ? attachment.width : undefined
+  const height = typeof attachment.height === 'number' && attachment.height > 0 ? attachment.height : undefined
+  const dimensions = width !== undefined && height !== undefined ? ` ${width}x${height}` : ''
+  return `[image${name === undefined ? '' : ` ${name}`}${dimensions}]`
 }
 
 export function reasoningToText(blocks: unknown): string {

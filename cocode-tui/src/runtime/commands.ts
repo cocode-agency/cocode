@@ -331,9 +331,10 @@ export function createBuiltinCommands(): CommandRegistry {
     name: 'history',
     summary: 'Reload the current session history from the Host',
     summaryZh: '从 Host 重新读取当前会话历史',
+    input: { hint: '[older]' },
     kind: 'local',
     available: (caps) => caps.sessionHistory,
-    run: (ctx) => ctx.showHistory?.(),
+    run: (ctx, args) => ctx.showHistory?.(args.trim()),
   })
   registry.register({
     name: 'subagent-history',
@@ -368,6 +369,22 @@ export function createBuiltinCommands(): CommandRegistry {
     kind: 'local',
     available: (caps) => caps.subagentInterrupt,
     run: (ctx, args) => ctx.interruptSubagent?.(args.trim()),
+  })
+  registry.register({
+    name: 'queue-edit',
+    summary: 'Edit a pending Host queue item',
+    summaryZh: '编辑 Host 队列中的输入',
+    input: { hint: '<item-id> <text>' },
+    kind: 'local',
+    available: (caps) => caps.queueMutation,
+    run: (ctx, args) => {
+      const match = /^(\S+)\s+([\s\S]+)$/.exec(args.trim())
+      if (match === null) {
+        ctx.notice('info', 'Use /queue-edit <item-id> <text>.')
+        return
+      }
+      ctx.editRemoteQueue?.(match[1] ?? '', match[2] ?? '')
+    },
   })
 
   return registry

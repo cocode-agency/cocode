@@ -50,6 +50,7 @@ export type CommandContextOptions = {
   showChecklist?: TuiCommandCtx['showChecklist']
   showSubagents?: TuiCommandCtx['showSubagents']
   showHistory?: TuiCommandCtx['showHistory']
+  editRemoteQueue?: TuiCommandCtx['editRemoteQueue']
   showSubagentHistory?: TuiCommandCtx['showSubagentHistory']
   promptSubagent?: TuiCommandCtx['promptSubagent']
   interruptSubagent?: TuiCommandCtx['interruptSubagent']
@@ -101,6 +102,7 @@ export type AppCommandContextOptions = {
   showChecklist?: TuiCommandCtx['showChecklist']
   showSubagents?: TuiCommandCtx['showSubagents']
   showHistory?: TuiCommandCtx['showHistory']
+  editRemoteQueue?: TuiCommandCtx['editRemoteQueue']
   showSubagentHistory?: TuiCommandCtx['showSubagentHistory']
   promptSubagent?: TuiCommandCtx['promptSubagent']
   interruptSubagent?: TuiCommandCtx['interruptSubagent']
@@ -174,6 +176,7 @@ export function createCommandContext(options: CommandContextOptions): TuiCommand
     showChecklist: options.showChecklist,
     showSubagents: options.showSubagents,
     showHistory: options.showHistory,
+    editRemoteQueue: options.editRemoteQueue,
     showSubagentHistory: options.showSubagentHistory,
     promptSubagent: options.promptSubagent,
     interruptSubagent: options.interruptSubagent,
@@ -236,6 +239,7 @@ export function createAppCommandContext(options: AppCommandContextOptions): TuiC
     showChecklist: options.showChecklist,
     showSubagents: options.showSubagents,
     showHistory: options.showHistory,
+    editRemoteQueue: options.editRemoteQueue,
     showSubagentHistory: options.showSubagentHistory,
     promptSubagent: options.promptSubagent,
     interruptSubagent: options.interruptSubagent,

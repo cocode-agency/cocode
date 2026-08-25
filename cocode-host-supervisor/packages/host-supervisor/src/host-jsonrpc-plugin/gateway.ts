@@ -37,6 +37,23 @@ type LlmDirectory = {
   listProviders?: () => readonly { id: string }[];
 };
 
+type SessionProjectionSnapshot = {
+  asOfSeq: number;
+  values: Record<string, unknown>;
+};
+
+type SessionProjectionService = {
+  snapshot?: (session: Agent["session"]) => SessionProjectionSnapshot;
+  onChanged?: (
+    listener: (
+      session: Agent["session"],
+      key: string,
+      value: unknown,
+      seq: number,
+    ) => void,
+  ) => () => void;
+};
+
 /** Settings-backed routes such as cocode-nut register after jsonrpc starts listening. */
 const PROVIDER_READY_DEADLINE_MS = 2_000;
 const PROVIDER_READY_RETRY_MS = 50;
@@ -385,6 +402,21 @@ export class TuiCompanionGateway {
         },
       ),
     );
+    const projections = ctx.get("sessionProjections") as
+      | SessionProjectionService
+      | undefined;
+    if (projections?.onChanged !== undefined) {
+      this.disposers.push(
+        projections.onChanged((session, key, value, seq) => {
+          transport.notify("session.projection", {
+            sessionId: String(session.id),
+            key,
+            value,
+            seq,
+          });
+        }),
+      );
+    }
     this.disposers.push(
       ctx.on("session/created", (session: Agent["session"]) => {
         const parentSession = session.header.parentSession;
@@ -669,6 +701,10 @@ export class TuiCompanionGateway {
         const blank = !inspection.events.some((event) => event.type === "turn/start");
         const agentPreset = resolveSessionPreset(inspection.meta, inspection.events);
         const title = readSessionTitle(inspection.events);
+        const projections = live === undefined
+          ? undefined
+          : (this.ctx.get("sessionProjections") as SessionProjectionService | undefined)
+              ?.snapshot?.(live.session);
         return {
           sessionId: String(header.id),
           createdAt: header.createdAt,
@@ -685,6 +721,7 @@ export class TuiCompanionGateway {
             ? {}
             : { seedLength: header.seedLength }),
           ...(title === undefined ? {} : { title }),
+          ...(projections === undefined ? {} : { projections }),
           eventCount: inspection.events.length,
         };
       }),
@@ -830,6 +867,7 @@ export class TuiCompanionGateway {
   async history(params: { sessionId: string; beforeSeq?: number; maxMessages?: number }): Promise<{
     events: SessionEvent[];
     hasMore: boolean;
+    projections?: SessionProjectionSnapshot;
   }> {
     this.assertInitialized();
     const live = this.sessions.get(params.sessionId)?.handle.agent ?? this.ctx.agents.get(params.sessionId);
@@ -839,12 +877,16 @@ export class TuiCompanionGateway {
     const before = params.beforeSeq === undefined ? Number.POSITIVE_INFINITY : params.beforeSeq;
     const filtered = events.filter((event) => event.seq < before);
     const maxMessages = params.maxMessages === undefined ? undefined : Math.max(1, Math.trunc(params.maxMessages));
-    if (maxMessages === undefined) return { events: [...filtered], hasMore: false };
+    const projections = before === Number.POSITIVE_INFINITY && live !== undefined
+      ? (this.ctx.get("sessionProjections") as SessionProjectionService | undefined)
+          ?.snapshot?.(live.session)
+      : undefined;
+    if (maxMessages === undefined) return { events: [...filtered], hasMore: false, ...(projections === undefined ? {} : { projections }) };
     const messageIndexes = filtered
       .map((event, index) => isHistoryMessage(event) ? index : -1)
       .filter((index) => index >= 0);
     const cut = messageIndexes.length <= maxMessages ? 0 : messageIndexes[messageIndexes.length - maxMessages] ?? 0;
-    return { events: filtered.slice(cut), hasMore: cut > 0 };
+    return { events: filtered.slice(cut), hasMore: cut > 0, ...(projections === undefined ? {} : { projections }) };
   }
 
   async sessionModels(params: { sessionId: string }): Promise<Record<string, unknown>> {

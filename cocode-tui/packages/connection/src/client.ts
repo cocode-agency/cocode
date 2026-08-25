@@ -43,6 +43,7 @@ import type {
   TuiImageInput,
   TuiSessionSearchItem,
   TuiSessionHistoryResult,
+  TuiHistoryEntry,
   TuiSessionModels,
   TuiQueueAction,
   TuiAttachmentReadResult,
@@ -409,13 +410,12 @@ class SdkTuiRuntime implements TuiRuntime {
       ...(beforeSeq === undefined ? {} : { beforeSeq }),
       ...(maxMessages === undefined ? {} : { maxMessages }),
     })
-    if (!isRecord(result) || !Array.isArray(result.events) || !result.events.every(isSessionEvent) || typeof result.hasMore !== 'boolean') {
-      throw new Error(`subagent.history returned an invalid result: ${JSON.stringify(result)}`)
-    }
-    const projections = parseProjectionBaseline(result.projections)
+    const history = parseHistoryResult(result, 'subagent.history')
+    const projections = parseProjectionBaseline(isRecord(result) ? result.projections : undefined)
     return {
-      events: result.events,
-      hasMore: result.hasMore,
+      events: history.events,
+      hasMore: history.hasMore,
+      ...(history.entries === undefined ? {} : { entries: history.entries }),
       ...(projections === undefined ? {} : { projections }),
     }
   }
@@ -458,13 +458,12 @@ class SdkTuiRuntime implements TuiRuntime {
       ...(beforeSeq === undefined ? {} : { beforeSeq }),
       ...(maxMessages === undefined ? {} : { maxMessages }),
     })
-    if (!isRecord(result) || !Array.isArray(result.events) || !result.events.every(isSessionEvent) || typeof result.hasMore !== 'boolean') {
-      throw new Error(`session.history returned an invalid result: ${JSON.stringify(result)}`)
-    }
-    const projections = parseProjectionBaseline(result.projections)
+    const history = parseHistoryResult(result, 'session.history')
+    const projections = parseProjectionBaseline(isRecord(result) ? result.projections : undefined)
     return {
-      events: result.events,
-      hasMore: result.hasMore,
+      events: history.events,
+      hasMore: history.hasMore,
+      ...(history.entries === undefined ? {} : { entries: history.entries }),
       ...(projections === undefined ? {} : { projections }),
     }
   }
@@ -1228,6 +1227,7 @@ function parseSessionSummary(value: unknown): TuiSessionSummary {
   ) {
     throw new Error(`session/list returned an invalid session: ${JSON.stringify(value)}`)
   }
+  const projections = parseProjectionBaseline(value.projections)
   return {
     sessionId: value.sessionId,
     createdAt: value.createdAt,
@@ -1243,6 +1243,32 @@ function parseSessionSummary(value: unknown): TuiSessionSummary {
     ...(typeof value.seedLength === 'number' ? { seedLength: value.seedLength } : {}),
     ...(typeof value.title === 'string' ? { title: value.title } : {}),
     ...(typeof value.eventCount === 'number' ? { eventCount: value.eventCount } : {}),
+    ...(projections === undefined ? {} : { projections }),
+  }
+}
+
+function parseHistoryResult(
+  value: unknown,
+  operation: string,
+): { events: SessionEvent[]; entries?: TuiHistoryEntry[]; hasMore: boolean } {
+  if (!isRecord(value) || !Array.isArray(value.events) || typeof value.hasMore !== 'boolean') {
+    throw new Error(`${operation} returned an invalid result: ${JSON.stringify(value)}`)
+  }
+  const entries: TuiHistoryEntry[] = []
+  for (const item of value.events) {
+    if (isSessionEvent(item)) {
+      entries.push({ event: item })
+      continue
+    }
+    if (!isRecord(item) || !isSessionEvent(item.event)) {
+      throw new Error(`${operation} returned an invalid history entry: ${JSON.stringify(item)}`)
+    }
+    entries.push({ event: item.event, ...(item.view === undefined ? {} : { view: item.view }) })
+  }
+  return {
+    events: entries.map((entry) => entry.event),
+    hasMore: value.hasMore,
+    ...(entries.some((entry) => entry.view !== undefined) ? { entries } : {}),
   }
 }
 

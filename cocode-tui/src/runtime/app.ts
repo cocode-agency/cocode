@@ -481,7 +481,8 @@ export type TuiCommandCtx = {
   showQueuePicker?: () => void
   showChecklist?: () => void
   showSubagents?: () => void
-  showHistory?: () => void
+  showHistory?: (args?: string) => void
+  editRemoteQueue?: (itemId: string, text: string) => void
   showSubagentHistory?: (childSessionId: string) => void
   promptSubagent?: (childSessionId: string, text: string) => void
   interruptSubagent?: (childSessionId: string) => void
@@ -579,6 +580,8 @@ class TuiAppImpl implements TuiApp {
   private imageSerial = 0
   private readonly activeSubagents = new Set<string>()
   private highestSessionSeq = -1
+  private historyEvents: SessionEvent[] = []
+  private historyHasMore = false
   private lastSubagent: TuiSubagentActivity['last']
   private readonly promptQueue = new PromptQueueCoordinator()
   private remoteQueue: TuiRemoteQueueItem[] = []
@@ -1508,6 +1511,7 @@ class TuiAppImpl implements TuiApp {
         this.assembler.reset()
         this.telemetry.reset()
         this.sessionState.reset()
+        this.resetHistoryState()
         this.checklist = undefined
         this.sessionTitleOverride = undefined
         this.attachments = []
@@ -1722,7 +1726,8 @@ class TuiAppImpl implements TuiApp {
       showQueuePicker: () => this.openQueuePicker(),
       showChecklist: () => this.openChecklist(),
       showSubagents: () => { void this.showSubagents() },
-      showHistory: () => { void this.showSessionHistory() },
+      showHistory: (args) => { void this.showSessionHistory(args) },
+      editRemoteQueue: (itemId, content) => { void this.editRemoteQueue(itemId, content) },
       showSubagentHistory: (childSessionId) => { void this.showSubagentHistory(childSessionId) },
       promptSubagent: (childSessionId, content) => { void this.promptSubagent(childSessionId, content) },
       interruptSubagent: (childSessionId) => { void this.interruptSubagent(childSessionId) },
@@ -1851,21 +1856,37 @@ class TuiAppImpl implements TuiApp {
     this.emit()
   }
 
-  private async showSessionHistory(): Promise<void> {
+  private async showSessionHistory(args = ''): Promise<void> {
     if (!this.capabilities.sessionHistory || this.runtime.history === undefined) {
       this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前运行时不支持会话历史读取。' : 'Session history is unavailable.' }
       this.emit()
       return
     }
     try {
-      const result = await this.runtime.history(this.sessionId, undefined, 100)
-      this.replaceSessionProjection(result.events, result.projections)
+      const older = args.trim().toLocaleLowerCase() === 'older'
+      const beforeSeq = older ? this.historyEvents[0]?.seq : undefined
+      if (older && beforeSeq === undefined) {
+        this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前没有可加载的更早历史。' : 'There is no older history to load.' }
+        this.emit()
+        return
+      }
+      if (older && !this.historyHasMore) {
+        this.notice = { tone: 'info', message: this.locale === 'zh' ? '已经到达历史开头。' : 'The beginning of history is already loaded.' }
+        this.emit()
+        return
+      }
+      const result = await this.runtime.history(this.sessionId, beforeSeq, 100)
+      const events = older
+        ? [...result.events, ...this.historyEvents]
+        : result.events
+      this.replaceSessionProjection(events, result.projections)
+      this.historyHasMore = result.hasMore
       this.assembler.settleOpen()
       this.notice = {
         tone: 'info',
         message: result.hasMore
-          ? this.locale === 'zh' ? '已加载最近 100 条消息；更早内容请使用 resume。' : 'Loaded the latest 100 messages; resume for older history.'
-          : this.locale === 'zh' ? '会话历史已刷新。' : 'Session history refreshed.',
+          ? this.locale === 'zh' ? (older ? '已加载更早的历史；继续使用 /history older。' : '已加载最近 100 条消息；继续使用 /history older。') : (older ? 'Older history loaded; use /history older again.' : 'Loaded the latest 100 messages; use /history older for more.')
+          : this.locale === 'zh' ? '会话历史已加载完整。' : 'Session history is fully loaded.',
       }
     } catch (error) {
       this.notice = { tone: 'error', message: errorMessage(error) }
@@ -1950,6 +1971,7 @@ class TuiAppImpl implements TuiApp {
     this.assembler.reset()
     this.telemetry.reset()
     this.sessionState.reset()
+    this.resetHistoryState()
     this.sessionTitleOverride = undefined
     this.resetSubagentActivity()
     this.clearQueuedPrompts()
@@ -2087,6 +2109,7 @@ class TuiAppImpl implements TuiApp {
         this.assembler.reset()
         this.telemetry.reset()
         this.sessionState.reset()
+        this.resetHistoryState()
       } else {
         this.replaceSessionProjection(openResult.seed)
       }
@@ -3112,6 +3135,7 @@ class TuiAppImpl implements TuiApp {
     this.assembler.reset()
     this.telemetry.reset()
     this.sessionState.reset()
+    this.resetHistoryState()
     this.sessionTitleOverride = undefined
     this.pendingSkillInvocation = undefined
     this.attachments = []
@@ -3577,6 +3601,24 @@ class TuiAppImpl implements TuiApp {
     this.emit()
   }
 
+  private async editRemoteQueue(itemId: string, content: string): Promise<void> {
+    if (this.runtime.updateQueue === undefined || !this.capabilities.queueMutation) return
+    const normalizedId = itemId.trim()
+    const normalizedContent = content.trim()
+    if (normalizedId === '' || normalizedContent === '') {
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? '用法：/queue-edit <item-id> <文本>' : 'Use /queue-edit <item-id> <text>.' }
+      this.emit()
+      return
+    }
+    try {
+      await this.runtime.updateQueue(this.sessionId, normalizedId, { kind: 'edit', content: [{ type: 'text', text: normalizedContent }] })
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? 'Host 队列项已更新。' : 'Host queue item updated.' }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
+    }
+    this.emit()
+  }
+
   private pruneAttachments(): void {
     this.attachments = this.attachments.filter((attachment) =>
       this.draft.text.includes(attachment.token),
@@ -3977,12 +4019,12 @@ class TuiAppImpl implements TuiApp {
     projections?: import('@cocode/tui-connection').TuiSessionProjectionBaseline,
   ): void {
     const projection = createSessionProjection()
-    this.highestSessionSeq = -1
-    this.projectionStore.clear()
+    this.resetHistoryState()
     if (projections !== undefined) this.projectionStore.applyBaseline(projections)
     for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
       if (event.seq <= this.highestSessionSeq) continue
       this.highestSessionSeq = event.seq
+      this.historyEvents.push(event)
       projection.assembler.ingest(event)
       projection.telemetry.ingest(event)
       projection.sessionState.ingest(event)
@@ -3992,9 +4034,17 @@ class TuiAppImpl implements TuiApp {
     this.sessionState = projection.sessionState
   }
 
+  private resetHistoryState(): void {
+    this.highestSessionSeq = -1
+    this.historyEvents = []
+    this.historyHasMore = false
+    this.projectionStore.clear()
+  }
+
   private ingestSessionEvent(event: SessionEvent): void {
     if (event.seq <= this.highestSessionSeq) return
     this.highestSessionSeq = event.seq
+    this.historyEvents.push(event)
     this.telemetry.ingest(event)
     this.sessionState.ingest(event)
     if (event.type === 'turn/start') this.checklist = undefined

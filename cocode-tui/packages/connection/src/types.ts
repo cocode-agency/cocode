@@ -147,6 +147,7 @@ export type TuiSessionSummary = {
   seedLength?: number
   title?: string
   eventCount?: number
+  projections?: TuiSessionProjectionBaseline
 }
 
 export type TuiSessionOpenResult = {
@@ -179,7 +180,14 @@ export type TuiSubagentCatalog = {
 export type TuiSessionHistoryResult = {
   events: SessionEvent[]
   hasMore: boolean
+  entries?: TuiHistoryEntry[]
   projections?: TuiSessionProjectionBaseline
+}
+
+export type TuiHistoryEntry = {
+  event: SessionEvent
+  /** Host-computed render intent; kept opaque so TUI does not import DSH tool types. */
+  view?: unknown
 }
 
 export type TuiSessionProjectionBaseline = {
