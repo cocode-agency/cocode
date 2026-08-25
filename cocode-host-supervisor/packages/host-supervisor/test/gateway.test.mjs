@@ -255,6 +255,31 @@ test('normalizes session and queue failures to stable business codes', async () 
   )
 })
 
+test('returns history entries with message-aligned pagination for cold sessions', async () => {
+  const events = [
+    { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: 'first' }] } },
+    { type: 'assistant/chunk', seq: 1, time: 2, data: { chunk: { text: 'partial first' } } },
+    { type: 'assistant/message', seq: 2, time: 3, data: { content: [{ type: 'text', text: 'answer' }] } },
+    { type: 'user/message', seq: 3, time: 4, data: { content: [{ type: 'text', text: 'second' }] } },
+    { type: 'assistant/message', seq: 4, time: 5, data: { content: [{ type: 'text', text: 'second answer' }] } },
+  ]
+  const { ctx } = createContext({
+    sessionPersistence: {
+      async list() { return [{ id: 'cold-history', createdAt: 1, cwd: '/tmp' }] },
+      async inspect() { return { meta: { id: 'cold-history', createdAt: 1, cwd: '/tmp' }, events } },
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  const page = await gateway.history({ sessionId: 'cold-history', maxMessages: 2 })
+  assert.equal(page.hasMore, true)
+  assert.deepEqual(page.events.map((entry) => entry.event.seq), [3, 4])
+  assert.deepEqual(page.events[0], { event: events[3] })
+  const older = await gateway.history({ sessionId: 'cold-history', beforeSeq: 3, maxMessages: 2 })
+  assert.deepEqual(older.events.map((entry) => entry.event.seq), [0, 1, 2])
+})
+
 test('reads cold session metadata and model selection without creating an Agent', async () => {
   const { ctx, created } = createContext({
     sessionPersistence: {

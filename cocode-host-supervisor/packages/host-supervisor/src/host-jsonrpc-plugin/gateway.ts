@@ -879,7 +879,7 @@ export class TuiCompanionGateway {
   }
 
   async history(params: { sessionId: string; beforeSeq?: number; maxMessages?: number }): Promise<{
-    events: SessionEvent[];
+    events: { event: SessionEvent; view?: unknown }[];
     hasMore: boolean;
     projections?: SessionProjectionSnapshot;
   }> {
@@ -905,12 +905,12 @@ export class TuiCompanionGateway {
         }
       }
     }
-    if (maxMessages === undefined) return { events: [...filtered], hasMore: false, ...(projections === undefined ? {} : { projections }) };
+    if (maxMessages === undefined) return { events: filtered.map(historyEntry), hasMore: false, ...(projections === undefined ? {} : { projections }) };
     const messageIndexes = filtered
       .map((event, index) => isHistoryMessage(event) ? index : -1)
       .filter((index) => index >= 0);
     const cut = messageIndexes.length <= maxMessages ? 0 : messageIndexes[messageIndexes.length - maxMessages] ?? 0;
-    return { events: filtered.slice(cut), hasMore: cut > 0, ...(projections === undefined ? {} : { projections }) };
+    return { events: filtered.slice(cut).map(historyEntry), hasMore: cut > 0, ...(projections === undefined ? {} : { projections }) };
   }
 
   async sessionModels(params: { sessionId: string }): Promise<Record<string, unknown>> {
@@ -2178,6 +2178,10 @@ function isHistoryMessage(event: SessionEvent): boolean {
   return event.type === "user/message"
     || event.type === "assistant/message"
     || event.type === "steering/message";
+}
+
+function historyEntry(event: SessionEvent): { event: SessionEvent } {
+  return { event };
 }
 
 function readSubagentDescriptor(
