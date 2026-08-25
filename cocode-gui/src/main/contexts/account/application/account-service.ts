@@ -649,13 +649,11 @@ export class AccountService {
 				await this.cloudKey.clear()
 			}
 			let state = await this.identity.read()
-			let reusedExisting = false
 			if (state !== undefined) {
 				try {
 					this.stage = "identity-refresh"
 					this.assertIdentityOrigin(state)
 					state = await this.ensureIdentityAccess(state)
-					reusedExisting = true
 				} catch (error) {
 					if (!(error instanceof InvalidIdentityError)) throw error
 					// An explicit retry should be able to recover from a stale or rotated
@@ -668,10 +666,12 @@ export class AccountService {
 			if (state === undefined) {
 				state = await this.authorizeNativeSession()
 			}
-			try {
-				return await this.completeSignedInSession(state)
-			} catch (error) {
-				if (!reusedExisting || !isManagedClientMismatch(error)) throw error
+			for (let attempt = 0; ; attempt += 1) {
+				try {
+					return await this.completeSignedInSession(state)
+				} catch (error) {
+					if (attempt > 0 || !isManagedClientMismatch(error)) throw error
+				}
 				const invalid = (await this.identity.read()) ?? state
 				await this.handleInvalidIdentity(invalid)
 				if (this.snapshotValue.error?.code === "cleanup-pending") return this.snapshotValue
@@ -680,7 +680,7 @@ export class AccountService {
 					profile: null,
 					cloud: { status: "absent", providerId: CLOUD_PROVIDER },
 				})
-				return await this.completeSignedInSession(await this.authorizeNativeSession())
+				state = await this.authorizeNativeSession()
 			}
 		} catch (error) {
 			if (error instanceof SignInCancelledError) {
@@ -692,7 +692,8 @@ export class AccountService {
 				return snapshot
 			}
 			this.logFailure("sign-in", error)
-			if (isManagedClientMismatch(error)) {
+			const managedClientMismatch = isManagedClientMismatch(error)
+			if (managedClientMismatch) {
 				const invalid = await this.identity.read()
 				if (invalid !== undefined) await this.handleInvalidIdentity(invalid)
 			}
@@ -715,12 +716,18 @@ export class AccountService {
 					status: error instanceof CloudProviderConflictError ? "conflict" : "error",
 					providerId: CLOUD_PROVIDER,
 				},
-				error: safeError(
-					error,
-					error instanceof CloudProviderConflictError
-						? "cloud-provider-conflict"
-						: "sign-in-failed",
-				),
+				error: managedClientMismatch
+					? {
+							code: "managed-client-mismatch",
+							message:
+								"Cocode could not bind this sign-in to the current installation. Close other Cocode clients, then retry sign-in.",
+					  }
+					: safeError(
+							error,
+							error instanceof CloudProviderConflictError
+								? "cloud-provider-conflict"
+								: "sign-in-failed",
+					  ),
 			}
 			this.publish(snapshot)
 			return snapshot

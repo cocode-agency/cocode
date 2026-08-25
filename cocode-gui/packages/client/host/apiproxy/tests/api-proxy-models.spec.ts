@@ -412,6 +412,45 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('drops a logged reasoning effort the exact model no longer supports', async () => {
+    const { ctx, agent, sessionId } = await harness({
+      provider: 'deepseek-official',
+      model: 'deepseek-chat',
+      reasoningEffort: ReasoningEffortId('high'),
+    })
+    ctx.llm.registerAdapter(['no-reasoning'], new CatalogAdapter('No Reasoning', [
+      { provider: 'no-reasoning', id: 'chat', name: 'Chat' },
+    ]))
+    agent.session.append('request/header', {
+      header: {
+        config: {
+          provider: 'no-reasoning',
+          model: 'chat',
+          reasoningEffort: ReasoningEffortId('high'),
+        },
+      },
+      reason: 'change',
+    })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toEqual({ provider: 'no-reasoning', model: 'chat' })
+
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const prompted = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'hi' }],
+    }))
+    expect(prompted.result.ok).toBe(true)
+    expect(followup).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
   it('saves an accepted selection as the default and survives a storage failure', async () => {
     const { ctx, sessionId } = await harness()
     const saved: unknown[] = []

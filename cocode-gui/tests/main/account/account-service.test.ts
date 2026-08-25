@@ -381,11 +381,13 @@ test("reuses a ready device cloud route without minting another API key", async 
 test("refreshes hosted reasoning metadata on an existing managed route", async () => {
 	const identity = new MemoryVault(validIdentity())
 	const { client, createdKeys } = agency({
-		models: async () => [{
-			id: "cloud-model",
-			name: "Cloud Model",
-			reasoningEfforts: { high: "high", max: "max" },
-		}],
+		models: async () => [
+			{
+				id: "cloud-model",
+				name: "Cloud Model",
+				reasoningEfforts: { high: "high", max: "max" },
+			},
+		],
 	})
 	const cocodeClient = await currentCocodeClient()
 	let route: Record<string, unknown> = {
@@ -401,23 +403,29 @@ test("refreshes hosted reasoning metadata on an existing managed route", async (
 		currentDefault: async () => ({ provider: "cocode-nut", model: "cloud-model" }),
 		describeSettings: async () => ({
 			writable: true,
-			namespaces: [{ ns: "llm-pi-ai", revision: 3, value: { providers: { "cocode-nut": route } } }],
+			namespaces: [
+				{ ns: "llm-pi-ai", revision: 3, value: { providers: { "cocode-nut": route } } },
+			],
 		}),
 		describeCredentials: async () => ({
 			COCODE_NUT_API_KEY: { configured: true, writable: true },
 		}),
-		providers: async (): Promise<ProviderView[]> => [{
-			provider: "cocode-nut",
-			displayName: "Cocode Nut",
-			settingsNs: "llm-pi-ai",
-			settingsPath: ["providers", "cocode-nut"],
-			active: true,
-		}],
-		models: async (): Promise<ModelGroup[]> => [{
-			id: "cocode-nut",
-			name: "Cocode Nut",
-			models: [{ id: "cloud-model", name: "Cloud Model" }],
-		}],
+		providers: async (): Promise<ProviderView[]> => [
+			{
+				provider: "cocode-nut",
+				displayName: "Cocode Nut",
+				settingsNs: "llm-pi-ai",
+				settingsPath: ["providers", "cocode-nut"],
+				active: true,
+			},
+		],
+		models: async (): Promise<ModelGroup[]> => [
+			{
+				id: "cocode-nut",
+				name: "Cocode Nut",
+				models: [{ id: "cloud-model", name: "Cloud Model" }],
+			},
+		],
 		mutateSettings: async (request: { ops: { value?: unknown }[] }): Promise<void> => {
 			route = request.ops[0]?.value as Record<string, unknown>
 		},
@@ -1278,6 +1286,103 @@ test("desktop-key reauthentication opens a browser reauth gate before retry", as
 		"https://cocode.agency/login?return_to=%2Faccount",
 		"https://cocode.agency/authorize",
 	])
+})
+
+test("managed-client mismatch retries native authorization once", async () => {
+	const identity = new MemoryVault<IdentityState>(undefined)
+	let authorizationState = ""
+	let callbackCount = 0
+	let keyAttempts = 0
+	let route: Record<string, unknown> | undefined
+	let credentialConfigured = false
+	const { client } = agency({
+		startAuthorization: async (input: { state: string }) => {
+			authorizationState = input.state
+			return "https://cocode.agency/authorize"
+		},
+		exchangeCode: async () => ({
+			access_token: `fresh-access-${String(callbackCount)}`,
+			refresh_token: `fresh-refresh-${String(callbackCount)}`,
+			expires_in: 3600,
+		}),
+		createDesktopKey: async () => {
+			keyAttempts += 1
+			if (keyAttempts === 1) {
+				throw new AgencyHttpError(
+					"could not create a device API key (HTTP 422): managed client metadata does not match the authenticated token family",
+					422,
+				)
+			}
+			return { secret: "ck_fresh", id: "key-fresh", name: "Cocode Device — test-host" }
+		},
+	})
+	const settings = (): SettingsNamespace[] => [
+		{
+			ns: "llm-pi-ai",
+			revision: route === undefined ? 1 : 2,
+			value: route === undefined ? { providers: {} } : { providers: { "cocode-nut": route } },
+		},
+	]
+	const dsh = {
+		currentDefault: async () => ({ provider: "deepseek-official", model: "deepseek-v4-flash" }),
+		describeSettings: async () => ({ writable: true, namespaces: settings() }),
+		describeCredentials: async () => ({
+			COCODE_NUT_API_KEY: { configured: credentialConfigured, writable: true },
+		}),
+		providers: async (): Promise<ProviderView[]> =>
+			route === undefined
+				? []
+				: [
+						{
+							provider: "cocode-nut",
+							displayName: "Cocode Nut",
+							settingsNs: "llm-pi-ai",
+							settingsPath: ["providers", "cocode-nut"],
+							active: credentialConfigured,
+						},
+				  ],
+		models: async (): Promise<ModelGroup[]> =>
+			route === undefined
+				? []
+				: [
+						{
+							id: "cocode-nut",
+							name: "Cocode Nut",
+							models: [{ id: "cloud-model", name: "Cloud Model" }],
+						},
+				  ],
+		mutateSettings: async (request: { ops: { op: "set" | "unset"; value?: unknown }[] }) => {
+			const op = request.ops[0]
+			route = op?.op === "set" ? (op.value as Record<string, unknown>) : undefined
+		},
+		setCredential: async () => {
+			credentialConfigured = true
+		},
+		unsetCredential: async () => {
+			credentialConfigured = false
+		},
+	} as never
+	const { deps } = dependencies(identity)
+	const service = new AccountService(dsh, client, {
+		...deps,
+		listenForCallback: async () => {
+			callbackCount += 1
+			return {
+				redirectUri: "http://127.0.0.1:43123/auth/callback",
+				wait: async () =>
+					new URL(
+						`http://127.0.0.1:43123/auth/callback?code=fresh-code&state=${authorizationState}`,
+					),
+				close: () => undefined,
+			}
+		},
+	})
+
+	const snapshot = await service.signIn()
+	assert.equal(snapshot.phase, "signed-in")
+	assert.equal(callbackCount, 2)
+	assert.equal(keyAttempts, 2)
+	assert.equal(identity.value?.accessToken, "fresh-access-2")
 })
 
 test("sign out does not send an identity token to a changed Agency origin", async () => {

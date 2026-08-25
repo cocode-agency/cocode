@@ -1121,6 +1121,31 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return selection
   }
 
+  /**
+   * Remove an effort restored from an older request header when the route's
+   * current exact-model metadata no longer offers it. Historical headers are
+   * durable facts, but they are not a fresh user choice: carrying one forward
+   * after a hosted catalog change would make every retry fail before network
+   * I/O. Capability lookup failures leave the selection untouched so an
+   * unavailable provider still reports its real failure.
+   */
+  async function currentSelectionFor(agent: Agent): Promise<ModelSelection> {
+    const ref = selectionFor(agent)
+    const current = ref.current
+    if (current.reasoningEffort === undefined) return current
+    try {
+      const info = await ctx.llm.resolveModelInfo(current.provider, current.model)
+      if (info.reasoning?.efforts.some(effort => effort.id === current.reasoningEffort)) {
+        return current
+      }
+    } catch {
+      return current
+    }
+    const repaired: ModelSelection = { provider: current.provider, model: current.model }
+    ref.current = repaired
+    return repaired
+  }
+
   /** Pre-publication setup used by both fresh and resumed Web agents. */
   function installSelection(agentCtx: Context): void {
     const agent = agentCtx.agent
@@ -1794,7 +1819,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const found = await agentFor(sessionId)
     if ('error' in found) return { refused: err(request, found.error) }
     const agent = found.agent
-    const selection = selectionFor(agent).current
+    const selection = await currentSelectionFor(agent)
     if (!routeServed(selection.provider)) {
       return {
         refused: err(request, {
@@ -2185,7 +2210,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { sessionId } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
-        const current = selectionFor(found.agent).current
+        const current = await currentSelectionFor(found.agent)
         const { groups, failures } = await buildModelCatalog(ctx)
         const routable = routeServed(current.provider)
         return ok(request, { current: { ...current }, routable, groups, failures })
