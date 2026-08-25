@@ -264,6 +264,18 @@ function cloudRouteValue(
 	}
 }
 
+function routeModelsMatch(route: Record<string, unknown>, models: readonly AgencyModel[]): boolean {
+	const configured = Array.isArray(route.models) ? route.models : []
+	const expected = models.map((model) => ({
+		id: model.id,
+		name: model.name,
+		...(model.reasoningEfforts === undefined
+			? {}
+			: { reasoningEfforts: model.reasoningEfforts }),
+	}))
+	return JSON.stringify(configured) === JSON.stringify(expected)
+}
+
 function isExpectedCloudProvider(provider: ProviderView): boolean {
 	return (
 		provider.settingsNs === CLOUD_NAMESPACE &&
@@ -802,6 +814,34 @@ export class AccountService {
 				(candidate) => candidate.id === CLOUD_PROVIDER,
 			)
 			if (group !== undefined && group.models.length > 0) {
+				// A managed route can outlive the hosted model catalog. In
+				// particular, reasoning_efforts may be added after a desktop
+				// install has already written settings.yaml. Refresh the route
+				// metadata so a still-supported effort such as `high` is not
+				// rejected by stale local configuration.
+				const cloudKey = await this.cloudKey.read()
+				if (cloudKey !== undefined && CLOUD_KEY_PATTERN.test(cloudKey)) {
+					try {
+						const models = await this.agency.models(cloudKey)
+						if (models.length > 0 && !routeModelsMatch(route, models)) {
+							this.stage = "settings.mutate"
+							await this.dsh.mutateSettings({
+								ns: CLOUD_NAMESPACE,
+								expectedRevision: cloudNamespace.revision,
+								ops: [
+									{
+										op: "set",
+										path: CLOUD_PATH,
+										value: cloudRouteValue(baseURL, models, currentClient),
+									},
+								],
+							})
+						}
+					} catch {
+						// Keep an already-working managed route usable when a
+						// metadata refresh is temporarily unavailable.
+					}
+				}
 				const next: IdentityState = { ...state, managedRoute: intendedRoute }
 				await this.identity.write(next)
 				const snapshot: AccountSnapshot = {
