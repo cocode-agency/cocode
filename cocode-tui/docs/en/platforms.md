@@ -22,4 +22,4 @@ The TUI detects capabilities from the current process environment rather than as
 
 On Linux, clipboard commands are tried in this order: `wl-copy` for Wayland, `xclip` and `xsel` for X11, and `clip.exe` as a WSL fallback. Commands are started directly with argument arrays, never through a shell. If no command is installed or a command fails, copy is reported as unavailable and the session continues.
 
-The platform test workflow covers Ubuntu, macOS, and Windows with Node 22.19 and pnpm 11.21. It validates simulated platform behavior and source checks; it does not replace acceptance in a real Windows Terminal, macOS Terminal/iTerm, Wayland/X11 session, or tmux/screen window.
+The platform test workflow covers Ubuntu, macOS, and Windows with Node 22.19 and pnpm 10.34.5. It validates simulated platform behavior and source checks; it does not replace acceptance in a real Windows Terminal, macOS Terminal/iTerm, Wayland/X11 session, or tmux/screen window.

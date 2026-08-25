@@ -22,4 +22,4 @@ TUI 根据当前进程的环境变量探测终端能力，不把操作系统直�
 
 Linux 剪贴板按以下顺序尝试：Wayland 使用 `wl-copy`，X11 使用 `xclip` 和 `xsel`，WSL 最后回退到 `clip.exe`。所有命令都通过参数数组直接启动，不经过 shell。命令未安装或执行失败时只报告不可用，当前会话继续运行。
 
-平台工作流会在 Ubuntu、macOS 和 Windows 上使用 Node 22.19、pnpm 11.21 运行测试和源码检查。它验证模拟平台行为，不能替代 Windows Terminal、macOS Terminal/iTerm、Wayland/X11 或 tmux/screen 中的真实终端验收。
+平台工作流会在 Ubuntu、macOS 和 Windows 上使用 Node 22.19、pnpm 10.34.5 运行测试和源码检查。它验证模拟平台行为，不能替代 Windows Terminal、macOS Terminal/iTerm、Wayland/X11 或 tmux/screen 中的真实终端验收。

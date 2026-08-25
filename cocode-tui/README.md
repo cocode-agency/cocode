@@ -11,7 +11,7 @@ the terminal client separate from the Agent runtime.
 ## Requirements
 
 - Node.js `22.19.x` or `24` and later
-- pnpm for source-checkout development
+- pnpm `10.34.5` for source-checkout development (same pin as GUI / Host Supervisor)
 - A real TTY for the interactive client
 - A reachable Cocode DSH Host, normally started or discovered by the shared
   Host Supervisor

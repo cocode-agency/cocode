@@ -16,8 +16,10 @@
     "access": "public"
   },
   "type": "module",
+  "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": "^22.19 || >=24"
+    "node": "^22.19 || >=24",
+    "pnpm": "10.34.5"
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
