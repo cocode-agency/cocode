@@ -1945,6 +1945,12 @@ class TuiAppImpl implements TuiApp {
   private async promptSubagent(childSessionId: string, content: string): Promise<void> {
     if (this.rejectExternalWrite() || this.runtime.promptSubagent === undefined || content.trim() === '') return
     try {
+      const entry = await this.findSubagent(childSessionId)
+      if (entry?.mode === 'one-shot') {
+        this.notice = { tone: 'info', message: this.locale === 'zh' ? 'one-shot 子代理只支持读取历史，不能继续发送输入。' : 'One-shot subagents are read-only and cannot receive prompts.' }
+        this.emit()
+        return
+      }
       const messageId = await this.runtime.promptSubagent(this.sessionId, childSessionId.trim(), [{ type: 'text', text: content }])
       this.notice = { tone: 'info', message: `${this.locale === 'zh' ? '子代理输入已接收' : 'Subagent prompt accepted'} · ${messageId.slice(0, 8)}` }
     } catch (error) {
@@ -1956,12 +1962,29 @@ class TuiAppImpl implements TuiApp {
   private async interruptSubagent(childSessionId: string): Promise<void> {
     if (this.rejectExternalWrite() || this.runtime.interruptSubagent === undefined) return
     try {
+      const entry = await this.findSubagent(childSessionId)
+      if (entry?.mode === 'one-shot') {
+        this.notice = { tone: 'info', message: this.locale === 'zh' ? 'one-shot 子代理不支持中断。' : 'One-shot subagents cannot be interrupted.' }
+        this.emit()
+        return
+      }
       await this.runtime.interruptSubagent(this.sessionId, childSessionId.trim())
       this.notice = { tone: 'info', message: this.locale === 'zh' ? '子代理中断请求已发送。' : 'Subagent interrupt requested.' }
     } catch (error) {
       this.notice = { tone: 'error', message: errorMessage(error) }
     }
     this.emit()
+  }
+
+  private async findSubagent(childSessionId: string): Promise<import('@cocode/tui-connection').TuiSubagentListEntry | undefined> {
+    if (this.runtime.listSubagents === undefined) return undefined
+    const id = childSessionId.trim()
+    if (id === '') return undefined
+    try {
+      return (await this.runtime.listSubagents(this.sessionId)).entries.find((entry) => entry.id === id)
+    } catch {
+      return undefined
+    }
   }
 
   private startNewSession(): void {

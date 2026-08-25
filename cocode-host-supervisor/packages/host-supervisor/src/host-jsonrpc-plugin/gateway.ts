@@ -482,8 +482,10 @@ export class TuiCompanionGateway {
       sessionSearch: this.ctx.get("sessionPersistence") !== undefined,
       sessionHistory: this.ctx.get("sessionPersistence") !== undefined,
       sessionModels: typeof llm?.listProviders === "function" && typeof llm.listModels === "function",
-      sessionRename: this.ctx.get("sessionTitle") !== undefined,
-      queueMutation: this.ctx.get("sessionPersistence") !== undefined,
+      sessionRename:
+        this.ctx.get("sessionTitle") !== undefined &&
+        typeof this.ctx.agents.get === "function",
+      queueMutation: typeof this.ctx.agents.get === "function",
       attachmentRead: typeof (this.ctx.get("attachments") as AttachmentService | undefined)?.readImage === "function",
       sessionCreate: typeof this.ctx.agents.create === "function",
       subagentList: this.ctx.get("sessionPersistence") !== undefined,
