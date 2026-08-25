@@ -49,6 +49,7 @@ export type CommandContextOptions = {
   showQueuePicker?: TuiCommandCtx['showQueuePicker']
   showChecklist?: TuiCommandCtx['showChecklist']
   showSubagents?: TuiCommandCtx['showSubagents']
+  showHistory?: TuiCommandCtx['showHistory']
 }
 
 export type AppCommandContextOptions = {
@@ -96,6 +97,7 @@ export type AppCommandContextOptions = {
   showQueuePicker?: TuiCommandCtx['showQueuePicker']
   showChecklist?: TuiCommandCtx['showChecklist']
   showSubagents?: TuiCommandCtx['showSubagents']
+  showHistory?: TuiCommandCtx['showHistory']
 }
 
 export function createCommandContext(options: CommandContextOptions): TuiCommandCtx {
@@ -165,6 +167,7 @@ export function createCommandContext(options: CommandContextOptions): TuiCommand
     showQueuePicker: options.showQueuePicker,
     showChecklist: options.showChecklist,
     showSubagents: options.showSubagents,
+    showHistory: options.showHistory,
   }
 }
 
@@ -223,5 +226,6 @@ export function createAppCommandContext(options: AppCommandContextOptions): TuiC
     showQueuePicker: options.showQueuePicker,
     showChecklist: options.showChecklist,
     showSubagents: options.showSubagents,
+    showHistory: options.showHistory,
   })
 }

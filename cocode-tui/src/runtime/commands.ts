@@ -327,6 +327,14 @@ export function createBuiltinCommands(): CommandRegistry {
     available: (caps) => caps.subagentList,
     run: (ctx) => ctx.showSubagents?.(),
   })
+  registry.register({
+    name: 'history',
+    summary: 'Reload the current session history from the Host',
+    summaryZh: '从 Host 重新读取当前会话历史',
+    kind: 'local',
+    available: (caps) => caps.sessionHistory,
+    run: (ctx) => ctx.showHistory?.(),
+  })
 
   return registry
 }

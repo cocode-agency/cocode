@@ -479,6 +479,7 @@ export type TuiCommandCtx = {
   showQueuePicker?: () => void
   showChecklist?: () => void
   showSubagents?: () => void
+  showHistory?: () => void
 }
 
 export type TuiApp = {
@@ -1715,6 +1716,7 @@ class TuiAppImpl implements TuiApp {
       showQueuePicker: () => this.openQueuePicker(),
       showChecklist: () => this.openChecklist(),
       showSubagents: () => { void this.showSubagents() },
+      showHistory: () => { void this.showSessionHistory() },
     })
   }
 
@@ -1833,6 +1835,28 @@ class TuiAppImpl implements TuiApp {
           return `${label} · ${entry.mode} · ${state}`
         })
         this.notice = { tone: 'info', message: lines.join(' | ') }
+      }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
+    }
+    this.emit()
+  }
+
+  private async showSessionHistory(): Promise<void> {
+    if (!this.capabilities.sessionHistory || this.runtime.history === undefined) {
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前运行时不支持会话历史读取。' : 'Session history is unavailable.' }
+      this.emit()
+      return
+    }
+    try {
+      const result = await this.runtime.history(this.sessionId, undefined, 100)
+      this.replaceSessionProjection(result.events)
+      this.assembler.settleOpen()
+      this.notice = {
+        tone: 'info',
+        message: result.hasMore
+          ? this.locale === 'zh' ? '已加载最近 100 条消息；更早内容请使用 resume。' : 'Loaded the latest 100 messages; resume for older history.'
+          : this.locale === 'zh' ? '会话历史已刷新。' : 'Session history refreshed.',
       }
     } catch (error) {
       this.notice = { tone: 'error', message: errorMessage(error) }
