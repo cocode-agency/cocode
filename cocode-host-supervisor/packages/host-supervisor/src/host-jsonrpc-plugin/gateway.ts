@@ -438,7 +438,7 @@ export class TuiCompanionGateway {
       sessionModels: typeof llm?.listProviders === "function" && typeof llm.listModels === "function",
       sessionRename: this.ctx.get("sessionTitle") !== undefined,
       queueMutation: true,
-      attachmentRead: this.ctx.get("attachments") !== undefined,
+      attachmentRead: typeof (this.ctx.get("attachments") as AttachmentService | undefined)?.readImage === "function",
       sessionCreate: true,
       subagentList: this.ctx.get("sessionPersistence") !== undefined,
       subagentHistory: this.ctx.get("sessionPersistence") !== undefined,
@@ -725,8 +725,8 @@ export class TuiCompanionGateway {
     const childIds = new Set(children.map((child) => String(child.id)));
     const entries = await Promise.all(children.map(async (child) => {
       const agent = this.ctx.agents.get(String(child.id));
-      let mode: "one-shot" | "continuable" = "continuable";
-      let label: string | undefined = String(child.id);
+      let mode: "one-shot" | "continuable" = "one-shot";
+      let label: string | undefined;
       try {
         const inspected = await persistence.inspect(String(child.id));
         const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
@@ -785,6 +785,9 @@ export class TuiCompanionGateway {
   async promptSubagent(params: { parentSessionId: string; childSessionId: string; content: ContentBlock[] }): Promise<{ messageId: string }> {
     const parent = this.ctx.agents.get(params.parentSessionId);
     if (parent === undefined) throw new Error(`subagent parent "${params.parentSessionId}" is not live`);
+    const inspected = await this.inspectSubagent(params.parentSessionId, params.childSessionId);
+    const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
+    if (descriptor?.mode !== "continuable") throw new Error("subagent prompt is unavailable for one-shot children");
     const child = await this.assertSubagent(params.parentSessionId, params.childSessionId);
     const message = createUserMessage(params.content);
     child.followup(message);
@@ -793,8 +796,15 @@ export class TuiCompanionGateway {
 
   async interruptSubagent(params: { parentSessionId: string; childSessionId: string }): Promise<{ accepted: true }> {
     const child = this.ctx.agents.get(params.childSessionId);
-    if (child === undefined) return { accepted: true };
+    if (child === undefined) {
+      const inspected = await this.inspectSubagent(params.parentSessionId, params.childSessionId);
+      const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
+      if (descriptor?.mode !== "continuable") throw new Error("subagent interrupt is unavailable for one-shot children");
+      return { accepted: true };
+    }
     assertSubagentAddress(child, params.parentSessionId);
+    const descriptor = readSubagentDescriptor(child.session.events, child.session.header.seedLength);
+    if (descriptor?.mode !== "continuable") throw new Error("subagent interrupt is unavailable for one-shot children");
     child.cancel({ kind: "user" }, { keepInbox: true });
     return { accepted: true };
   }
@@ -844,7 +854,7 @@ export class TuiCompanionGateway {
   }
 
   async renameSession(params: { sessionId: string; title: string }): Promise<{ title: string; seq: number }> {
-    const record = await this.getOrCreateSession(params.sessionId);
+    const record = this.requireSession(params.sessionId);
     this.assertLive(params.sessionId, record);
     this.assertOrdinarySession(record.handle.agent);
     const titles = this.ctx.get("sessionTitle") as SessionTitleService | undefined;
@@ -880,10 +890,13 @@ export class TuiCompanionGateway {
   }
 
   async readAttachment(params: { sessionId: string; attachmentId: string }): Promise<{ attachment: ImageAttachmentRef; data: string }> {
-    const record = this.requireSession(params.sessionId);
     const store = this.ctx.get("attachments") as AttachmentService | undefined;
     if (store?.readImage === undefined) throw new Error("attachment/read capability is unavailable");
-    const ref = findAttachmentRef(record.handle.agent.session.events, params.attachmentId);
+    const live = this.sessions.get(params.sessionId)?.handle.agent ?? this.ctx.agents.get(params.sessionId);
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    const events = live?.session.events ?? (persistence === undefined ? undefined : (await persistence.inspect(params.sessionId)).events);
+    if (events === undefined) throw new Error(`session "${params.sessionId}" was not found`);
+    const ref = findAttachmentRef(events, params.attachmentId);
     if (ref === undefined) throw new Error(`attachment "${params.attachmentId}" is not referenced by session`);
     const stored = await store.readImage(ref);
     return { attachment: stored.ref, data: Buffer.from(stored.data).toString("base64") };
