@@ -319,6 +319,14 @@ export function createBuiltinCommands(): CommandRegistry {
     available: () => true,
     run: (ctx) => ctx.showQueuePicker?.(),
   })
+  registry.register({
+    name: 'subagents',
+    summary: 'List direct child subagents for the current session',
+    summaryZh: '查看当前会话的直接子代理',
+    kind: 'local',
+    available: (caps) => caps.subagentList,
+    run: (ctx) => ctx.showSubagents?.(),
+  })
 
   return registry
 }

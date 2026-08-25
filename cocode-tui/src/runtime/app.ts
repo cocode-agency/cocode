@@ -478,6 +478,7 @@ export type TuiCommandCtx = {
   showForkPicker?: () => void
   showQueuePicker?: () => void
   showChecklist?: () => void
+  showSubagents?: () => void
 }
 
 export type TuiApp = {
@@ -1713,6 +1714,7 @@ class TuiAppImpl implements TuiApp {
       showForkPicker: () => this.openForkPicker(),
       showQueuePicker: () => this.openQueuePicker(),
       showChecklist: () => this.openChecklist(),
+      showSubagents: () => { void this.showSubagents() },
     })
   }
 
@@ -1810,6 +1812,30 @@ class TuiAppImpl implements TuiApp {
         tone: 'error',
         message: `${text(this.locale, 'sessionTreeUnavailable')}: ${errorMessage(error)}`,
       }
+    }
+    this.emit()
+  }
+
+  private async showSubagents(): Promise<void> {
+    if (!this.capabilities.subagentList || this.runtime.listSubagents === undefined) {
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前运行时不支持子代理列表。' : 'Subagent listing is unavailable.' }
+      this.emit()
+      return
+    }
+    try {
+      const catalog = await this.runtime.listSubagents(this.sessionId)
+      if (catalog.entries.length === 0) {
+        this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前会话没有 direct child。' : 'This session has no direct children.' }
+      } else {
+        const lines = catalog.entries.map((entry) => {
+          const label = entry.label ?? entry.id.slice(0, 8)
+          const state = entry.activity === 'running' ? 'running' : 'inactive'
+          return `${label} · ${entry.mode} · ${state}`
+        })
+        this.notice = { tone: 'info', message: lines.join(' | ') }
+      }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
     }
     this.emit()
   }
