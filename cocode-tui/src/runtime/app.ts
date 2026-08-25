@@ -3665,6 +3665,11 @@ class TuiAppImpl implements TuiApp {
       ? undefined
       : selectedRemoteQueueItem(this.remoteQueuePicker)
     if (selected === undefined || this.runtime.updateQueue === undefined || !this.capabilities.queueMutation) return
+    if (action === 'steer' && (selected.placement !== 'queued' || this.agent !== 'running')) {
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? '当前队列项不能 steer。' : 'This queue item cannot be steered now.' }
+      this.emit()
+      return
+    }
     try {
       await this.runtime.updateQueue(this.sessionId, selected.id, { kind: action })
       this.notice = {
