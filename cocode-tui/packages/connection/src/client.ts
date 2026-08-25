@@ -49,6 +49,7 @@ import type {
   TuiAttachmentReadResult,
   TuiSessionCreateResult,
   TuiSubagentCatalog,
+  TuiSubagentHistoryMode,
   TuiRpcErrorView,
 } from './types.ts'
 import { fallbackCapabilitySnapshot, probeRuntimeCapabilities } from './capability.ts'
@@ -394,7 +395,16 @@ class SdkTuiRuntime implements TuiRuntime {
     return {
       parentAvailable: result.parentAvailable,
       entries: result.entries.map((entry) => {
-        if (!isRecord(entry) || entry.kind !== 'child' || typeof entry.id !== 'string' || (entry.activity !== 'running' && entry.activity !== 'inactive') || (entry.mode !== 'one-shot' && entry.mode !== 'continuable') || typeof entry.hasChildren !== 'boolean') {
+        if (!isRecord(entry) || typeof entry.id !== 'string') {
+          throw new Error(`subagent.list returned an invalid entry: ${JSON.stringify(entry)}`)
+        }
+        if (entry.kind === 'diagnostic') {
+          if (entry.reason !== 'corrupt' && entry.reason !== 'unsupported' && entry.reason !== 'unavailable') {
+            throw new Error(`subagent.list returned an invalid diagnostic entry: ${JSON.stringify(entry)}`)
+          }
+          return { kind: 'diagnostic', id: entry.id, reason: entry.reason }
+        }
+        if (entry.kind !== 'child' || (entry.activity !== 'running' && entry.activity !== 'inactive') || (entry.mode !== 'one-shot' && entry.mode !== 'continuable') || typeof entry.hasChildren !== 'boolean') {
           throw new Error(`subagent.list returned an invalid entry: ${JSON.stringify(entry)}`)
         }
         return {
@@ -409,11 +419,12 @@ class SdkTuiRuntime implements TuiRuntime {
     }
   }
 
-  async subagentHistory(parentSessionId: string, childSessionId: string, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult> {
+  async subagentHistory(parentSessionId: string, childSessionId: string, mode?: TuiSubagentHistoryMode, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult> {
     this.requireCapability('subagentHistory')
     const result = await this.requireClient().request(this.wireMethod('cocode/subagent/history', 'subagent.history'), {
       parentSessionId,
       childSessionId,
+      ...(mode === undefined ? {} : { mode }),
       ...(beforeSeq === undefined ? {} : { beforeSeq }),
       ...(maxMessages === undefined ? {} : { maxMessages }),
     })

@@ -38,6 +38,8 @@ export function visibleSubagents(state: SubagentPickerState): TuiSubagentListEnt
   const query = state.query.trim().toLocaleLowerCase()
   if (query === '') return [...state.entries]
   return state.entries.filter((entry) =>
-    `${entry.id} ${entry.label ?? ''} ${entry.mode} ${entry.activity}`.toLocaleLowerCase().includes(query),
+    entry.kind === 'diagnostic'
+      ? `${entry.id} ${entry.reason}`.toLocaleLowerCase().includes(query)
+      : `${entry.id} ${entry.label ?? ''} ${entry.mode} ${entry.activity}`.toLocaleLowerCase().includes(query),
   )
 }

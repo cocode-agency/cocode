@@ -37,6 +37,14 @@ export function SubagentPicker(props: {
         <Text color={theme.mute}>{props.locale === 'zh' ? '当前没有匹配的子代理。' : 'No matching subagents.'}</Text>
       ) : visible.map((entry, offset) => {
         const active = start + offset === props.state.selected
+        if (entry.kind === 'diagnostic') {
+          return (
+            <Text key={entry.id} {...selectionStyle(active)} wrap="truncate-end">
+              {active ? glyphs.optionActive : glyphs.optionInactive} {entry.id.slice(0, 8)}{' '}
+              <Text color={active ? theme.text : theme.dim}>· {props.locale === 'zh' ? `不可用：${entry.reason}` : `unavailable: ${entry.reason}`}</Text>
+            </Text>
+          )
+        }
         const label = entry.label ?? entry.id.slice(0, 8)
         const state = entry.activity === 'running' ? (props.locale === 'zh' ? '运行中' : 'running') : (props.locale === 'zh' ? '未运行' : 'inactive')
         return (

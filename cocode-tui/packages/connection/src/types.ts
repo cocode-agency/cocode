@@ -177,12 +177,18 @@ export type TuiSubagentListEntry = {
   mode: 'one-shot' | 'continuable'
   label?: string
   hasChildren: boolean
+} | {
+  kind: 'diagnostic'
+  id: string
+  reason: 'corrupt' | 'unsupported' | 'unavailable'
 }
 
 export type TuiSubagentCatalog = {
   entries: TuiSubagentListEntry[]
   parentAvailable: boolean
 }
+
+export type TuiSubagentHistoryMode = 'one-shot' | 'continuable'
 
 export type TuiSessionHistoryResult = {
   events: SessionEvent[]
@@ -454,7 +460,7 @@ export type TuiRuntime = {
   listSessions?(cwd?: string): Promise<TuiSessionSummary[]>
   createSession?(sessionId?: string, cwd?: string): Promise<TuiSessionCreateResult>
   listSubagents?(parentSessionId: string): Promise<TuiSubagentCatalog>
-  subagentHistory?(parentSessionId: string, childSessionId: string, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult>
+  subagentHistory?(parentSessionId: string, childSessionId: string, mode?: TuiSubagentHistoryMode, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult>
   promptSubagent?(parentSessionId: string, childSessionId: string, blocks: ContentBlock[]): Promise<string>
   interruptSubagent?(parentSessionId: string, childSessionId: string): Promise<boolean>
   searchSessions?(query: string): Promise<{ items: TuiSessionSearchItem[]; hasMore: boolean }>

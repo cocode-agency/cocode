@@ -2168,7 +2168,7 @@ describe('TuiApp', () => {
     })
     app.dispatch({ type: 'interruptOrQuit' })
     expect(app.snapshot().exiting).toBe(false)
-    await expect.poll(() => runtime.cancels).toEqual([{ sessionId: 's1', keepInbox: false }])
+    await expect.poll(() => runtime.cancels).toEqual([{ sessionId: 's1', keepInbox: true }])
     expect(app.snapshot().notice?.message).toMatch(/Cancel requested/)
     app.dispatch({ type: 'interruptOrQuit' })
     expect(app.snapshot().exiting).toBe(true)
@@ -2208,7 +2208,7 @@ describe('TuiApp', () => {
     })
     expect(app.snapshot().nodes[0]).toMatchObject({ kind: 'tool', status: 'running' })
     app.dispatch({ type: 'interruptOrQuit' })
-    await expect.poll(() => runtime.cancels).toEqual([{ sessionId: 's1', keepInbox: false }])
+    await expect.poll(() => runtime.cancels).toEqual([{ sessionId: 's1', keepInbox: true }])
     expect(app.snapshot().nodes[0]).toMatchObject({ kind: 'tool', status: 'cancelled' })
     expect(app.snapshot().notice?.message).toMatch(/Cancel requested/)
     runtime.emit({

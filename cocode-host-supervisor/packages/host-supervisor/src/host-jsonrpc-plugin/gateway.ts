@@ -438,6 +438,24 @@ export class TuiCompanionGateway {
         });
       }),
     );
+    this.disposers.push(
+      ctx.on(
+        "subagent/end",
+        (info: { provider?: unknown; id?: unknown; local?: unknown; stopReason?: unknown }, parent?: Agent) => {
+          if (info.local === false || typeof info.id !== "string") return;
+          const parentSessionId = parent?.session.id;
+          if (parentSessionId === undefined) return;
+          const stopReason = typeof info.stopReason === "string" ? info.stopReason : "error";
+          this.transport.notify("subagent.finished", {
+            provider: typeof info.provider === "string" ? info.provider : this.provider,
+            agentId: info.id,
+            parentSessionId: String(parentSessionId),
+            childSessionId: info.id,
+            status: stopReason === "completed" ? "ok" : "error",
+          });
+        },
+      ),
+    );
     if (options.registerQuestionProvider !== false)
       this.tryRegisterQuestionProvider();
   }
@@ -781,6 +799,7 @@ export class TuiCompanionGateway {
     }
     const sessionId = params.sessionId?.trim() || `session-${randomUUID().replaceAll("-", "")}`;
     await this.getOrCreateSession(sessionId);
+    this.notifyQueueSnapshot(sessionId);
     return { sessionId };
   }
 
@@ -790,20 +809,22 @@ export class TuiCompanionGateway {
     const headers = await persistence.list();
     const children = headers.filter((header) => header.origin === "subagent" && String(header.parentSession ?? "") === params.parentSessionId);
     const childIds = new Set(children.map((child) => String(child.id)));
-    const entries = await Promise.all(children.map(async (child) => {
+    const entries = (await Promise.all(children.map(async (child) => {
       const agent = this.ctx.agents.get(String(child.id));
       let mode: "one-shot" | "continuable" = "one-shot";
       let label: string | undefined;
       try {
         const inspected = await persistence.inspect(String(child.id));
         const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
-        if (descriptor !== undefined) {
-          mode = descriptor.mode;
-          label = descriptor.label;
+        if (descriptor === undefined) {
+          return agent?.status === "running"
+            ? undefined
+            : { kind: "diagnostic", id: String(child.id), reason: "corrupt" };
         }
+        mode = descriptor.mode;
+        label = descriptor.label;
       } catch {
-        // A child that disappears during a catalog read is omitted by the
-        // next refresh; the list contract remains fail-soft for one row.
+        return { kind: "diagnostic", id: String(child.id), reason: "unavailable" };
       }
       return {
         kind: "child",
@@ -813,7 +834,7 @@ export class TuiCompanionGateway {
         ...(label === undefined ? {} : { label }),
         hasChildren: headers.some((candidate) => childIds.has(String(candidate.parentSession ?? ""))),
       };
-    }));
+    }))).filter((item) => item !== undefined) as Record<string, unknown>[];
     return { entries, parentAvailable: this.ctx.agents.get(params.parentSessionId) !== undefined };
   }
 
@@ -927,7 +948,9 @@ export class TuiCompanionGateway {
     } else {
       if (persistence === undefined) throw new Error(`session "${params.sessionId}" was not found`);
       const inspection = await persistence.inspect(params.sessionId);
-      if (inspection.meta.origin === "subagent") throw new Error("session models are unavailable for subagent sessions");
+      if (inspection.meta.origin === "subagent") {
+        throw rpcFailure("agent-busy", "session is owned by subagent routing", { reason: "subagent-owned" });
+      }
       selected = readSessionModelSelection(inspection.events);
     }
     selected ??= { provider: this.provider, model: this.model };
@@ -938,13 +961,30 @@ export class TuiCompanionGateway {
   }
 
   async renameSession(params: { sessionId: string; title: string }): Promise<{ title: string; seq: number }> {
-    const record = this.requireSession(params.sessionId);
+    this.assertInitialized();
+    const live = this.sessions.get(params.sessionId)?.handle.agent ?? this.ctx.agents.get(params.sessionId);
+    if (live === undefined) {
+      const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+      const persisted = persistence === undefined
+        ? undefined
+        : (await persistence.list()).find((header) => header.id === params.sessionId);
+      if (persisted === undefined) throw new Error(`session "${params.sessionId}" was not found`);
+    }
+    const record = await this.getOrCreateSession(params.sessionId);
     this.assertLive(params.sessionId, record);
     this.assertOrdinarySession(record.handle.agent);
     const titles = this.ctx.get("sessionTitle") as SessionTitleService | undefined;
     if (titles === undefined) throw new Error("session/rename capability is unavailable");
-    const accepted = titles.rename(record.handle.agent.session, params.title);
-    return { title: accepted.title, seq: accepted.eventSeq };
+    try {
+      const accepted = titles.rename(record.handle.agent.session, params.title);
+      return { title: accepted.title, seq: accepted.eventSeq };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (params.title.trim() === "" || /visible characters|invalid title/i.test(message)) {
+        throw rpcFailure("title-invalid", message, { sessionId: params.sessionId });
+      }
+      throw error;
+    }
   }
 
   async updateQueue(params: {
@@ -952,23 +992,31 @@ export class TuiCompanionGateway {
     itemId: string;
     action: { kind: "edit" | "remove" | "steer"; content?: ContentBlock[] };
   }): Promise<{ accepted: true }> {
-    const record = this.requireSession(params.sessionId);
-    this.assertOrdinarySession(record.handle.agent);
-    const inbox = record.handle.agent.inbox;
+    this.assertInitialized();
+    const agent = this.ctx.agents.get(params.sessionId);
+    if (agent === undefined) {
+      throw rpcFailure("queue-item-not-found", "queued item is no longer pending", { itemId: params.itemId });
+    }
+    this.assertOrdinarySession(agent);
+    const inbox = agent.inbox;
     if (inbox === undefined) throw new Error("session/updateQueue capability is unavailable");
     const target = inbox.nextTurn.some((message) => message.id === params.itemId)
-      ? inbox.nextTurn
-      : inbox.nextStep.some((message) => message.id === params.itemId) ? inbox.nextStep : undefined;
-    const message = target?.find((candidate) => candidate.id === params.itemId);
-    if (message === undefined) throw new Error(`queued item not found: ${params.itemId}`);
+      ? "next-turn"
+      : inbox.nextStep.some((message) => message.id === params.itemId) ? "next-step" : undefined;
+    const messages = target === "next-turn" ? inbox.nextTurn : target === "next-step" ? inbox.nextStep : undefined;
+    const message = messages?.find((candidate) => candidate.id === params.itemId);
+    if (message === undefined) throw rpcFailure("queue-item-not-found", "queued item is no longer pending", { itemId: params.itemId });
+    if (params.action.kind === "steer" && (target !== "next-turn" || agent.status !== "running")) {
+      throw rpcFailure("steer-unavailable", "current turn no longer accepts steering", { itemId: params.itemId });
+    }
     if (params.action.kind === "edit") {
       if (!Array.isArray(params.action.content)) throw new Error("session/updateQueue edit requires content");
       if (params.action.content.some((block) => block.type !== "text"))
-        throw new Error("session/updateQueue only accepts text edits");
+        throw rpcFailure("attachment-error", "queue edits accept text content only", { reason: "QUEUE_EDIT_NON_TEXT" });
       inbox.replace(params.itemId, deepFreeze({ ...message, content: params.action.content }));
     } else {
       inbox.remove(params.itemId);
-      if (params.action.kind === "steer") record.handle.agent.steer(message);
+      if (params.action.kind === "steer") agent.steer(message);
     }
     this.notifyQueueSnapshot(params.sessionId);
     return { accepted: true };
@@ -1172,6 +1220,7 @@ export class TuiCompanionGateway {
       const record = this.borrowSession(live);
       this.sessions.set(params.sessionId, record);
       await this.replaceSession(params.replaceSessionId, params.sessionId);
+      this.notifyQueueSnapshot(params.sessionId);
       return {
         opened: true,
         seed: [...live.session.events],
@@ -1184,6 +1233,7 @@ export class TuiCompanionGateway {
       const record = await opening;
       this.sessions.set(params.sessionId, record);
       await this.replaceSession(params.replaceSessionId, params.sessionId);
+      this.notifyQueueSnapshot(params.sessionId);
       return {
         opened: true,
         seed: record.seed ?? [],
@@ -1533,8 +1583,12 @@ export class TuiCompanionGateway {
       case "cocode/subagent/history":
       case "subagent.history":
         {
-          const input = params as { parentSessionId: string; childSessionId: string; beforeSeq?: number; maxMessages?: number };
-          await this.inspectSubagent(input.parentSessionId, input.childSessionId);
+          const input = params as { parentSessionId: string; childSessionId: string; mode?: "one-shot" | "continuable"; beforeSeq?: number; maxMessages?: number };
+          const inspected = await this.inspectSubagent(input.parentSessionId, input.childSessionId);
+          const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
+          if (input.mode !== undefined && descriptor?.mode !== input.mode) {
+            throw new Error(`session "${input.childSessionId}" is not a ${input.mode} direct child of "${input.parentSessionId}"`);
+          }
           return this.history({ sessionId: input.childSessionId, beforeSeq: input.beforeSeq, maxMessages: input.maxMessages });
         }
       case "cocode/subagent/prompt":
@@ -1886,7 +1940,7 @@ export class TuiCompanionGateway {
 
   private assertOrdinarySession(agent: Agent): void {
     if (agent.session.header.origin === "subagent") {
-      throw new Error(`session "${agent.session.id}" is owned by subagent routing`);
+      throw rpcFailure("agent-busy", `session "${agent.session.id}" is owned by subagent routing`, { reason: "subagent-owned" });
     }
   }
 
@@ -2008,11 +2062,11 @@ function normalizeRpcFailure(
     if (/parent .*not live|parent .*unavailable/i.test(message)) {
       return rpcFailure("subagent-parent-unavailable", message, { parentSessionId });
     }
+    if (/not a .* direct child|not found|unknown|disappeared/i.test(message)) {
+      return rpcFailure("subagent-not-found", message, { parentSessionId, childSessionId });
+    }
     if (/one-shot/i.test(message)) {
       return rpcFailure("subagent-not-resumable", message, { childSessionId });
-    }
-    if (/not found|unknown|disappeared/i.test(message)) {
-      return rpcFailure("subagent-not-found", message, { parentSessionId, childSessionId });
     }
     if (/delivery|followup|prompt/i.test(message) && (method.includes("prompt") || method.includes("interrupt"))) {
       return rpcFailure("subagent-delivery-unavailable", message, { childSessionId });

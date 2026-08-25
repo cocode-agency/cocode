@@ -1482,7 +1482,7 @@ class TuiAppImpl implements TuiApp {
       notice: (message) => {
         this.notice = { tone: 'info', message }
       },
-      cancel: () => this.runtime.cancel(this.sessionId),
+      cancel: () => this.runtime.cancel(this.sessionId, true),
       cancelAccepted: (wasRunning) => {
         if (wasRunning) this.assembler.settleOpen()
         this.notice = {
@@ -1945,7 +1945,13 @@ class TuiAppImpl implements TuiApp {
     }
     const parentSessionId = this.sessionId
     try {
-      const history = await this.runtime.subagentHistory(parentSessionId, childId)
+      const entry = await this.findSubagent(childId)
+      if (entry?.kind === 'diagnostic') {
+        this.notice = { tone: 'info', message: this.locale === 'zh' ? `子代理历史不可用：${entry.reason}` : `Subagent history unavailable: ${entry.reason}` }
+        this.emit()
+        return
+      }
+      const history = await this.runtime.subagentHistory(parentSessionId, childId, entry?.mode)
       this.previousSessionView = {
         sessionId: this.sessionId,
         assembler: this.assembler,
@@ -1990,7 +1996,7 @@ class TuiAppImpl implements TuiApp {
     if (this.rejectExternalWrite() || this.runtime.promptSubagent === undefined || content.trim() === '') return
     try {
       const entry = await this.findSubagent(childSessionId)
-      if (entry?.mode === 'one-shot') {
+      if (entry?.kind === 'child' && entry.mode === 'one-shot') {
         this.notice = { tone: 'info', message: this.locale === 'zh' ? 'one-shot 子代理只支持读取历史，不能继续发送输入。' : 'One-shot subagents are read-only and cannot receive prompts.' }
         this.emit()
         return
@@ -2007,7 +2013,7 @@ class TuiAppImpl implements TuiApp {
     if (this.rejectExternalWrite() || this.runtime.interruptSubagent === undefined) return
     try {
       const entry = await this.findSubagent(childSessionId)
-      if (entry?.mode === 'one-shot') {
+      if (entry?.kind === 'child' && entry.mode === 'one-shot') {
         this.notice = { tone: 'info', message: this.locale === 'zh' ? 'one-shot 子代理不支持中断。' : 'One-shot subagents cannot be interrupted.' }
         this.emit()
         return

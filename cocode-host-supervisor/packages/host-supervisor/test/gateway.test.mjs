@@ -54,7 +54,12 @@ function createContext(options = {}) {
         created.push(activeAgent)
         return { agent: activeAgent, async dispose() {} }
       },
-      async resume() {
+      async resume(agentOptions) {
+        if (typeof options.resume === 'function') {
+          const result = await options.resume(agentOptions)
+          activeAgent = result.agent
+          return result
+        }
         throw new Error('resume is not used by this test')
       },
     },
@@ -110,6 +115,7 @@ function createContext(options = {}) {
       if (name === 'workspaceRegistry') return options.workspaceRegistry
       if (name === 'attachments') return options.attachments
       if (name === 'sessionPersistence') return options.sessionPersistence
+      if (name === 'sessionTitle') return options.sessionTitle
       return undefined
     },
     on() {
@@ -255,6 +261,82 @@ test('normalizes session and queue failures to stable business codes', async () 
   )
 })
 
+test('renames a persisted cold session by resuming its recorded identity', async () => {
+  const resumed = []
+  const { ctx } = createContext({
+    sessionPersistence: {
+      async list() { return [{ id: 'cold-rename', createdAt: 1, cwd: '/tmp' }] },
+      async inspect() {
+        return { meta: { id: 'cold-rename', createdAt: 1, cwd: '/tmp' }, events: [] }
+      },
+    },
+    sessionTitle: {
+      rename(session, title) {
+        return { title: title.trim(), eventSeq: session.events.length }
+      },
+    },
+    async resume({ resumeSessionId }) {
+      const agent = {
+        id: 'resumed-agent',
+        ctx: { on() { return () => undefined } },
+        session: { id: resumeSessionId, events: [], header: { id: resumeSessionId, createdAt: 1, cwd: '/tmp' } },
+        status: 'idle',
+        followup() {},
+        steer() {},
+        cancel() {},
+        async whenIdle() {},
+      }
+      resumed.push(resumeSessionId)
+      return { agent, async dispose() {} }
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  assert.deepEqual(await gateway.handleRequest('cocode/session/rename', { sessionId: 'cold-rename', title: '  Renamed  ' }), {
+    title: 'Renamed',
+    seq: 0,
+  })
+  assert.deepEqual(resumed, ['cold-rename'])
+})
+
+test('rejects queue steering unless the item is a running next-turn message', async () => {
+  const { ctx } = createContext()
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+  await gateway.prompt({ sessionId: 'queue-steer', contentBlocks: [{ type: 'text', text: 'hello' }] })
+  const agent = ctx.agents.get('queue-steer')
+  agent.inbox = {
+    nextTurn: [{ id: 'next-turn', role: 'user', content: [{ type: 'text', text: 'queued' }], source: { kind: 'user' } }],
+    nextStep: [{ id: 'next-step', role: 'user', content: [{ type: 'text', text: 'steering' }], source: { kind: 'user' } }],
+    replace() {},
+    remove() {},
+  }
+  await assert.rejects(
+    gateway.handleRequest('cocode/session/updateQueue', {
+      sessionId: 'queue-steer', itemId: 'next-step', action: { kind: 'steer' },
+    }),
+    (error) => {
+      assert.equal(error.code, 'steer-unavailable')
+      assert.deepEqual(error.details, { itemId: 'next-step' })
+      return true
+    },
+  )
+  await assert.rejects(
+    gateway.handleRequest('cocode/session/updateQueue', {
+      sessionId: 'queue-steer', itemId: 'next-turn', action: { kind: 'steer' },
+    }),
+    (error) => {
+      assert.equal(error.code, 'steer-unavailable')
+      return true
+    },
+  )
+  agent.status = 'running'
+  await gateway.handleRequest('cocode/session/updateQueue', {
+    sessionId: 'queue-steer', itemId: 'next-turn', action: { kind: 'steer' },
+  })
+})
+
 test('returns history entries with message-aligned pagination for cold sessions', async () => {
   const events = [
     { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: 'first' }] } },
@@ -278,6 +360,37 @@ test('returns history entries with message-aligned pagination for cold sessions'
   assert.deepEqual(page.events[0], { event: events[3] })
   const older = await gateway.history({ sessionId: 'cold-history', beforeSeq: 3, maxMessages: 2 })
   assert.deepEqual(older.events.map((entry) => entry.event.seq), [0, 1, 2])
+})
+
+test('rejects a subagent history request whose mode no longer matches the catalog', async () => {
+  const { ctx } = createContext({
+    sessionPersistence: {
+      async list() {
+        return [{ id: 'child-one-shot', createdAt: 1, cwd: '/tmp', origin: 'subagent', parentSession: 'parent-1', seedLength: 0 }]
+      },
+      async inspect() {
+        return {
+          meta: { id: 'child-one-shot', createdAt: 1, cwd: '/tmp', origin: 'subagent', parentSession: 'parent-1', seedLength: 0 },
+          events: [{ type: 'subagent/descriptor', seq: 0, time: 1, data: { mode: 'one-shot' } }],
+        }
+      },
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  await assert.rejects(
+    gateway.handleRequest('cocode/subagent/history', {
+      parentSessionId: 'parent-1',
+      childSessionId: 'child-one-shot',
+      mode: 'continuable',
+    }),
+    (error) => {
+      assert.equal(error.code, 'subagent-not-found')
+      assert.deepEqual(error.details, { parentSessionId: 'parent-1', childSessionId: 'child-one-shot' })
+      return true
+    },
+  )
 })
 
 test('reads cold session metadata and model selection without creating an Agent', async () => {
