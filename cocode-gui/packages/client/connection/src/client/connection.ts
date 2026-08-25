@@ -71,6 +71,9 @@ export class ConnectionController {
   private attempt = 0
   private current: AbortController | null = null
   private retryWake: AbortController | null = null
+  /** Monotonic transport rebind marker used to close the tiny gap between a
+   * generation ending and its retry timer being installed. */
+  private rebindEpoch = 0
   private running = false
   private lastState: ConnectionState | null = null
   private readonly config: Required<ConnectionConfig>
@@ -103,6 +106,7 @@ export class ConnectionController {
    * reconnects immediately against the newly rebound transport origin. */
   rebind(): void {
     if (!this.running) return
+    this.rebindEpoch += 1
     this.attempt = 0
     this.current?.abort()
     this.retryWake?.abort()
@@ -126,6 +130,7 @@ export class ConnectionController {
 
   private async loop(): Promise<void> {
     while (this.running) {
+      const rebindEpoch = this.rebindEpoch
       const gen = ++this.generation
       const ac = new AbortController()
       this.current = ac
@@ -186,13 +191,19 @@ export class ConnectionController {
 
       await failed
       if (!this.isRunning()) return
+      // A rebound can arrive after the old streams ended but before the retry
+      // controller is installed below. Do not let that stale generation put
+      // the client back to sleep against the old runtime origin.
+      if (rebindEpoch !== this.rebindEpoch) continue
       this.emitState('reconnecting')
+      if (rebindEpoch !== this.rebindEpoch) continue
       this.attempt += 1
       console.warn(`[web-runtime] connection lost, retry #${this.attempt}`)
       const idle = new AbortController()
       this.retryWake = idle
       await sleep(this.backoffDelay(this.attempt), idle.signal)
       if (this.retryWake === idle) this.retryWake = null
+      if (rebindEpoch !== this.rebindEpoch) continue
     }
   }
 
