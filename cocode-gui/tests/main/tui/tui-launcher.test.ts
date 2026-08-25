@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import os from "node:os"
 // Exercises the native CLI registration (PATH entries, path.delimiter), so it
 // must match the OS semantics used by the implementation under test.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import path from "node:path"
 import test from "node:test"
 import { TuiLauncher } from "../../../src/main/contexts/tui/infrastructure/tui-launcher"

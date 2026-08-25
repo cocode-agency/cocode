@@ -1,1 +1,35 @@
-module.exports = require("@dtyq/eslint-config/commitlint")
+module.exports = {
+	extends: ["@commitlint/config-conventional"],
+	rules: {
+		"type-enum": [
+			2,
+			"always",
+			[
+				"build",
+				"chore",
+				"ci",
+				"docs",
+				"feat",
+				"fix",
+				"perf",
+				"refactor",
+				"revert",
+				"style",
+				"test",
+				"major",
+				"config",
+			],
+		],
+		"body-max-line-length": [0],
+		"body-leading-blank": [0],
+		"footer-leading-blank": [0, "always"],
+		"footer-max-line-length": [2, "always", 100],
+		"header-max-length": [2, "always", 72],
+		"header-trim": [2, "always"],
+		"subject-case": [0],
+		"subject-empty": [0, "never"],
+		"subject-full-stop": [0, "never", "."],
+		"type-case": [0, "always", "lower-case"],
+		"type-empty": [2, "never"],
+	},
+}

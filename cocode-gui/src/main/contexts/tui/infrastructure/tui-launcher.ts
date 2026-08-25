@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { spawn } from "node:child_process"
 // Paths here end up in shell command strings and escaping, so keep OS separators.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import path from "node:path"
 import { app } from "electron"
 import { packagedNodeExecutableName } from "../../../../shared/packaged-node-executable"

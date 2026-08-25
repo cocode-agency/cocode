@@ -212,6 +212,7 @@ test("splits GUI tests into common, host, and native platform dimensions", () =>
 test("uses oxlint as the GUI lint engine", () => {
 	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
 		scripts?: Record<string, string>
+		devDependencies?: Record<string, string>
 	}
 	const oxlintConfig = readFileSync(oxlintConfigPath, "utf8")
 	const lintStagedConfig = readFileSync(lintStagedConfigPath, "utf8")
@@ -221,6 +222,7 @@ test("uses oxlint as the GUI lint engine", () => {
 	assert.match(packageJson.scripts?.["lint:ci"] ?? "", /check-changed-files\.mjs lint/)
 	assert.doesNotMatch(packageJson.scripts?.lint ?? "", /eslint/)
 	assert.doesNotMatch(packageJson.scripts?.["lint:fix"] ?? "", /eslint/)
+	assert.equal(packageJson.devDependencies?.["@dtyq/eslint-config"], undefined)
 	assert.match(lintStagedConfig, /oxlint --fix --deny-warnings/)
 	assert.doesNotMatch(lintStagedConfig, /\beslint\b/)
 	assert.match(oxlintConfig, /"typescript"/)

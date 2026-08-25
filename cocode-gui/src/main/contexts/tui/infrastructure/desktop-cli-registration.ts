@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promise
 import { promisify } from "node:util"
 // Registers CLI shims into the OS PATH (path.delimiter, native separators), so
 // keep node:path semantics.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import path from "node:path"
 import type {
 	TuiCommandLineToolResult,

@@ -34,7 +34,7 @@ describe('markdown presentation', () => {
   it('wraps wide table cells without exceeding the terminal width', () => {
     const table = renderTable(
       ['文件', '改动'],
-      [['`.github/workflows/cocode-tui-platform.yml`', 'Lint 步骤 `pnpm exec eslint src packages`']],
+      [['`.github/workflows/cocode-tui-platform.yml`', 'Lint 步骤 `pnpm exec oxlint src packages`']],
       48,
     )
 

@@ -1,10 +1,9 @@
 import assert from "node:assert/strict"
+// This test asserts native path resolution for the Electron-side bundle layout.
+// oxlint-disable-next-line no-restricted-imports
 import path from "node:path"
 import test from "node:test"
-import {
-	findDshClientBundles,
-	parseDshClientBundleRequest,
-} from "../../vite.renderer.config"
+import { findDshClientBundles, parseDshClientBundleRequest } from "../../vite.renderer.config"
 import { resolveLocalDshClientBundleUrl } from "../../src/renderer/app/bootstrap/local-dsh-client-bundles"
 
 test("discovers DSH client bundles below migrated category directories", () => {
@@ -30,7 +29,8 @@ test("resolves every browser roster alias to a local Electron bundle", () => {
 			"file:///Cocode/dsh-client/ui-permission-presets/client.js",
 		)
 	} finally {
-		if (previousWindow === undefined) delete (globalThis as typeof globalThis & { window?: unknown }).window
+		if (previousWindow === undefined)
+			delete (globalThis as typeof globalThis & { window?: unknown }).window
 		else (globalThis as typeof globalThis & { window: unknown }).window = previousWindow
 	}
 })
