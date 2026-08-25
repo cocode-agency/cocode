@@ -52,6 +52,11 @@ export function selectableNodeText(node: ConversationNode, view: MessageTextView
   if (node.kind === 'tool') {
     return formatToolSummaryLine(node, view.locale ?? 'en', view.maxColumns ?? 80)
   }
+  if (node.kind === 'command') {
+    const title = node.name === null ? 'command' : `/${node.name}`
+    const summary = node.outcome?.text ?? (node.outcome === null ? 'running' : node.outcome.kind)
+    return `${title} · ${summary}`
+  }
   if (node.kind !== 'assistant') return readableNodeText(node)
   const parts = assistantSelectionParts(node, viewFor(node, view))
   if (parts.reasoning !== undefined && parts.body !== '') {

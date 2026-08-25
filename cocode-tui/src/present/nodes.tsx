@@ -6,6 +6,7 @@ import type { ReactElement } from 'react'
 import type { ConversationNode } from '../runtime/nodes/types.ts'
 import { AssistantRow } from './components/AssistantRow.tsx'
 import { ContextRow } from './components/ContextRow.tsx'
+import { CommandRow } from './components/CommandRow.tsx'
 import { NoticeRow } from './components/NoticeRow.tsx'
 import { ToolCard } from './components/ToolCard.tsx'
 import { UserRow } from './components/UserRow.tsx'
@@ -68,6 +69,16 @@ const views: Record<string, NodeView> = {
         selected={options.selected === true}
         attached={options.attached === true}
         textSelection={options.textSelection}
+        locale={options.locale ?? 'en'}
+        maxColumns={options.maxColumns}
+      />
+    ) : null,
+  command: (node, _verbose, options) =>
+    node.kind === 'command' ? (
+      <CommandRow
+        node={node}
+        expanded={options.expanded === true}
+        selected={options.selected === true}
         locale={options.locale ?? 'en'}
         maxColumns={options.maxColumns}
       />

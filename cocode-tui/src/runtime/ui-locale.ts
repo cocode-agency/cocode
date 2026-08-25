@@ -28,6 +28,10 @@ export type UiTextKey =
   | 'imageRuntimeUnavailable'
   | 'imageCountLimit'
   | 'commandImagesUnsupported'
+  | 'commandRunning'
+  | 'commandDone'
+  | 'commandFailed'
+  | 'commandTitle'
   | 'history'
   | 'historyHint'
   | 'historyPlaceholder'
@@ -349,6 +353,10 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     imageRuntimeUnavailable: 'This runtime cannot store image attachments.',
     imageCountLimit: 'A prompt can contain at most 20 images.',
     commandImagesUnsupported: '/{command} does not accept image attachments. Remove them before running the command.',
+    commandRunning: 'running',
+    commandDone: 'done',
+    commandFailed: 'failed',
+    commandTitle: 'command',
     history: 'history',
     historyHint: 'ctrl+r · ↑↓ select · enter use · esc close',
     historyPlaceholder: 'type to search…',
@@ -669,6 +677,10 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     imageRuntimeUnavailable: '当前运行时无法存储图片附件。',
     imageCountLimit: '一条输入最多包含 20 张图片。',
     commandImagesUnsupported: '/{command} 不接受图片附件，请先移除图片。',
+    commandRunning: '运行中',
+    commandDone: '已完成',
+    commandFailed: '失败',
+    commandTitle: '命令',
     history: '历史搜索',
     historyHint: 'Ctrl+R · ↑↓ 选择 · 回车使用 · Esc 关闭',
     historyPlaceholder: '输入关键词搜索…',

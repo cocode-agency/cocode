@@ -210,6 +210,52 @@ describe('Assembler', () => {
     expect(a.snapshot()[0]).not.toHaveProperty('interrupted')
   })
 
+  it('folds command run and done events into one lifecycle node', () => {
+    const a = assembler()
+    a.ingest(
+      ev('command/run', 1, {
+        commandId: 'cmd-1',
+        name: 'goal',
+        args: ' ship',
+        source: { kind: 'user' },
+      }),
+    )
+    expect(a.snapshot()[0]).toMatchObject({
+      kind: 'command',
+      commandId: 'cmd-1',
+      name: 'goal',
+      args: ' ship',
+      outcome: null,
+    })
+
+    a.ingest(
+      ev('command/done', 2, {
+        commandId: 'cmd-1',
+        kind: 'success',
+        text: 'Goal updated',
+        sourceEventSeq: 9,
+      }),
+    )
+    expect(a.snapshot()[0]).toMatchObject({
+      kind: 'command',
+      seq: 1,
+      outcome: { kind: 'success', text: 'Goal updated', sourceEventSeq: 9 },
+    })
+  })
+
+  it('keeps a command done event visible when its run is outside the history window', () => {
+    const a = assembler()
+    a.ingest(ev('command/done', 4, { commandId: 'cmd-2', kind: 'error', text: 'failed' }))
+    expect(a.snapshot()[0]).toMatchObject({
+      kind: 'command',
+      commandId: 'cmd-2',
+      seq: 4,
+      name: null,
+      args: null,
+      outcome: { kind: 'error', text: 'failed' },
+    })
+  })
+
   it('pairs tool/call and tool/result by callId', () => {
     const a = assembler()
     a.ingest(

@@ -22,6 +22,8 @@ export function messageSupportsDetails(node: ConversationNode): boolean {
     }
     case 'context':
       return node.text.trim() !== '' || node.sections.length > 0
+    case 'command':
+      return node.args?.trim() !== '' || node.outcome?.text !== undefined
     case 'user':
     case 'notice':
       return false

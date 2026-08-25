@@ -1,11 +1,12 @@
 /**
- * P0 built-in Definitions. Type checks live only in match().
+ * Built-in Definitions. Type checks live only in match().
  */
 
 import type { SessionEvent } from '@cocode/tui-connection'
 import { asNumber, asString, blocksToText, isRecord, reasoningToText } from '../text.ts'
 import type {
   AssistantNode,
+  CommandNode,
   ContextNode,
   ContextSection,
   NodeDefinition,
@@ -23,6 +24,7 @@ export function createBuiltinRegistry(): NodeRegistry {
   registry.register(userDefinition)
   registry.register(toolDefinition)
   registry.register(assistantDefinition)
+  registry.register(commandDefinition)
   registry.register(fallbackDefinition)
   return registry
 }
@@ -383,6 +385,74 @@ function applyToolResult(node: ToolNode, event: SessionEvent): ToolNode {
     }
   }
   return node
+}
+
+const commandDefinition: NodeDefinition<CommandNode> = {
+  kind: 'command',
+  match(event) {
+    if (event.type !== 'command/run' && event.type !== 'command/done') return null
+    const data = isRecord(event.data) ? event.data : {}
+    const commandId = asString(data.commandId)
+    if (commandId === '') return null
+    return { id: commandId, role: event.type === 'command/run' ? 'start' : 'update' }
+  },
+  start(event) {
+    const data = isRecord(event.data) ? event.data : {}
+    const commandId = asString(data.commandId, String(event.seq))
+    if (event.type === 'command/done') {
+      return commandFromDone(event, commandId)
+    }
+    return {
+      kind: 'command',
+      id: commandId,
+      seq: event.seq,
+      time: event.time,
+      commandId,
+      name: optionalString(data.name) ?? null,
+      args: typeof data.args === 'string' ? data.args : null,
+      outcome: null,
+    }
+  },
+  update(state, event) {
+    if (event.type !== 'command/done') return state
+    return commandFromDone(event, state.commandId, state)
+  },
+  isComplete(state) {
+    return state.outcome !== null
+  },
+  buildViewNode(ctx) {
+    return ctx.state
+  },
+}
+
+function commandFromDone(
+  event: SessionEvent,
+  commandId: string,
+  previous?: CommandNode,
+): CommandNode {
+  const data = isRecord(event.data) ? event.data : {}
+  const kind = data.kind === 'success' || data.kind === 'error' ? data.kind : 'error'
+  const sourceEventSeq =
+    kind === 'success' &&
+    typeof data.sourceEventSeq === 'number' &&
+    Number.isSafeInteger(data.sourceEventSeq) &&
+    data.sourceEventSeq >= 0
+      ? data.sourceEventSeq
+      : undefined
+  return {
+    kind: 'command',
+    id: commandId,
+    seq: previous?.seq ?? event.seq,
+    time: previous?.time ?? event.time,
+    commandId,
+    name: previous?.name ?? null,
+    args: previous?.args ?? null,
+    outcome: {
+      kind,
+      ...(typeof data.text === 'string' ? { text: data.text } : {}),
+      ...(sourceEventSeq === undefined ? {} : { sourceEventSeq }),
+    },
+  }
 }
 
 const fallbackDefinition: NodeDefinition<NoticeNode> = {

@@ -3414,6 +3414,10 @@ class TuiAppImpl implements TuiApp {
     }
     this.notice = undefined
     this.interruptArmed = false
+    if (this.capabilities.commands && this.remoteCommands.some((command) => command.name === 'compact')) {
+      this.executeRemoteCommand('/compact')
+      return
+    }
     void this.promptWithAttachments('/compact', []).catch((error: unknown) => {
       this.notice = { tone: 'error', message: errorMessage(error) }
       this.emit()
@@ -3812,8 +3816,14 @@ class TuiAppImpl implements TuiApp {
       this.rejectExternalWrite()
       return
     }
+    const remoteName = parsed.name.toLowerCase()
+    const remoteCommand = this.remoteCommands.find((entry) => entry.name === remoteName)
     const command = this.commands.find(parsed.name, this.capabilities)
-    if (command !== undefined) {
+    // Keep the local /compact fallback for older Hosts, but prefer the rc2
+    // command registry when it is available so command lifecycle events are
+    // rendered the same way as in the GUI.
+    const useRemoteCompact = remoteName === 'compact' && this.capabilities.commands && remoteCommand !== undefined
+    if (command !== undefined && !useRemoteCompact) {
       this.draft = createDraft()
       this.attachments = []
       this.images = []
@@ -3822,8 +3832,6 @@ class TuiAppImpl implements TuiApp {
       return
     }
     const selectedSkill = this.findSkillCommand(parsed.name)
-    const remoteName = parsed.name.toLowerCase()
-    const remoteCommand = this.remoteCommands.find((entry) => entry.name === remoteName)
     if (this.capabilities.commands && remoteCommand !== undefined) {
       if (remoteCommand.input !== undefined && parsed.args === '') {
         this.draft = replaceDraft(this.draft, `/${remoteName} `)

@@ -134,6 +134,19 @@ export function estimateNodeRows(
         (node.error === undefined ? 0 : 1)
       )
     }
+    case 'command': {
+      const title = node.name === null ? 'command' : `/${node.name}`
+      const summary = node.outcome?.text ?? (node.outcome === null ? 'running' : node.outcome.kind)
+      const gap = BLOCK_GAP
+      if (!detailed) return gap + countWrappedRows(`${title} · ${summary}`, maxColumns)
+      const columns = maxColumns
+      const argsRows = node.args === null ? 0 : countWrappedRows(node.args.trim(), columns)
+      const outcomeRows =
+        node.outcome?.text === undefined || node.outcome.text === summary
+          ? 0
+          : countWrappedRows(node.outcome.text, columns)
+      return gap + countWrappedRows(`${title} · ${summary}`, columns) + argsRows + outcomeRows
+    }
     case 'notice':
       if (node.verboseOnly === true && !verbose) return 0
       return 1 + countWrappedRows(node.message, maxColumns)

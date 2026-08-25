@@ -98,6 +98,8 @@ export function readableNodeText(node: ConversationNode): string {
         : node.args !== ''
         ? node.args
         : node.name
+    case 'command':
+      return node.outcome?.text ?? node.args ?? node.name ?? 'command'
     case 'notice':
       return ''
   }

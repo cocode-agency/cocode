@@ -14,6 +14,8 @@ export function nodesToMarkdown(
       sections.push('## Assistant', assistantText(node, options.includeReasoning === true))
     } else if (node.kind === 'tool') {
       sections.push(toolText(node))
+    } else if (node.kind === 'command') {
+      sections.push(commandText(node))
     }
   }
   return `${sections.join('\n\n').trimEnd()}\n`
@@ -32,6 +34,15 @@ function toolText(node: ToolNode): string {
   if (node.error !== undefined) {
     sections.push(`Error: ${node.error.name} (${node.error.code})`)
   }
+  return sections.join('\n\n')
+}
+
+function commandText(node: Extract<ConversationNode, { kind: 'command' }>): string {
+  const title = node.name === null ? 'command' : `/${node.name}`
+  const state = node.outcome === null ? 'running' : node.outcome.kind
+  const sections = [`### Command: ${title} (${state})`]
+  if (node.args !== null && node.args.trim() !== '') sections.push(fenced(node.args))
+  if (node.outcome?.text !== undefined && node.outcome.text !== '') sections.push(node.outcome.text)
   return sections.join('\n\n')
 }
 

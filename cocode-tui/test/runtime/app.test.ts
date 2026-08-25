@@ -1952,6 +1952,23 @@ describe('TuiApp', () => {
     expect(runtime.prompts[0]).toEqual({ sessionId: 's1', text: '/compact' })
   })
 
+  it('uses the Host compact command when the rc2 command registry exposes it', async () => {
+    const runtime = fakeRuntime()
+    runtime.commands = [{ name: 'compact', description: 'Compact older conversation history' }]
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+    })
+    await app.start()
+    app.dispatch({ type: 'command', line: '/compact' })
+    await vi.waitFor(() => expect(runtime.executedCommands).toHaveLength(1))
+    expect(runtime.executedCommands[0]).toEqual({ sessionId: 's1', line: '/compact' })
+    expect(runtime.prompts).toHaveLength(0)
+  })
+
   it('queues a follow-up while running and sends it after idle', async () => {
     const runtime = fakeRuntime()
     const app = createTuiApp({

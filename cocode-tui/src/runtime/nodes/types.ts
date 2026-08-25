@@ -23,7 +23,7 @@ export type NodeDefinition<State = unknown> = {
   }): ConversationNode | null
 }
 
-export type ConversationNode = UserNode | ContextNode | AssistantNode | ToolNode | NoticeNode
+export type ConversationNode = UserNode | ContextNode | AssistantNode | ToolNode | CommandNode | NoticeNode
 
 export type UserNode = {
   kind: 'user'
@@ -95,6 +95,21 @@ export type ToolView =
   | { kind: 'search'; query?: string }
   | { kind: 'diff'; paths?: readonly string[]; summary?: DiffSummary }
   | { kind: 'terminal'; command?: string }
+
+export type CommandNode = {
+  kind: 'command'
+  id: string
+  seq: number
+  time: number
+  commandId: string
+  name: string | null
+  args: string | null
+  outcome: {
+    kind: 'success' | 'error'
+    text?: string
+    sourceEventSeq?: number
+  } | null
+}
 
 export type NoticeNode = {
   kind: 'notice'
