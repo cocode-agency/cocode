@@ -176,6 +176,7 @@ type CommandService = {
   execute(
     agent: Agent,
     line: string,
+    images: readonly { data: string; mediaType: ImageMediaType; name?: string }[],
     signal: AbortSignal,
   ): Promise<CommandExecution | undefined>;
 };
@@ -1394,6 +1395,7 @@ export class TuiCompanionGateway {
   async executeCommand(params: {
     sessionId: string;
     line: string;
+    images?: unknown;
   }): Promise<CommandExecution | undefined> {
     if (params.sessionId.trim() === "")
       throw new Error("commands/execute requires a session id");
@@ -1404,9 +1406,11 @@ export class TuiCompanionGateway {
       throw new Error("commands registry is not configured");
     const record = await this.getOrCreateSession(params.sessionId);
     this.assertLive(params.sessionId, record);
+    const images = parseCommandImages(params.images);
     return registry.execute(
       record.handle.agent,
       params.line,
+      images,
       new AbortController().signal,
     );
   }
@@ -1653,7 +1657,7 @@ export class TuiCompanionGateway {
       case "cocode/commands/execute":
       case "commands/execute":
         return this.executeCommand(
-          params as { sessionId: string; line: string },
+          params as { sessionId: string; line: string; images?: unknown },
         );
       case "cocode/plugins/list":
       case "plugins/list":
@@ -2128,6 +2132,35 @@ function parseImageInput(
     mediaType: value.mediaType,
     ...(name === undefined ? {} : { name }),
   };
+}
+
+function parseCommandImages(
+  value: unknown,
+): { data: string; mediaType: ImageMediaType; name?: string }[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    throw new TypeError('commands/execute images must be an array')
+  }
+  return value.map((item, index) => {
+    if (
+      !isRecord(item) ||
+      typeof item.data !== 'string' ||
+      !isImageMediaType(item.mediaType) ||
+      item.data === '' ||
+      !BASE64_PATTERN.test(item.data)
+    ) {
+      throw new TypeError(`commands/execute image ${index + 1} is invalid`)
+    }
+    const name =
+      typeof item.name === 'string' && item.name.trim() !== ''
+        ? item.name.trim()
+        : undefined
+    return {
+      data: item.data,
+      mediaType: item.mediaType,
+      ...(name === undefined ? {} : { name }),
+    }
+  })
 }
 
 function decodeBase64(value: string, maxBytes: number): Uint8Array {

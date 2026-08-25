@@ -210,6 +210,49 @@ describe('AssistantRow rendering', () => {
     expect(answer).toBe(thoughts + 2)
     expect(lines[thoughts + 1]?.replace(/[│▌ ]/g, '')).toBe('')
   })
+
+  it('renders an interrupted marker after the visible assistant prefix', async () => {
+    const stdout = new CaptureStream(80, 20)
+    const node: AssistantNode = {
+      kind: 'assistant',
+      id: 'assistant-interrupted',
+      seq: 1,
+      time: 1,
+      turn: 1,
+      step: 1,
+      text: 'partial answer',
+      reasoning: '',
+      streaming: false,
+      interrupted: true,
+    }
+    const app = render(
+      React.createElement(
+        Box,
+        { width: 80 },
+        React.createElement(AssistantRow, {
+          node,
+          verbose: false,
+          locale: 'en',
+          maxColumns: 40,
+        }),
+      ),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        debug: true,
+        patchConsole: false,
+        exitOnCtrlC: false,
+      },
+    )
+
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    app.unmount()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    app.cleanup()
+
+    const plain = stdout.output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+    expect(plain).toContain('partial answer')
+    expect(plain).toContain('interrupted')
+  })
 })
 
 class CaptureStream extends Writable {

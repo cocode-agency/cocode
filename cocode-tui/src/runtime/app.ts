@@ -3828,19 +3828,27 @@ class TuiAppImpl implements TuiApp {
       if (remoteCommand.input !== undefined && parsed.args === '') {
         this.draft = replaceDraft(this.draft, `/${remoteName} `)
         this.attachments = []
-        this.images = []
         this.pendingSkillInvocation = undefined
         this.notice = undefined
         this.emit()
         return
       }
+      if (this.images.length > 0 && remoteCommand.input?.images !== true) {
+        this.notice = {
+          tone: 'info',
+          message: text(this.locale, 'commandImagesUnsupported', { command: remoteName }),
+        }
+        this.emit()
+        return
+      }
       this.draft = createDraft()
       this.attachments = []
+      const images = this.images.slice()
       this.images = []
       this.history.push(line)
       const commandLine =
         remoteName === parsed.name ? line : line.replace(/^\/\S+/u, `/${remoteName}`)
-      this.executeRemoteCommand(commandLine)
+      this.executeRemoteCommand(commandLine, images)
       return
     }
     if (this.capabilities.skills && selectedSkill !== undefined) {
@@ -3884,7 +3892,7 @@ class TuiAppImpl implements TuiApp {
     )
   }
 
-  private executeRemoteCommand(line: string): void {
+  private executeRemoteCommand(line: string, images: readonly DraftImage[] = []): void {
     if (this.rejectExternalWrite()) return
     const execute = this.runtime.executeCommand
     if (execute === undefined) {
@@ -3893,12 +3901,18 @@ class TuiAppImpl implements TuiApp {
       return
     }
     this.notice = undefined
-    void execute.call(this.runtime, this.sessionId, line).then(
+    const visibleLine = images
+      .reduce((value, image) => value.split(image.token).join(''), line)
+      .replace(/\s+/gu, ' ')
+      .trim()
+    void execute.call(this.runtime, this.sessionId, visibleLine, images).then(
       (execution) => {
         if (execution === undefined) {
           this.notice = errorNotice('COMMAND_UNKNOWN', { name: parseSlash(line)?.name ?? line })
+          this.restoreFailedPrompt(line, [], images)
         } else if (execution.result.kind === 'error') {
           this.notice = { tone: 'error', message: execution.result.text }
+          this.restoreFailedPrompt(line, [], images)
         } else if (execution.result.text !== undefined && execution.result.text !== '') {
           this.notice = { tone: 'info', message: execution.result.text }
         } else {
@@ -3907,6 +3921,7 @@ class TuiAppImpl implements TuiApp {
         this.emit()
       },
       (error: unknown) => {
+        this.restoreFailedPrompt(line, [], images)
         this.notice = { tone: 'error', message: errorMessage(error) }
         this.emit()
       },

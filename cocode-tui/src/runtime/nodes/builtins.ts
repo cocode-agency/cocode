@@ -177,6 +177,20 @@ const assistantDefinition: NodeDefinition<AssistantNode> = {
   isComplete(state) {
     return !state.streaming
   },
+  settle(state, boundary) {
+    if (
+      boundary?.type !== 'turn/end' ||
+      state.streaming !== true ||
+      (state.text === '' && state.reasoning === '')
+    ) {
+      return state
+    }
+    const data = isRecord(boundary.data) ? boundary.data : {}
+    const reason = data.reason
+    const kind = isRecord(reason) ? reason.kind : undefined
+    if (kind !== 'interrupted' && kind !== 'aborted' && kind !== 'cancelled') return state
+    return { ...state, streaming: false, interrupted: true }
+  },
   buildViewNode(ctx) {
     const state = ctx.state
     if (state.text === '' && state.reasoning === '' && !state.streaming) {
@@ -214,6 +228,8 @@ function applyAssistant(node: AssistantNode, event: SessionEvent): AssistantNode
   node.reasoning = reasoningToText(message.content)
   node.streaming = false
   node.thinking = false
+  if (data.interrupted === true) node.interrupted = true
+  else delete node.interrupted
   finishThinking(node, event.time)
   if (isRecord(data.usage)) node.usage = usageOf(data.usage)
   return node

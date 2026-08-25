@@ -104,6 +104,7 @@ function createContext(options = {}) {
         }
       }
       if (name === 'skills') return options.skills
+      if (name === 'commands') return options.commands
       if (name === 'agentPresets') return options.agentPresets
       if (name === 'loader') {
         return options.loader ?? {
@@ -153,6 +154,36 @@ test('waits for a settings-backed provider that registers after initialize start
   await new Promise((resolve) => setTimeout(resolve, 80))
   providers.push({ id: 'cocode-nut', name: 'Cocode Nut' })
   await pending
+})
+
+test('forwards canonical command images to the DSH command registry', async () => {
+  let received
+  const { ctx } = createContext({
+    commands: {
+      list() { return [{ name: 'inspect', description: 'Inspect an image', input: { hint: '<text>', images: true } }] },
+      async execute(_agent, line, images) {
+        received = { line, images }
+        return { commandId: 'command-1', result: { kind: 'success', text: 'ok' } }
+      },
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  const result = await gateway.handleRequest('commands/execute', {
+    sessionId: 'command-images',
+    line: '/inspect describe',
+    images: [{ data: 'AQID', mediaType: 'image/png', name: 'shot.png' }],
+  })
+
+  assert.deepEqual(result, {
+    commandId: 'command-1',
+    result: { kind: 'success', text: 'ok' },
+  })
+  assert.deepEqual(received, {
+    line: '/inspect describe',
+    images: [{ data: 'AQID', mediaType: 'image/png', name: 'shot.png' }],
+  })
 })
 
 const imageBlock = {

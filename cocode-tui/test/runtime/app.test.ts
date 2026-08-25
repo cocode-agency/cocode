@@ -68,7 +68,7 @@ function fakeRuntime(): TuiRuntime & {
   ) => Promise<{ provider: string; model: string; reasoningEffort?: string } | undefined>
   modelListError?: Error
   commands: TuiCommandDescriptor[]
-  executedCommands: { sessionId: string; line: string }[]
+  executedCommands: { sessionId: string; line: string; images?: TuiImageInput[] }[]
   plugins: { entryId: string; moduleName: string; enabled: boolean; fiberPhase: 'active' | null }[]
   setPluginEnabled: (entryId: string, enabled: boolean) => Promise<{ entryId: string; moduleName: string; enabled: boolean; fiberPhase: 'active' | null }>
   workspaceEnsures: { sessionId: string; approved: boolean }[]
@@ -153,8 +153,12 @@ function fakeRuntime(): TuiRuntime & {
       plugin.fiberPhase = enabled ? 'active' : null
       return plugin
     },
-    async executeCommand(sessionId, line) {
-      runtime.executedCommands.push({ sessionId, line })
+    async executeCommand(sessionId, line, images = []) {
+      runtime.executedCommands.push({
+        sessionId,
+        line,
+        ...(images.length === 0 ? {} : { images: [...images] }),
+      })
       return { commandId: 'cmd-1', result: { kind: 'success', text: 'goal updated' } }
     },
     async cancel(sessionId, keepInbox = false) {
@@ -736,6 +740,90 @@ describe('TuiApp', () => {
       tone: 'info',
       message: 'goal updated',
     })
+  })
+
+  it('keeps image drafts when a runtime command does not accept images', async () => {
+    const runtime = fakeRuntime()
+    runtime.commands = [{ name: 'goal', description: 'Manage the current goal' }]
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, imageAttachments: true },
+      readClipboardImage: async () => ({ data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' }),
+    })
+    await app.start()
+
+    app.dispatch({ type: 'image.paste' })
+    await expect.poll(() => app.snapshot().composer.images).toHaveLength(1)
+    const imageLine = `${app.snapshot().composer.text}run`
+    app.dispatch({ type: 'submit', text: `/goal ${imageLine}` })
+
+    expect(runtime.executedCommands).toEqual([])
+    expect(app.snapshot().composer.images).toHaveLength(1)
+    expect(app.snapshot().composer.text).toContain('[Image: clipboard-1.png]')
+    expect(app.snapshot().notice).toMatchObject({ tone: 'info' })
+  })
+
+  it('passes image drafts to runtime commands that opt in to images', async () => {
+    const runtime = fakeRuntime()
+    runtime.commands = [{
+      name: 'inspect',
+      description: 'Inspect an image',
+      input: { hint: '<text>', images: true },
+    }]
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, imageAttachments: true },
+      readClipboardImage: async () => ({ data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' }),
+    })
+    await app.start()
+
+    app.dispatch({ type: 'image.paste' })
+    await expect.poll(() => app.snapshot().composer.images).toHaveLength(1)
+    app.dispatch({ type: 'submit', text: `/inspect ${app.snapshot().composer.text}describe` })
+
+    await expect.poll(() => runtime.executedCommands).toHaveLength(1)
+    expect(runtime.executedCommands[0]).toMatchObject({
+      sessionId: 's1',
+      line: '/inspect describe',
+      images: [{ data: Uint8Array.of(1, 2, 3), mediaType: 'image/png', name: 'clipboard-1.png' }],
+    })
+    expect(app.snapshot().composer.images).toEqual([])
+  })
+
+  it('restores command image drafts when the runtime command fails', async () => {
+    const runtime = fakeRuntime()
+    runtime.commands = [{ name: 'inspect', description: 'Inspect an image', input: { images: true, hint: '<text>' } }]
+    runtime.executeCommand = async (sessionId, line, images = []) => {
+      runtime.executedCommands.push({ sessionId, line, images: [...images] })
+      return { commandId: 'cmd-1', result: { kind: 'error', text: 'inspection failed' } }
+    }
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, imageAttachments: true },
+      readClipboardImage: async () => ({ data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' }),
+    })
+    await app.start()
+
+    app.dispatch({ type: 'image.paste' })
+    await expect.poll(() => app.snapshot().composer.images).toHaveLength(1)
+    const commandLine = `/inspect ${app.snapshot().composer.text}describe`
+    app.dispatch({ type: 'submit', text: commandLine })
+
+    await expect.poll(() => app.snapshot().notice).toEqual({ tone: 'error', message: 'inspection failed' })
+    expect(app.snapshot().composer.text).toBe(commandLine)
+    expect(app.snapshot().composer.images).toHaveLength(1)
   })
 
   it('uses a runtime command input hint to keep the draft editable', async () => {

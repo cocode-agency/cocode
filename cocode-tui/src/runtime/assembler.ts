@@ -36,7 +36,7 @@ export type Assembler = {
   replaceWindow(events: readonly SessionEvent[]): void
   snapshot(): readonly ConversationNode[]
   stats(): AssemblerStats
-  settleOpen(): void
+  settleOpen(boundary?: SessionEvent): void
   reset(): void
 }
 
@@ -92,7 +92,7 @@ class ConversationAssembler implements Assembler {
       this.updateContext(matched.definition, matched.id, event)
     }
     // Cancelled turns often omit tool/result; close in-flight tools here.
-    if (event.type === 'turn/end') this.settleOpen()
+    if (event.type === 'turn/end') this.settleOpen(event)
     this.pruneCompletedContexts()
   }
 
@@ -127,12 +127,12 @@ class ConversationAssembler implements Assembler {
     }
   }
 
-  settleOpen(): void {
+  settleOpen(boundary?: SessionEvent): void {
     let changed = false
     for (const context of this.order) {
       const settle = context.definition.settle
       if (settle === undefined) continue
-      const next = settle(context.state)
+      const next = settle(context.state, boundary)
       if (next === context.state) continue
       this.retainedStateBytes -= context.stateBytes
       context.state = next

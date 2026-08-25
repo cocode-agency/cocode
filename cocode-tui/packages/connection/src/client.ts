@@ -313,12 +313,20 @@ class SdkTuiRuntime implements TuiRuntime {
     return rows.map(parseCommandDescriptor)
   }
 
-  async executeCommand(sessionId: string, line: string): Promise<TuiCommandExecution | undefined> {
+  async executeCommand(
+    sessionId: string,
+    line: string,
+    images: readonly TuiImageInput[] = [],
+  ): Promise<TuiCommandExecution | undefined> {
     const client = this.requireClient()
     this.requireCapability('commands')
     const result = await client.request(
       this.wireMethod('cocode/commands/execute', 'commands/execute'),
-      { sessionId, line },
+      {
+        sessionId,
+        line,
+        ...(images.length === 0 ? {} : { images: encodeCommandImages(images) }),
+      },
     )
     if (result === undefined || result === null) return undefined
     if (!isRecord(result) || typeof result.commandId !== 'string' || !isRecord(result.result)) {
@@ -1006,21 +1014,40 @@ function parseSkillEntries(value: unknown[]): SkillEntry[] {
   return skills
 }
 
-function parseCommandDescriptor(value: unknown): TuiCommandDescriptor {
+export function parseCommandDescriptor(value: unknown): TuiCommandDescriptor {
   if (
     !isRecord(value) ||
     typeof value.name !== 'string' ||
     typeof value.description !== 'string' ||
     (value.input !== undefined &&
-      (!isRecord(value.input) || typeof value.input.hint !== 'string'))
+      (!isRecord(value.input) ||
+        typeof value.input.hint !== 'string' ||
+        (value.input.images !== undefined && typeof value.input.images !== 'boolean')))
   ) {
     throw new Error(`commands/list returned an invalid command entry: ${JSON.stringify(value)}`)
   }
   return {
     name: value.name,
     description: value.description,
-    ...(value.input === undefined ? {} : { input: { hint: value.input.hint as string } }),
+    ...(value.input === undefined
+      ? {}
+      : {
+          input: {
+            hint: value.input.hint as string,
+            ...(value.input.images === true ? { images: true } : {}),
+          },
+        }),
   }
+}
+
+export function encodeCommandImages(
+  images: readonly TuiImageInput[],
+): { data: string; mediaType: TuiImageInput['mediaType']; name?: string }[] {
+  return images.map((image) => ({
+    data: Buffer.from(image.data).toString('base64'),
+    mediaType: image.mediaType,
+    ...(image.name === undefined ? {} : { name: image.name }),
+  }))
 }
 
 function parsePluginEntry(value: unknown, operation = 'plugins/list'): TuiPluginEntry {

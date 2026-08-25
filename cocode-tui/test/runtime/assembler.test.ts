@@ -154,6 +154,62 @@ describe('Assembler', () => {
     })
   })
 
+  it('preserves the interrupted flag from a finalized assistant message', () => {
+    const a = assembler()
+    a.ingest(
+      ev('assistant/message', 1, {
+        turn: 1,
+        step: 0,
+        interrupted: true,
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'partial answer' }],
+        },
+      }),
+    )
+
+    expect(a.snapshot()[0]).toMatchObject({
+      kind: 'assistant',
+      text: 'partial answer',
+      streaming: false,
+      interrupted: true,
+    })
+  })
+
+  it('settles a visible assistant prefix as interrupted at an interrupted turn boundary', () => {
+    const a = assembler()
+    a.ingest(
+      ev('assistant/chunk', 1, {
+        turn: 1,
+        step: 0,
+        chunk: { type: 'text-delta', index: 0, text: 'partial answer' },
+      }),
+    )
+    a.ingest(ev('turn/end', 2, { turn: 1, reason: { kind: 'interrupted' } }))
+
+    expect(a.snapshot()[0]).toMatchObject({
+      kind: 'assistant',
+      text: 'partial answer',
+      streaming: false,
+      interrupted: true,
+    })
+  })
+
+  it('does not mark a visible assistant prefix interrupted for a normal turn end', () => {
+    const a = assembler()
+    a.ingest(
+      ev('assistant/chunk', 1, {
+        turn: 1,
+        step: 0,
+        chunk: { type: 'text-delta', index: 0, text: 'complete enough' },
+      }),
+    )
+    a.ingest(ev('turn/end', 2, { turn: 1, reason: { kind: 'completed' } }))
+
+    expect(a.snapshot()[0]).toMatchObject({ streaming: true })
+    expect(a.snapshot()[0]).not.toHaveProperty('interrupted')
+  })
+
   it('pairs tool/call and tool/result by callId', () => {
     const a = assembler()
     a.ingest(

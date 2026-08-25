@@ -27,6 +27,7 @@ export type UiTextKey =
   | 'imageUnsupported'
   | 'imageRuntimeUnavailable'
   | 'imageCountLimit'
+  | 'commandImagesUnsupported'
   | 'history'
   | 'historyHint'
   | 'historyPlaceholder'
@@ -93,6 +94,7 @@ export type UiTextKey =
   | 'agentThinking'
   | 'agentStarting'
   | 'agentDead'
+  | 'assistantInterrupted'
   | 'emptyTitle'
   | 'emptyHint'
   | 'langChanged'
@@ -346,6 +348,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     imageUnsupported: 'Clipboard image format is not supported.',
     imageRuntimeUnavailable: 'This runtime cannot store image attachments.',
     imageCountLimit: 'A prompt can contain at most 20 images.',
+    commandImagesUnsupported: '/{command} does not accept image attachments. Remove them before running the command.',
     history: 'history',
     historyHint: 'ctrl+r · ↑↓ select · enter use · esc close',
     historyPlaceholder: 'type to search…',
@@ -412,6 +415,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     agentThinking: 'thinking…',
     agentStarting: 'connecting…',
     agentDead: 'runtime stopped',
+    assistantInterrupted: 'interrupted',
     emptyTitle: 'cocode is ready',
     emptyHint: 'Ask a question or describe a task to start.',
     langChanged: 'Language: {lang}',
@@ -664,6 +668,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     imageUnsupported: '不支持剪贴板中的图片格式。',
     imageRuntimeUnavailable: '当前运行时无法存储图片附件。',
     imageCountLimit: '一条输入最多包含 20 张图片。',
+    commandImagesUnsupported: '/{command} 不接受图片附件，请先移除图片。',
     history: '历史搜索',
     historyHint: 'Ctrl+R · ↑↓ 选择 · 回车使用 · Esc 关闭',
     historyPlaceholder: '输入关键词搜索…',
@@ -730,6 +735,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     agentThinking: '思考中…',
     agentStarting: '连接中…',
     agentDead: '运行时已停止',
+    assistantInterrupted: '已中断',
     emptyTitle: 'cocode 已准备好',
     emptyHint: '输入问题或描述任务，开始工作。',
     langChanged: '界面语言：{lang}',

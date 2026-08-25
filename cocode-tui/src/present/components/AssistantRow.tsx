@@ -107,6 +107,9 @@ export const AssistantRow = memo(function AssistantRow(props: {
           )}
         </Box>
       ) : null}
+      {node.interrupted === true ? (
+        <Text color={theme.mute}>{text(props.locale, 'assistantInterrupted')}</Text>
+      ) : null}
     </MessageRail>
   )
 })

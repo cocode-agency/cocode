@@ -14,7 +14,7 @@ export type NodeDefinition<State = unknown> = {
   start(event: SessionEvent): State
   update(state: State, event: SessionEvent): State
   isComplete?(state: State): boolean
-  settle?(state: State): State
+  settle?(state: State, boundary?: SessionEvent): State
   buildViewNode(ctx: {
     kind: string
     id: string
@@ -64,6 +64,8 @@ export type AssistantNode = {
   text: string
   reasoning: string
   streaming: boolean
+  /** The Host finalized this visible prefix because the turn was interrupted. */
+  interrupted?: boolean
   /** Whether the assistant is still in its reasoning phase. */
   thinking?: boolean
   /** Internal event-clock start used while assembling the node. */

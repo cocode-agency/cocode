@@ -56,7 +56,7 @@ export type SkillEntry = {
 export type TuiCommandDescriptor = {
   name: string
   description: string
-  input?: { hint: string }
+  input?: { hint: string; images?: boolean }
 }
 
 export type TuiCommandResult =
@@ -454,7 +454,7 @@ export type TuiRuntime = {
   ): Promise<{ sessionId: string; seedLength: number; seed: SessionEvent[] }>
   listSkills?(sessionId: string): Promise<SkillEntry[]>
   listCommands?(sessionId: string): Promise<TuiCommandDescriptor[]>
-  executeCommand?(sessionId: string, line: string): Promise<TuiCommandExecution | undefined>
+  executeCommand?(sessionId: string, line: string, images?: readonly TuiImageInput[]): Promise<TuiCommandExecution | undefined>
   listPlugins?(): Promise<TuiPluginEntry[]>
   setPluginEnabled?(entryId: string, enabled: boolean): Promise<TuiPluginEntry>
   listSessions?(cwd?: string): Promise<TuiSessionSummary[]>

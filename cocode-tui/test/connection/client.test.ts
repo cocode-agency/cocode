@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { probeRuntimeCapabilities } from '../../packages/connection/src/capability.ts'
 import {
   createTuiRuntime,
+  encodeCommandImages,
+  parseCommandDescriptor,
   parseModelCatalogResult,
   readTuiRpcError,
   resolveHostRuntimeEnv,
@@ -13,6 +15,30 @@ import {
 import { fingerprintRuntimePlugins } from '../../packages/connection/src/runtime-plugins.ts'
 
 type ProbeCall = { method: string; params: object; timeoutMs?: number }
+
+describe('runtime command image contract', () => {
+  it('keeps the rc2 image flag in command descriptors', () => {
+    expect(
+      parseCommandDescriptor({
+        name: 'inspect',
+        description: 'Inspect an image',
+        input: { hint: '<text>', images: true },
+      }),
+    ).toEqual({
+      name: 'inspect',
+      description: 'Inspect an image',
+      input: { hint: '<text>', images: true },
+    })
+  })
+
+  it('encodes command images as independent base64 arguments', () => {
+    expect(
+      encodeCommandImages([
+        { data: Uint8Array.of(1, 2, 3), mediaType: 'image/png', name: 'shot.png' },
+      ]),
+    ).toEqual([{ data: 'AQID', mediaType: 'image/png', name: 'shot.png' }])
+  })
+})
 
 describe('runtime capability negotiation', () => {
   it('reads stable Host business errors without matching message text', () => {
