@@ -128,4 +128,25 @@ describe('handleNotification', () => {
     }, host)
     expect(events).toEqual(['recover'])
   })
+
+  it('routes projection updates only for the active session', () => {
+    const events: string[] = []
+    const host = {
+      ...hostWithEvents(events),
+      projectionUpdate: (update: { key: string; seq: number; value: unknown }) => {
+        events.push(`projection:${update.key}:${update.seq}`)
+      },
+    }
+
+    handleNotification({
+      method: 'session.projection',
+      params: { sessionId: 'other', key: 'title', seq: 4, value: 'ignored' },
+    }, host)
+    handleNotification({
+      method: 'session.projection',
+      params: { sessionId: 'parent', key: 'title', seq: 5, value: 'active' },
+    }, host)
+
+    expect(events).toEqual(['projection:title:5'])
+  })
 })

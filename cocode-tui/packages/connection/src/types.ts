@@ -179,6 +179,19 @@ export type TuiSubagentCatalog = {
 export type TuiSessionHistoryResult = {
   events: SessionEvent[]
   hasMore: boolean
+  projections?: TuiSessionProjectionBaseline
+}
+
+export type TuiSessionProjectionBaseline = {
+  /** Last event reflected by the values; -1 means an empty history. */
+  asOfSeq: number
+  values: Record<string, unknown>
+}
+
+export type TuiSessionProjectionUpdate = {
+  key: string
+  seq: number
+  value: unknown
 }
 
 export type TuiSessionModels = TuiModelCatalog & {
@@ -385,6 +398,10 @@ export type TuiNotification =
   | {
       method: 'session.queue'
       params: { sessionId: string; items: TuiRemoteQueueItem[] }
+    }
+  | {
+      method: 'session.projection'
+      params: { sessionId: string; key: string; seq: number; value: unknown }
     }
   | {
       method: 'subagent.started'

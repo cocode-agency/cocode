@@ -30,6 +30,8 @@ export type {
   TuiSubagentListEntry,
   TuiSubagentCatalog,
   TuiSessionHistoryResult,
+  TuiSessionProjectionBaseline,
+  TuiSessionProjectionUpdate,
   TuiSessionModels,
   TuiQueueAction,
   TuiRemoteQueueItem,

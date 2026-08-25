@@ -18,6 +18,7 @@ import type {
   TuiWorkspaceEnsureResult,
   TuiModelCatalog,
   TuiRemoteQueueItem,
+  TuiSessionProjectionUpdate,
 } from '@cocode/tui-connection'
 import type {
   ExternalDshReadSource,
@@ -163,6 +164,7 @@ import {
 import { refreshRuntimeCapabilities } from './capability-adapter.ts'
 import { PromptQueueCoordinator } from './prompt-queue-coordinator.ts'
 import { renameSession } from './session-rename.ts'
+import { createSessionProjectionStore } from './session-projections.ts'
 import type { DraftImage } from './prompt-queue.ts'
 import type { PromptQueuePickerState } from './prompt-queue-picker.ts'
 import {
@@ -581,6 +583,7 @@ class TuiAppImpl implements TuiApp {
   private readonly promptQueue = new PromptQueueCoordinator()
   private remoteQueue: TuiRemoteQueueItem[] = []
   private remoteQueuePicker: RemoteQueuePickerState | undefined
+  private readonly projectionStore = createSessionProjectionStore()
   private capturingByok = false
   private emitScheduled = false
   private closePromise: Promise<void> | undefined
@@ -1856,7 +1859,7 @@ class TuiAppImpl implements TuiApp {
     }
     try {
       const result = await this.runtime.history(this.sessionId, undefined, 100)
-      this.replaceSessionProjection(result.events)
+      this.replaceSessionProjection(result.events, result.projections)
       this.assembler.settleOpen()
       this.notice = {
         tone: 'info',
@@ -3887,6 +3890,9 @@ class TuiAppImpl implements TuiApp {
           this.remoteQueuePicker = setRemoteQueueItems(this.remoteQueuePicker, this.remoteQueue)
         }
       },
+      projectionUpdate: (update: TuiSessionProjectionUpdate) => {
+        this.projectionStore.apply(update)
+      },
       notice: (message) => {
         this.notice = { tone: 'info', message }
       },
@@ -3966,9 +3972,14 @@ class TuiAppImpl implements TuiApp {
     for (const listener of this.listeners) listener()
   }
 
-  private replaceSessionProjection(events: readonly SessionEvent[]): void {
+  private replaceSessionProjection(
+    events: readonly SessionEvent[],
+    projections?: import('@cocode/tui-connection').TuiSessionProjectionBaseline,
+  ): void {
     const projection = createSessionProjection()
     this.highestSessionSeq = -1
+    this.projectionStore.clear()
+    if (projections !== undefined) this.projectionStore.applyBaseline(projections)
     for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
       if (event.seq <= this.highestSessionSeq) continue
       this.highestSessionSeq = event.seq

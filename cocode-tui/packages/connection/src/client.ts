@@ -412,7 +412,12 @@ class SdkTuiRuntime implements TuiRuntime {
     if (!isRecord(result) || !Array.isArray(result.events) || !result.events.every(isSessionEvent) || typeof result.hasMore !== 'boolean') {
       throw new Error(`subagent.history returned an invalid result: ${JSON.stringify(result)}`)
     }
-    return { events: result.events, hasMore: result.hasMore }
+    const projections = parseProjectionBaseline(result.projections)
+    return {
+      events: result.events,
+      hasMore: result.hasMore,
+      ...(projections === undefined ? {} : { projections }),
+    }
   }
 
   async promptSubagent(parentSessionId: string, childSessionId: string, blocks: ContentBlock[]): Promise<string> {
@@ -456,7 +461,12 @@ class SdkTuiRuntime implements TuiRuntime {
     if (!isRecord(result) || !Array.isArray(result.events) || !result.events.every(isSessionEvent) || typeof result.hasMore !== 'boolean') {
       throw new Error(`session.history returned an invalid result: ${JSON.stringify(result)}`)
     }
-    return { events: result.events, hasMore: result.hasMore }
+    const projections = parseProjectionBaseline(result.projections)
+    return {
+      events: result.events,
+      hasMore: result.hasMore,
+      ...(projections === undefined ? {} : { projections }),
+    }
   }
 
   async sessionModels(sessionId: string): Promise<TuiSessionModels> {
@@ -1236,6 +1246,11 @@ function parseSessionSummary(value: unknown): TuiSessionSummary {
   }
 }
 
+function parseProjectionBaseline(value: unknown): import('./types.ts').TuiSessionProjectionBaseline | undefined {
+  if (!isRecord(value) || typeof value.asOfSeq !== 'number' || !Number.isSafeInteger(value.asOfSeq) || value.asOfSeq < -1 || !isRecord(value.values)) return undefined
+  return { asOfSeq: value.asOfSeq, values: { ...value.values } }
+}
+
 function parseWorkspaceEnsureResult(value: unknown): TuiWorkspaceEnsureResult {
   if (!isRecord(value) || typeof value.status !== 'string' || typeof value.path !== 'string') {
     throw new Error(`workspace/ensure returned an invalid result: ${JSON.stringify(value)}`)
@@ -1297,6 +1312,13 @@ function mapNotification(notification: {
     })
     if (items.length !== params.items.length) return undefined
     return { method: 'session.queue', params: { sessionId, items } }
+  }
+  if (notification.method === 'session.projection') {
+    const sessionId = params.sessionId
+    const key = params.key
+    const seq = params.seq
+    if (typeof sessionId !== 'string' || typeof key !== 'string' || typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0) return undefined
+    return { method: 'session.projection', params: { sessionId, key, seq, value: params.value } }
   }
   if (notification.method === 'subagent.started') {
     const parentSessionId = params.parentSessionId
