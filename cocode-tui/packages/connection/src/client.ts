@@ -14,6 +14,7 @@ import {
 
 import type {
   TuiCapabilitySnapshot,
+  ContentBlock,
   TuiApprovalAnswer,
   TuiApprovalRequest,
   SessionEvent,
@@ -40,6 +41,13 @@ import type {
   TuiModelSelection,
   TuiImageAttachmentRef,
   TuiImageInput,
+  TuiSessionSearchItem,
+  TuiSessionHistoryResult,
+  TuiSessionModels,
+  TuiQueueAction,
+  TuiAttachmentReadResult,
+  TuiSessionCreateResult,
+  TuiSubagentCatalog,
 } from './types.ts'
 import { fallbackCapabilitySnapshot, probeRuntimeCapabilities } from './capability.ts'
 
@@ -357,6 +365,149 @@ class SdkTuiRuntime implements TuiRuntime {
     return rows.map(parseSessionSummary)
   }
 
+  async createSession(sessionId?: string, cwd?: string): Promise<TuiSessionCreateResult> {
+    this.requireCapability('sessionCreate')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/create', 'session.create'), {
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(cwd === undefined ? {} : { cwd }),
+    })
+    if (!isRecord(result) || typeof result.sessionId !== 'string' || result.sessionId.trim() === '') {
+      throw new Error(`session.create returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return { sessionId: result.sessionId }
+  }
+
+  async listSubagents(parentSessionId: string): Promise<TuiSubagentCatalog> {
+    this.requireCapability('subagentList')
+    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/list', 'subagent.list'), { parentSessionId })
+    if (!isRecord(result) || !Array.isArray(result.entries) || typeof result.parentAvailable !== 'boolean') {
+      throw new Error(`subagent.list returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return {
+      parentAvailable: result.parentAvailable,
+      entries: result.entries.map((entry) => {
+        if (!isRecord(entry) || entry.kind !== 'child' || typeof entry.id !== 'string' || (entry.activity !== 'running' && entry.activity !== 'inactive') || (entry.mode !== 'one-shot' && entry.mode !== 'continuable') || typeof entry.hasChildren !== 'boolean') {
+          throw new Error(`subagent.list returned an invalid entry: ${JSON.stringify(entry)}`)
+        }
+        return {
+          kind: 'child',
+          id: entry.id,
+          activity: entry.activity,
+          mode: entry.mode,
+          ...(typeof entry.label === 'string' ? { label: entry.label } : {}),
+          hasChildren: entry.hasChildren,
+        }
+      }),
+    }
+  }
+
+  async subagentHistory(parentSessionId: string, childSessionId: string, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult> {
+    this.requireCapability('subagentHistory')
+    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/history', 'subagent.history'), {
+      parentSessionId,
+      childSessionId,
+      ...(beforeSeq === undefined ? {} : { beforeSeq }),
+      ...(maxMessages === undefined ? {} : { maxMessages }),
+    })
+    if (!isRecord(result) || !Array.isArray(result.events) || !result.events.every(isSessionEvent) || typeof result.hasMore !== 'boolean') {
+      throw new Error(`subagent.history returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return { events: result.events, hasMore: result.hasMore }
+  }
+
+  async promptSubagent(parentSessionId: string, childSessionId: string, blocks: ContentBlock[]): Promise<string> {
+    this.requireCapability('subagentPrompt')
+    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/prompt', 'subagent.prompt'), { parentSessionId, childSessionId, content: blocks })
+    if (!isRecord(result) || typeof result.messageId !== 'string') throw new Error(`subagent.prompt returned an invalid result: ${JSON.stringify(result)}`)
+    return result.messageId
+  }
+
+  async interruptSubagent(parentSessionId: string, childSessionId: string): Promise<boolean> {
+    this.requireCapability('subagentInterrupt')
+    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/interrupt', 'subagent.interrupt'), { parentSessionId, childSessionId })
+    if (!isRecord(result) || result.accepted !== true) throw new Error(`subagent.interrupt returned an invalid result: ${JSON.stringify(result)}`)
+    return true
+  }
+
+  async searchSessions(query: string): Promise<{ items: TuiSessionSearchItem[]; hasMore: boolean }> {
+    this.requireCapability('sessionSearch')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/search', 'session/search'), { query })
+    if (!isRecord(result) || !Array.isArray(result.items) || typeof result.hasMore !== 'boolean') {
+      throw new Error(`session.search returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return {
+      items: result.items.map((item) => {
+        if (!isRecord(item) || typeof item.sessionId !== 'string' || typeof item.snippet !== 'string') {
+          throw new Error(`session.search returned an invalid item: ${JSON.stringify(item)}`)
+        }
+        return { sessionId: item.sessionId, snippet: item.snippet }
+      }),
+      hasMore: result.hasMore,
+    }
+  }
+
+  async history(sessionId: string, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult> {
+    this.requireCapability('sessionHistory')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/history', 'session/history'), {
+      sessionId,
+      ...(beforeSeq === undefined ? {} : { beforeSeq }),
+      ...(maxMessages === undefined ? {} : { maxMessages }),
+    })
+    if (!isRecord(result) || !Array.isArray(result.events) || !result.events.every(isSessionEvent) || typeof result.hasMore !== 'boolean') {
+      throw new Error(`session.history returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return { events: result.events, hasMore: result.hasMore }
+  }
+
+  async sessionModels(sessionId: string): Promise<TuiSessionModels> {
+    this.requireCapability('sessionModels')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/models', 'session.models'), { sessionId })
+    if (!isRecord(result) || !isRecord(result.current) || typeof result.routable !== 'boolean') {
+      throw new Error(`session.models returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    const catalog = parseModelCatalogResult(result)
+    const current = result.current
+    if (typeof current.provider !== 'string' || typeof current.model !== 'string' || (current.reasoningEffort !== undefined && typeof current.reasoningEffort !== 'string')) {
+      throw new Error(`session.models returned an invalid selection: ${JSON.stringify(result)}`)
+    }
+    return {
+      ...catalog,
+      current: {
+        provider: current.provider,
+        model: current.model,
+        ...(typeof current.reasoningEffort === 'string' ? { reasoningEffort: current.reasoningEffort } : {}),
+      },
+      routable: result.routable,
+    }
+  }
+
+  async renameSession(sessionId: string, title: string): Promise<{ title: string; seq: number }> {
+    this.requireCapability('sessionRename')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/rename', 'session.rename'), { sessionId, title })
+    if (!isRecord(result) || typeof result.title !== 'string' || !isNonnegativeInteger(result.seq)) {
+      throw new Error(`session.rename returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return { title: result.title, seq: result.seq }
+  }
+
+  async updateQueue(sessionId: string, itemId: string, action: TuiQueueAction): Promise<boolean> {
+    this.requireCapability('queueMutation')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/updateQueue', 'session.updateQueue'), { sessionId, itemId, action })
+    if (!isRecord(result) || result.accepted !== true) {
+      throw new Error(`session.updateQueue returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return true
+  }
+
+  async readAttachment(sessionId: string, attachmentId: string): Promise<TuiAttachmentReadResult> {
+    this.requireCapability('attachmentRead')
+    const result = await this.requireClient().request(this.wireMethod('cocode/session/attachment', 'session.attachment'), { sessionId, attachmentId })
+    if (!isRecord(result) || typeof result.data !== 'string') {
+      throw new Error(`session.attachment returned an invalid result: ${JSON.stringify(result)}`)
+    }
+    return { attachment: parseImageAttachmentRef(result.attachment), data: Buffer.from(result.data, 'base64') }
+  }
+
   async ensureWorkspace(
     sessionId: string,
     approved = false,
@@ -564,6 +715,17 @@ class SdkTuiRuntime implements TuiRuntime {
           commands: companion.commands,
           plugins: companion.plugins,
           pluginsMutate: companion.pluginsMutate,
+          sessionSearch: companion.sessionSearch,
+          sessionHistory: companion.sessionHistory,
+          sessionModels: companion.sessionModels,
+          sessionRename: companion.sessionRename,
+          queueMutation: companion.queueMutation,
+          attachmentRead: companion.attachmentRead,
+          sessionCreate: companion.sessionCreate,
+          subagentList: companion.subagentList,
+          subagentHistory: companion.subagentHistory,
+          subagentPrompt: companion.subagentPrompt,
+          subagentInterrupt: companion.subagentInterrupt,
           promptMode: companion.promptModes.includes('steer'),
           queueMode: companion.promptModes.includes('queue'),
         },
@@ -683,6 +845,17 @@ type CompanionCapabilities = {
   commands: boolean
   plugins: boolean
   pluginsMutate: boolean
+  sessionSearch: boolean
+  sessionHistory: boolean
+  sessionModels: boolean
+  sessionRename: boolean
+  queueMutation: boolean
+  attachmentRead: boolean
+  sessionCreate: boolean
+  subagentList: boolean
+  subagentHistory: boolean
+  subagentPrompt: boolean
+  subagentInterrupt: boolean
 }
 
 function parseCompanionCapabilities(value: unknown): CompanionCapabilities | undefined {
@@ -707,6 +880,17 @@ function parseCompanionCapabilities(value: unknown): CompanionCapabilities | und
     || (value.imageAttachments !== undefined && typeof value.imageAttachments !== 'boolean')
     || (value.plugins !== undefined && typeof value.plugins !== 'boolean')
     || (value.pluginsMutate !== undefined && typeof value.pluginsMutate !== 'boolean')
+    || (value.sessionSearch !== undefined && typeof value.sessionSearch !== 'boolean')
+    || (value.sessionHistory !== undefined && typeof value.sessionHistory !== 'boolean')
+    || (value.sessionModels !== undefined && typeof value.sessionModels !== 'boolean')
+    || (value.sessionRename !== undefined && typeof value.sessionRename !== 'boolean')
+    || (value.queueMutation !== undefined && typeof value.queueMutation !== 'boolean')
+    || (value.attachmentRead !== undefined && typeof value.attachmentRead !== 'boolean')
+    || (value.sessionCreate !== undefined && typeof value.sessionCreate !== 'boolean')
+    || (value.subagentList !== undefined && typeof value.subagentList !== 'boolean')
+    || (value.subagentHistory !== undefined && typeof value.subagentHistory !== 'boolean')
+    || (value.subagentPrompt !== undefined && typeof value.subagentPrompt !== 'boolean')
+    || (value.subagentInterrupt !== undefined && typeof value.subagentInterrupt !== 'boolean')
   ) {
     return undefined
   }
@@ -725,6 +909,17 @@ function parseCompanionCapabilities(value: unknown): CompanionCapabilities | und
     commands: value.commands === true,
     plugins: value.plugins === true,
     pluginsMutate: value.pluginsMutate === true,
+    sessionSearch: value.sessionSearch === true,
+    sessionHistory: value.sessionHistory === true,
+    sessionModels: value.sessionModels === true,
+    sessionRename: value.sessionRename === true,
+    queueMutation: value.queueMutation === true,
+    attachmentRead: value.attachmentRead === true,
+    sessionCreate: value.sessionCreate === true,
+    subagentList: value.subagentList === true,
+    subagentHistory: value.subagentHistory === true,
+    subagentPrompt: value.subagentPrompt === true,
+    subagentInterrupt: value.subagentInterrupt === true,
   }
 }
 
@@ -864,6 +1059,17 @@ function parseRuntimeAdvertisement(value: Record<string, unknown>): TuiRuntimeAd
     commands: value.commands === true,
     plugins: value.plugins === true,
     pluginsMutate: value.pluginsMutate === true,
+    sessionSearch: value.sessionSearch === true,
+    sessionHistory: value.sessionHistory === true,
+    sessionModels: value.sessionModels === true,
+    sessionRename: value.sessionRename === true,
+    queueMutation: value.queueMutation === true,
+    attachmentRead: value.attachmentRead === true,
+    sessionCreate: value.sessionCreate === true,
+    subagentList: value.subagentList === true,
+    subagentHistory: value.subagentHistory === true,
+    subagentPrompt: value.subagentPrompt === true,
+    subagentInterrupt: value.subagentInterrupt === true,
     checkpoint: false,
   }
 }
@@ -876,7 +1082,8 @@ function parseImageAttachmentRef(value: unknown): TuiImageAttachmentRef {
     !isNonnegativeInteger(value.bytes) ||
     !isNonnegativeInteger(value.width) ||
     !isNonnegativeInteger(value.height) ||
-    (value.name !== undefined && typeof value.name !== 'string')
+    (value.name !== undefined && typeof value.name !== 'string') ||
+    (value.originalDimensions !== undefined && !isImageDimensions(value.originalDimensions))
   ) {
     throw new Error(`attachment/saveImages returned an invalid attachment: ${JSON.stringify(value)}`)
   }
@@ -886,8 +1093,15 @@ function parseImageAttachmentRef(value: unknown): TuiImageAttachmentRef {
     bytes: value.bytes,
     width: value.width,
     height: value.height,
+    ...(value.originalDimensions === undefined ? {} : { originalDimensions: value.originalDimensions }),
     ...(value.name === undefined ? {} : { name: value.name }),
   }
+}
+
+function isImageDimensions(value: unknown): value is { width: number; height: number } {
+  return isRecord(value)
+    && isPositiveInteger(value.width)
+    && isPositiveInteger(value.height)
 }
 
 function isImageMediaType(value: unknown): value is TuiImageAttachmentRef['mediaType'] {
@@ -896,6 +1110,10 @@ function isImageMediaType(value: unknown): value is TuiImageAttachmentRef['media
 
 function isNonnegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }
 
 export function parseModelCatalogResult(value: unknown): TuiModelCatalog {

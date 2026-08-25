@@ -196,6 +196,8 @@ type AttachmentService = {
     maxImageBytes: number;
     maxImagesPerMessage: number;
     maxMessageImageBytes: number;
+    maxImagePixels: number;
+    maxImageDimension: number;
     mediaTypes: readonly ImageMediaType[];
   };
   validateImage(input: {
@@ -208,6 +210,15 @@ type AttachmentService = {
     mediaType: ImageMediaType;
     name?: string;
   }): Promise<ImageAttachmentRef>;
+  saveImages?(inputs: readonly {
+    data: Uint8Array;
+    mediaType: ImageMediaType;
+    name?: string;
+  }[]): Promise<readonly ImageAttachmentRef[]>;
+  readImage?(ref: ImageAttachmentRef): Promise<{ ref: ImageAttachmentRef; data: Uint8Array }>;
+};
+type SessionTitleService = {
+  rename(session: Agent["session"], title: string): { title: string; eventSeq: number };
 };
 type PersistenceService = {
   list(): Promise<
@@ -419,6 +430,17 @@ export class TuiCompanionGateway {
       commands: this.ctx.get("commands") !== undefined,
       plugins: this.ctx.get("loader") !== undefined,
       pluginsMutate: this.ctx.get("loader") !== undefined,
+      sessionSearch: this.ctx.get("sessionPersistence") !== undefined,
+      sessionHistory: this.ctx.get("sessionPersistence") !== undefined,
+      sessionModels: typeof llm?.listProviders === "function" && typeof llm.listModels === "function",
+      sessionRename: this.ctx.get("sessionTitle") !== undefined,
+      queueMutation: true,
+      attachmentRead: this.ctx.get("attachments") !== undefined,
+      sessionCreate: true,
+      subagentList: this.ctx.get("sessionPersistence") !== undefined,
+      subagentHistory: this.ctx.get("sessionPersistence") !== undefined,
+      subagentPrompt: true,
+      subagentInterrupt: true,
       interactions: "notification-response",
       checkpoint: false,
     };
@@ -595,6 +617,9 @@ export class TuiCompanionGateway {
         `image bytes exceed ${store.imageLimits.maxMessageImageBytes}`,
       );
     }
+    if (store.saveImages !== undefined) {
+      return { attachments: [...await store.saveImages(images)] };
+    }
     await Promise.all(images.map((image) => store.validateImage(image)));
     return {
       attachments: await Promise.all(
@@ -639,6 +664,170 @@ export class TuiCompanionGateway {
       }),
     );
     return { sessions };
+  }
+
+  async searchSessions(params: { query?: string } = {}): Promise<{
+    items: { sessionId: string; snippet: string }[];
+    hasMore: boolean;
+  }> {
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    if (persistence === undefined)
+      throw new Error("session/search capability is unavailable: session persistence is not configured");
+    const query = (params.query ?? "").trim().toLocaleLowerCase();
+    if (query === "") return { items: [], hasMore: false };
+    const terms = query.split(/\s+/).filter(Boolean);
+    const items: { sessionId: string; snippet: string }[] = [];
+    for (const header of await persistence.list()) {
+      if (header.cwd !== undefined && resolve(header.cwd) !== resolve(this.cwd)) continue;
+      const inspection = await persistence.inspect(header.id);
+      const text = inspection.events
+        .filter((event) => event.type === "user/message" || event.type === "assistant/message")
+        .map(eventText)
+        .filter(Boolean)
+        .join("\n");
+      const lower = text.toLocaleLowerCase();
+      if (!terms.every((term) => lower.includes(term))) continue;
+      const first = lower.indexOf(terms[0] ?? query);
+      const start = Math.max(0, first - 80);
+      const snippet = text.slice(start, start + 240).replace(/\s+/g, " ").trim();
+      items.push({ sessionId: String(header.id), snippet });
+      if (items.length >= 20) break;
+    }
+    return { items, hasMore: items.length >= 20 };
+  }
+
+  async createSessionRpc(params: { sessionId?: string; cwd?: string } = {}): Promise<{ sessionId: string }> {
+    this.assertInitialized();
+    if (params.cwd !== undefined && resolve(params.cwd) !== resolve(this.cwd)) {
+      throw new Error("session/create cwd must match the initialized workspace");
+    }
+    const sessionId = params.sessionId?.trim() || `session-${randomUUID().replaceAll("-", "")}`;
+    await this.getOrCreateSession(sessionId);
+    return { sessionId };
+  }
+
+  async listSubagents(params: { parentSessionId: string }): Promise<{ entries: Record<string, unknown>[]; parentAvailable: boolean }> {
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    if (persistence === undefined) throw new Error("subagent/list capability is unavailable");
+    const headers = await persistence.list();
+    const children = headers.filter((header) => String(header.parentSession ?? "") === params.parentSessionId);
+    const childIds = new Set(children.map((child) => String(child.id)));
+    const entries = children.map((child) => {
+      const agent = this.ctx.agents.get(String(child.id));
+      return {
+        kind: "child",
+        id: String(child.id),
+        activity: agent?.status === "running" ? "running" : "inactive",
+        mode: "continuable",
+        label: String(child.id),
+        hasChildren: headers.some((candidate) => childIds.has(String(candidate.parentSession ?? ""))),
+      };
+    });
+    return { entries, parentAvailable: this.ctx.agents.get(params.parentSessionId) !== undefined };
+  }
+
+  private async assertSubagent(parentSessionId: string, childSessionId: string): Promise<Agent> {
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    const child = this.ctx.agents.get(childSessionId);
+    if (child !== undefined && String(child.session.header.parentSession ?? "") === parentSessionId) return child;
+    if (persistence === undefined) throw new Error("subagent persistence is unavailable");
+    const inspection = await persistence.inspect(childSessionId);
+    if (String(inspection.meta.parentSession ?? "") !== parentSessionId) throw new Error("subagent is not a child of the requested parent");
+    const record = await this.getOrCreateSession(childSessionId);
+    this.assertLive(childSessionId, record);
+    return record.handle.agent;
+  }
+
+  async promptSubagent(params: { parentSessionId: string; childSessionId: string; content: ContentBlock[] }): Promise<{ messageId: string }> {
+    const parent = this.ctx.agents.get(params.parentSessionId);
+    if (parent === undefined) throw new Error(`subagent parent "${params.parentSessionId}" is not live`);
+    const child = await this.assertSubagent(params.parentSessionId, params.childSessionId);
+    const message = createUserMessage(params.content);
+    child.followup(message);
+    return { messageId: message.id };
+  }
+
+  async interruptSubagent(params: { parentSessionId: string; childSessionId: string }): Promise<{ accepted: true }> {
+    const child = await this.assertSubagent(params.parentSessionId, params.childSessionId);
+    child.cancel({ kind: "user" }, { keepInbox: true });
+    return { accepted: true };
+  }
+
+  async history(params: { sessionId: string; beforeSeq?: number; maxMessages?: number }): Promise<{
+    events: SessionEvent[];
+    hasMore: boolean;
+  }> {
+    this.assertInitialized();
+    const live = this.sessions.get(params.sessionId)?.handle.agent ?? this.ctx.agents.get(params.sessionId);
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    const events = live?.session.events ?? (persistence === undefined ? undefined : (await persistence.inspect(params.sessionId)).events);
+    if (events === undefined) throw new Error(`session "${params.sessionId}" was not found`);
+    const before = params.beforeSeq === undefined ? Number.POSITIVE_INFINITY : params.beforeSeq;
+    const filtered = events.filter((event) => event.seq < before);
+    const maxMessages = params.maxMessages === undefined ? undefined : Math.max(1, Math.trunc(params.maxMessages));
+    if (maxMessages === undefined) return { events: [...filtered], hasMore: false };
+    const messageIndexes = filtered
+      .map((event, index) => event.type === "user/message" ? index : -1)
+      .filter((index) => index >= 0);
+    const cut = messageIndexes.length <= maxMessages ? 0 : messageIndexes[messageIndexes.length - maxMessages] ?? 0;
+    return { events: filtered.slice(cut), hasMore: cut > 0 };
+  }
+
+  async sessionModels(params: { sessionId: string }): Promise<Record<string, unknown>> {
+    const record = await this.getOrCreateSession(params.sessionId);
+    this.assertLive(params.sessionId, record);
+    const selected = installAgentModelSelection(record.handle.agent, {
+      provider: this.provider,
+      model: this.model,
+    }).current ?? { provider: this.provider, model: this.model };
+    const catalog = await this.listModels();
+    const providers = this.ctx.get("llm") as LlmDirectory | undefined;
+    const routable = providers?.listProviders?.().some((entry) => entry.id === selected.provider) === true;
+    return { current: selected, routable, groups: catalog.groups, failures: catalog.failures };
+  }
+
+  async renameSession(params: { sessionId: string; title: string }): Promise<{ title: string; seq: number }> {
+    const record = await this.getOrCreateSession(params.sessionId);
+    this.assertLive(params.sessionId, record);
+    const titles = this.ctx.get("sessionTitle") as SessionTitleService | undefined;
+    if (titles === undefined) throw new Error("session/rename capability is unavailable");
+    const accepted = titles.rename(record.handle.agent.session, params.title);
+    return { title: accepted.title, seq: accepted.eventSeq };
+  }
+
+  async updateQueue(params: {
+    sessionId: string;
+    itemId: string;
+    action: { kind: "edit" | "remove" | "steer"; content?: ContentBlock[] };
+  }): Promise<{ accepted: true }> {
+    const record = this.requireSession(params.sessionId);
+    const inbox = record.handle.agent.inbox;
+    if (inbox === undefined) throw new Error("session/updateQueue capability is unavailable");
+    const target = inbox.nextTurn.some((message) => message.id === params.itemId)
+      ? inbox.nextTurn
+      : inbox.nextStep.some((message) => message.id === params.itemId) ? inbox.nextStep : undefined;
+    const message = target?.find((candidate) => candidate.id === params.itemId);
+    if (message === undefined) throw new Error(`queued item not found: ${params.itemId}`);
+    if (params.action.kind === "edit") {
+      if (!Array.isArray(params.action.content)) throw new Error("session/updateQueue edit requires content");
+      if (params.action.content.some((block) => block.type !== "text"))
+        throw new Error("session/updateQueue only accepts text edits");
+      inbox.replace(params.itemId, deepFreeze({ ...message, content: params.action.content }));
+    } else {
+      inbox.remove(params.itemId);
+      if (params.action.kind === "steer") record.handle.agent.steer(message);
+    }
+    return { accepted: true };
+  }
+
+  async readAttachment(params: { sessionId: string; attachmentId: string }): Promise<{ attachment: ImageAttachmentRef; data: string }> {
+    const record = this.requireSession(params.sessionId);
+    const store = this.ctx.get("attachments") as AttachmentService | undefined;
+    if (store?.readImage === undefined) throw new Error("attachment/read capability is unavailable");
+    const ref = findAttachmentRef(record.handle.agent.session.events, params.attachmentId);
+    if (ref === undefined) throw new Error(`attachment "${params.attachmentId}" is not referenced by session`);
+    const stored = await store.readImage(ref);
+    return { attachment: stored.ref, data: Buffer.from(stored.data).toString("base64") };
   }
 
   async ensureWorkspace(params: {
@@ -1177,6 +1366,43 @@ export class TuiCompanionGateway {
       case "cocode/session/list":
       case "session/list":
         return this.listSessions(params as { cwd?: string });
+      case "cocode/session/create":
+      case "session.create":
+        return this.createSessionRpc(params as { sessionId?: string; cwd?: string });
+      case "cocode/subagent/list":
+      case "subagent.list":
+        return this.listSubagents(params as { parentSessionId: string });
+      case "cocode/subagent/history":
+      case "subagent.history":
+        {
+          const input = params as { parentSessionId: string; childSessionId: string; beforeSeq?: number; maxMessages?: number };
+          await this.assertSubagent(input.parentSessionId, input.childSessionId);
+          return this.history({ sessionId: input.childSessionId, beforeSeq: input.beforeSeq, maxMessages: input.maxMessages });
+        }
+      case "cocode/subagent/prompt":
+      case "subagent.prompt":
+        return this.promptSubagent(params as { parentSessionId: string; childSessionId: string; content: ContentBlock[] });
+      case "cocode/subagent/interrupt":
+      case "subagent.interrupt":
+        return this.interruptSubagent(params as { parentSessionId: string; childSessionId: string });
+      case "cocode/session/search":
+      case "session.search":
+        return this.searchSessions(params as { query: string });
+      case "cocode/session/history":
+      case "session.history":
+        return this.history(params as { sessionId: string; beforeSeq?: number; maxMessages?: number });
+      case "cocode/session/models":
+      case "session.models":
+        return this.sessionModels(params as { sessionId: string });
+      case "cocode/session/rename":
+      case "session.rename":
+        return this.renameSession(params as { sessionId: string; title: string });
+      case "cocode/session/updateQueue":
+      case "session.updateQueue":
+        return this.updateQueue(params as { sessionId: string; itemId: string; action: { kind: "edit" | "remove" | "steer"; content?: ContentBlock[] } });
+      case "cocode/session/attachment":
+      case "session.attachment":
+        return this.readAttachment(params as { sessionId: string; attachmentId: string });
       case "cocode/workspace/ensure":
       case "workspace/ensure":
         return this.ensureWorkspace(
@@ -1684,6 +1910,60 @@ function readSessionTitle(events: readonly SessionEvent[]): string | undefined {
       event.data.title.length > 0
     )
       return event.data.title;
+  }
+  return undefined;
+}
+
+function eventText(event: SessionEvent): string {
+  const parts: string[] = [];
+  collectText(event.data, parts);
+  return parts.join("\n");
+}
+
+function collectText(value: unknown, parts: string[]): void {
+  if (typeof value === "string") {
+    parts.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectText(item, parts);
+    return;
+  }
+  if (!isRecord(value)) return;
+  if (typeof value.text === "string") parts.push(value.text);
+  if (Array.isArray(value.content)) collectText(value.content, parts);
+}
+
+function findAttachmentRef(
+  events: readonly SessionEvent[],
+  attachmentId: string,
+): ImageAttachmentRef | undefined {
+  for (const event of events) {
+    const found = attachmentRefIn(event.data, attachmentId);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function attachmentRefIn(value: unknown, attachmentId: string): ImageAttachmentRef | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = attachmentRefIn(item, attachmentId);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  if (
+    value.attachmentId === attachmentId &&
+    isImageMediaType(value.mediaType) &&
+    typeof value.bytes === "number" &&
+    typeof value.width === "number" &&
+    typeof value.height === "number"
+  ) return value as ImageAttachmentRef;
+  for (const child of Object.values(value)) {
+    const found = attachmentRefIn(child, attachmentId);
+    if (found !== undefined) return found;
   }
   return undefined;
 }

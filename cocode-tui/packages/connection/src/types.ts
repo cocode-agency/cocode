@@ -17,6 +17,10 @@ export type TuiImageAttachmentRef = {
   bytes: number
   width: number
   height: number
+  originalDimensions?: {
+    width: number
+    height: number
+  }
   name?: string
 }
 
@@ -147,6 +151,47 @@ export type TuiSessionOpenResult = {
   seed?: SessionEvent[]
 }
 
+export type TuiSessionSearchItem = {
+  sessionId: string
+  snippet: string
+}
+
+export type TuiSessionCreateResult = { sessionId: string }
+
+export type TuiSubagentListEntry = {
+  kind: 'child'
+  id: string
+  activity: 'running' | 'inactive'
+  mode: 'one-shot' | 'continuable'
+  label?: string
+  hasChildren: boolean
+}
+
+export type TuiSubagentCatalog = {
+  entries: TuiSubagentListEntry[]
+  parentAvailable: boolean
+}
+
+export type TuiSessionHistoryResult = {
+  events: SessionEvent[]
+  hasMore: boolean
+}
+
+export type TuiSessionModels = TuiModelCatalog & {
+  current: TuiModelSelection
+  routable: boolean
+}
+
+export type TuiQueueAction =
+  | { kind: 'edit'; content: ContentBlock[] }
+  | { kind: 'remove' }
+  | { kind: 'steer' }
+
+export type TuiAttachmentReadResult = {
+  attachment: TuiImageAttachmentRef
+  data: Uint8Array
+}
+
 export type TuiWorkspaceEnsureResult =
   | {
       status: 'ready'
@@ -239,8 +284,34 @@ export type TuiRuntimeCapabilityName =
   | 'commands'
   | 'plugins'
   | 'pluginsMutate'
+  | 'sessionSearch'
+  | 'sessionHistory'
+  | 'sessionModels'
+  | 'sessionRename'
+  | 'queueMutation'
+  | 'attachmentRead'
+  | 'sessionCreate'
+  | 'subagentList'
+  | 'subagentHistory'
+  | 'subagentPrompt'
+  | 'subagentInterrupt'
 
-export type TuiRuntimeCapabilities = Record<TuiRuntimeCapabilityName, boolean>
+export type TuiRuntimeCapabilities = Record<Exclude<TuiRuntimeCapabilityName, TuiExtendedCapabilityName>, boolean>
+
+export type TuiExtendedCapabilityName =
+  | 'sessionSearch'
+  | 'sessionHistory'
+  | 'sessionModels'
+  | 'sessionRename'
+  | 'queueMutation'
+  | 'attachmentRead'
+  | 'sessionCreate'
+  | 'subagentList'
+  | 'subagentHistory'
+  | 'subagentPrompt'
+  | 'subagentInterrupt'
+
+export type TuiExtendedRuntimeCapabilities = TuiRuntimeCapabilities & Partial<Record<TuiExtendedCapabilityName, boolean>>
 
 export type TuiRuntimeAdvertisement = {
   promptModes: TuiPromptMode[]
@@ -254,13 +325,24 @@ export type TuiRuntimeAdvertisement = {
   commands?: boolean
   plugins?: boolean
   pluginsMutate?: boolean
+  sessionSearch?: boolean
+  sessionHistory?: boolean
+  sessionModels?: boolean
+  sessionRename?: boolean
+  sessionCreate?: boolean
+  subagentList?: boolean
+  subagentHistory?: boolean
+  subagentPrompt?: boolean
+  subagentInterrupt?: boolean
+  queueMutation?: boolean
+  attachmentRead?: boolean
 }
 
 /** Result of probing the live SDK runtime after its initialize handshake. */
 export type TuiCapabilitySnapshot = {
   /** `runtime` means probes ran; `fallback` means no probe API was available. */
   source: 'runtime' | 'fallback'
-  capabilities: TuiRuntimeCapabilities
+  capabilities: TuiExtendedRuntimeCapabilities
   modes?: TuiRuntimeAdvertisement
   /** Human-readable probe failures, keyed by the capability they describe. */
   errors: Partial<Record<TuiRuntimeCapabilityName, string>>
@@ -324,6 +406,17 @@ export type TuiRuntime = {
   listPlugins?(): Promise<TuiPluginEntry[]>
   setPluginEnabled?(entryId: string, enabled: boolean): Promise<TuiPluginEntry>
   listSessions?(cwd?: string): Promise<TuiSessionSummary[]>
+  createSession?(sessionId?: string, cwd?: string): Promise<TuiSessionCreateResult>
+  listSubagents?(parentSessionId: string): Promise<TuiSubagentCatalog>
+  subagentHistory?(parentSessionId: string, childSessionId: string, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult>
+  promptSubagent?(parentSessionId: string, childSessionId: string, blocks: ContentBlock[]): Promise<string>
+  interruptSubagent?(parentSessionId: string, childSessionId: string): Promise<boolean>
+  searchSessions?(query: string): Promise<{ items: TuiSessionSearchItem[]; hasMore: boolean }>
+  history?(sessionId: string, beforeSeq?: number, maxMessages?: number): Promise<TuiSessionHistoryResult>
+  sessionModels?(sessionId: string): Promise<TuiSessionModels>
+  renameSession?(sessionId: string, title: string): Promise<{ title: string; seq: number }>
+  updateQueue?(sessionId: string, itemId: string, action: TuiQueueAction): Promise<boolean>
+  readAttachment?(sessionId: string, attachmentId: string): Promise<TuiAttachmentReadResult>
   ensureWorkspace?(sessionId: string, approved?: boolean): Promise<TuiWorkspaceEnsureResult>
   listModels?(): Promise<TuiModelCatalog>
   selectModel?(

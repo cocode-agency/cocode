@@ -108,6 +108,8 @@ function createContext(options = {}) {
         }
       }
       if (name === 'workspaceRegistry') return options.workspaceRegistry
+      if (name === 'attachments') return options.attachments
+      if (name === 'sessionPersistence') return options.sessionPersistence
       return undefined
     },
     on() {
@@ -157,6 +159,71 @@ const imageBlock = {
     height: 1,
   },
 }
+
+test('keeps rc2 image metadata and uses the batch attachment store', async () => {
+  const saved = []
+  const attachments = {
+    imageLimits: {
+      maxImageBytes: 1024,
+      maxImagesPerMessage: 4,
+      maxMessageImageBytes: 2048,
+      maxImagePixels: 1024 * 1024,
+      maxImageDimension: 4096,
+      mediaTypes: ['image/png'],
+    },
+    async saveImages(images) {
+      saved.push(...images)
+      return [{
+        attachmentId: 'image-rc2',
+        mediaType: 'image/png',
+        bytes: 3,
+        width: 1,
+        height: 1,
+        originalDimensions: { width: 2, height: 3 },
+        name: 'sample.png',
+      }]
+    },
+  }
+  const { ctx } = createContext({ attachments })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  const result = await gateway.handleRequest('cocode/attachment/saveImages', {
+    images: [{
+      data: Buffer.from('abc').toString('base64'),
+      mediaType: 'image/png',
+      name: 'sample.png',
+    }],
+  })
+
+  assert.deepEqual(saved, [{ data: Buffer.from('abc'), mediaType: 'image/png', name: 'sample.png' }])
+  assert.deepEqual(result.attachments[0].originalDimensions, { width: 2, height: 3 })
+})
+
+test('exposes session create, history, and content search through the companion', async () => {
+  const { ctx } = createContext({
+    sessionPersistence: {
+      async list() {
+        return [{ id: 'persisted-1', createdAt: 1, cwd: '/tmp' }]
+      },
+      async inspect() {
+        return {
+          meta: { id: 'persisted-1', createdAt: 1, cwd: '/tmp' },
+          events: [{ type: 'user/message', seq: 0, time: 2, data: { content: [{ type: 'text', text: 'find this phrase' }] } }],
+        }
+      },
+    },
+  })
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  assert.deepEqual(await gateway.createSessionRpc({ sessionId: 'created-1' }), { sessionId: 'created-1' })
+  assert.deepEqual(await gateway.history({ sessionId: 'created-1' }), { events: [], hasMore: false })
+  assert.deepEqual(await gateway.searchSessions({ query: 'phrase' }), {
+    items: [{ sessionId: 'persisted-1', snippet: 'find this phrase' }],
+    hasMore: false,
+  })
+})
 
 test('rejects unsupported images before they enter the session', async () => {
   const { ctx, followed, created } = createContext()

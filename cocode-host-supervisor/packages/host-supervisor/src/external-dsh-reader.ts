@@ -4,6 +4,7 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
+import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
 
 export type ExternalDshSourceStatus = {
   source: 'shared-dsh'
@@ -16,7 +17,7 @@ export type ExternalDshSourceStatus = {
   homePatchIsolation: 'unavailable'
   profileFallback: 'shared'
   state: 'available' | 'unavailable' | 'incompatible' | 'permission-denied'
-  reason?: 'source-missing' | 'source-unreadable' | 'workspace-schema-version' | 'session-format-version' | 'source-overlaps-runtime'
+  reason?: 'source-missing' | 'source-unreadable' | 'workspace-schema-version' | 'session-format-version' | 'session-storage-record' | 'source-overlaps-runtime'
   sessionCount?: number
   workspaceCount?: number
 }
@@ -270,6 +271,7 @@ export class ExternalDshReader implements ExternalDshReadSource {
     const title = await this.readProjectionTitle(sessionId, parsed.events)
     const enriched = title === undefined || session.title !== undefined ? session : { ...session, title }
     if (parsed.incompatible) {
+      const reason = parsed.reason ?? 'session-format-version'
       return {
         source: SOURCE,
         canMutate: true,
@@ -278,7 +280,7 @@ export class ExternalDshReader implements ExternalDshReadSource {
         events: [],
         tailIncomplete: false,
         status: 'incompatible',
-        reason: 'session-format-version',
+        reason,
       }
     }
     return {
@@ -514,7 +516,7 @@ export class ExternalDshReader implements ExternalDshReadSource {
     return found.length === 1 ? found[0] : undefined
   }
 
-  private async readSessionFile(file: string, options: { headerOnly: boolean }): Promise<{ header?: Omit<ExternalSessionSummary, 'source' | 'canMutate' | 'concurrency' | 'path'>; events: ExternalSessionEvent[]; tailIncomplete: boolean; incompatible?: boolean }> {
+  private async readSessionFile(file: string, options: { headerOnly: boolean }): Promise<{ header?: Omit<ExternalSessionSummary, 'source' | 'canMutate' | 'concurrency' | 'path'>; events: ExternalSessionEvent[]; tailIncomplete: boolean; incompatible?: boolean; reason?: string }> {
     const safeFile = await this.allowedFile(file)
     const bytes = await readFile(safeFile)
     const decoded = safeFile.endsWith('.zstd') ? decodeZstdFrames(bytes) : { bytes, tailIncomplete: false }
@@ -526,7 +528,7 @@ export class ExternalDshReader implements ExternalDshReadSource {
     if (headerRecord?.type !== 'session' || typeof headerRecord.id !== 'string' || typeof headerRecord.createdAt !== 'number') return { events: [], tailIncomplete }
     const formatVersion = typeof headerRecord.version === 'number' ? headerRecord.version : 0
     const header = { id: headerRecord.id, createdAt: headerRecord.createdAt, formatVersion, ...(typeof headerRecord.cwd === 'string' ? { cwd: headerRecord.cwd } : {}), ...(typeof headerRecord.parentSession === 'string' ? { parentSession: headerRecord.parentSession } : {}), ...(typeof headerRecord.seedLength === 'number' ? { seedLength: headerRecord.seedLength } : {}) }
-    if (!SUPPORTED_SESSION_VERSIONS.has(formatVersion)) return { header, events: [], tailIncomplete: false, incompatible: true }
+    if (!SUPPORTED_SESSION_VERSIONS.has(formatVersion)) return { header, events: [], tailIncomplete: false, incompatible: true, reason: 'session-format-version' }
     if (options.headerOnly) return { header, events: [], tailIncomplete }
     const events: ExternalSessionEvent[] = []
     for (const line of lines) {
@@ -535,10 +537,21 @@ export class ExternalDshReader implements ExternalDshReadSource {
       const record = asRecord(value)
       if (record === undefined) { tailIncomplete = true; continue }
       if (typeof record.type !== 'string' || record.type === 'session') { tailIncomplete = true; continue }
-      const seq = typeof record.seq === 'number' ? record.seq : typeof record.seq0 === 'number' ? record.seq0 : undefined
-      const time = typeof record.time === 'number' ? record.time : typeof record.time0 === 'number' ? record.time0 : undefined
-      if (seq === undefined || time === undefined || (!('data' in record) && record.type !== 'text-chunks')) { tailIncomplete = true; continue }
-      events.push({ type: record.type, seq, time, data: 'data' in record ? record.data : record, ...(record.ignorable === true ? { ignorable: true } : {}) })
+      let decodedRecords: readonly unknown[]
+      try {
+        decodedRecords = decodeStorageRecord(record)
+      } catch {
+        return { header, events: [], tailIncomplete: false, incompatible: true, reason: 'session-storage-record' }
+      }
+      for (const event of decodedRecords) {
+        const item = asRecord(event)
+        const seq = typeof item?.seq === 'number' ? item.seq : undefined
+        const time = typeof item?.time === 'number' ? item.time : undefined
+        if (typeof item?.type !== 'string' || seq === undefined || time === undefined || !('data' in item)) {
+          return { header, events: [], tailIncomplete: false, incompatible: true, reason: 'session-storage-record' }
+        }
+        events.push({ type: item.type, seq, time, data: item.data, ...(item.ignorable === true ? { ignorable: true } : {}) })
+      }
     }
     return { header, events, tailIncomplete }
   }

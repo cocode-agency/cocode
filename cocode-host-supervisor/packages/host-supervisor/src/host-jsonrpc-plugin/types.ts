@@ -12,6 +12,10 @@ export type ImageAttachmentRef = {
   bytes: number;
   width: number;
   height: number;
+  originalDimensions?: {
+    width: number;
+    height: number;
+  };
   name?: string;
 };
 
@@ -41,6 +45,12 @@ export type Agent = {
   steer(message: UserMessage): void;
   cancel(cause: { kind: "user" }, options?: { keepInbox?: boolean }): void;
   whenIdle(): Promise<void>;
+  inbox?: {
+    nextTurn: UserMessage[];
+    nextStep: UserMessage[];
+    replace(id: string, message: UserMessage): void;
+    remove(id: string): void;
+  };
 };
 
 export type AgentHandle = { agent: Agent; dispose(): Promise<void> };
@@ -126,6 +136,17 @@ export type CompanionCapabilities = {
   commands: boolean;
   plugins: boolean;
   pluginsMutate: boolean;
+  sessionSearch?: boolean;
+  sessionHistory?: boolean;
+  sessionModels?: boolean;
+  sessionRename?: boolean;
+  queueMutation?: boolean;
+  attachmentRead?: boolean;
+  sessionCreate?: boolean;
+  subagentList?: boolean;
+  subagentHistory?: boolean;
+  subagentPrompt?: boolean;
+  subagentInterrupt?: boolean;
   interactions: "notification-response";
   checkpoint: false;
 };
