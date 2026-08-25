@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type { MessageId, SessionId } from "../../packages/client/connection/src/client/api"
+import type { MessageId, SessionId } from "../../packages/client/client/connection/src/client/api"
 import {
 	agencyMessageFeedbackRemote,
 	subscribeAccount,
-} from "../../packages/client/ui-message-feedback/src/client/account"
+} from "../../packages/client/client/ui-message-feedback/src/client/account"
 
 type Snapshot = {
 	readonly phase: "signed-out" | "signing-in" | "provisioning" | "signed-in" | "error"

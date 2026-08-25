@@ -1,16 +1,35 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { Context } from "@deepseek-ai/cordis"
-import { createSnapshotStore } from "../../packages/client/runtime/src/client/contract/store"
-import type { SessionsPort } from "../../packages/client/runtime/src/client/contract/sessions-port"
-import { WorkspaceRuntime } from "../../packages/client/runtime/src/client/workspaces/service"
+import { createSnapshotStore } from "../../packages/client/client/runtime/src/client/contract/store"
+import type {
+	SessionsPort,
+	SessionsPortList,
+} from "../../packages/client/client/runtime/src/client/contract/sessions-port"
+import { WorkspaceRuntime } from "../../packages/client/client/runtime/src/client/workspaces/service"
 
-test("new sessions stay in the selected workspace before host frames arrive", async () => {
+function createSessionsPort(
+	create: SessionsPort["create"],
+	initial: SessionsPortList = {
+		ids: [],
+		byId: {},
+		current: undefined,
+		phase: "ready",
+	},
+): SessionsPort {
+	return {
+		list: createSnapshotStore(initial),
+		create,
+		open: () => {},
+		clear: () => {},
+	}
+}
+
+test("workspace sessions are created through the workspace attachment contract", async () => {
 	const workspaceId = "ws-test"
-	const workspacePath = "/tmp/cocode-workspace-test"
 	const workspace = {
 		workspaceId,
-		path: workspacePath,
+		path: "/tmp/cocode-workspace-test",
 		title: "cocode-workspace-test",
 		sessionIds: [] as string[],
 		createdAt: "2026-08-16T00:00:00.000Z",
@@ -26,64 +45,22 @@ test("new sessions stay in the selected workspace before host frames arrive", as
 			}),
 		},
 	}
-	const sessionsList = createSnapshotStore({
-		ids: [] as string[],
-		byId: {},
-		current: undefined,
-		phase: "ready" as const,
+	const createCalls: Array<{ workspaceId?: string; cwd?: string }> = []
+	const sessions = createSessionsPort(async (input) => {
+		createCalls.push(input)
+		return "session-new-1" as never
 	})
-	let createdCount = 0
-	const sessions: SessionsPort = {
-		list: sessionsList,
-		async create({ workspaceId: target, cwd }) {
-			assert.equal(target, workspaceId)
-			const sessionId = `session-new-${++createdCount}`
-			sessionsList.update((draft) => {
-				draft.ids = [sessionId, ...draft.ids]
-				draft.byId[sessionId] = {
-					id: sessionId,
-					blank: true,
-					...(cwd === undefined ? {} : { cwd }),
-					updatedAt: Date.now(),
-				}
-			})
-			return sessionId
-		},
-		open: () => {},
-		clear: () => {},
-	}
 	const runtime = new WorkspaceRuntime(new Context(), api as never, sessions)
 
 	await runtime.refresh()
-	const first = await runtime.connectWorkspace(workspaceId)
+	const sessionId = await runtime.connectWorkspace(workspaceId as never)
 
-	assert.deepEqual(
-		runtime.list.getSnapshot().items.find((item) => item.workspaceId === workspaceId)
-			?.sessionIds,
-		[first],
-	)
-	assert.equal(sessionsList.getSnapshot().byId[first]?.cwd, workspacePath)
-
-	const second = await runtime.connectWorkspace(workspaceId)
-	assert.equal(second, first)
-	assert.equal(createdCount, 1)
+	assert.equal(sessionId, "session-new-1")
+	assert.deepEqual(createCalls, [{ workspaceId }])
 })
 
-test("new session without a project workspace creates an ungrouped chat", async () => {
+test("new session without a project workspace creates and opens an ordinary chat", async () => {
 	const api = {
-		host: {
-			describe: async () => ({
-				result: {
-					ok: true as const,
-					value: {
-						version: "test",
-						cwd: "/tmp/cocode-default",
-						attachedSessions: 0,
-						canOpenPath: false,
-					},
-				},
-			}),
-		},
 		workspace: {
 			list: async () => ({
 				result: {
@@ -93,29 +70,14 @@ test("new session without a project workspace creates an ungrouped chat", async 
 			}),
 		},
 	}
-	const sessionsList = createSnapshotStore({
-		ids: [] as string[],
-		byId: {} as Record<string, { id: string; blank: boolean; updatedAt: number }>,
-		current: undefined as string | undefined,
-		phase: "ready" as const,
-	})
+	const createCalls: Array<{ workspaceId?: string; cwd?: string }> = []
 	let opened: string | undefined
-	const sessions: SessionsPort = {
-		list: sessionsList,
-		async create({ workspaceId, cwd, sessionId }) {
-			assert.equal(workspaceId, undefined)
-			assert.match(sessionId ?? "", /^session-[0-9a-f-]{36}$/)
-			assert.equal(cwd, `/tmp/cocode-default/${sessionId}`)
-			sessionsList.update((draft) => {
-				draft.ids = [sessionId!]
-				draft.byId[sessionId!] = { id: sessionId!, blank: true, updatedAt: Date.now() }
-			})
-			return sessionId!
-		},
-		open: (sessionId) => {
-			opened = sessionId
-		},
-		clear: () => {},
+	const sessions = createSessionsPort(async (input) => {
+		createCalls.push(input)
+		return "session-ordinary" as never
+	})
+	sessions.open = (sessionId) => {
+		opened = sessionId
 	}
 	const runtime = new WorkspaceRuntime(new Context(), api as never, sessions)
 
@@ -123,48 +85,21 @@ test("new session without a project workspace creates an ungrouped chat", async 
 	runtime.startSession()
 	await new Promise((resolve) => setImmediate(resolve))
 
-	assert.match(opened ?? "", /^session-[0-9a-f-]{36}$/)
+	assert.deepEqual(createCalls, [{}])
+	assert.equal(opened, "session-ordinary")
 })
 
 test("ordinary chats use the configured default storage path", async () => {
-	const api = {
-		host: {
-			describe: async () => {
-				throw new Error("configured storage must not query the Host default")
-			},
-		},
-		workspace: {
-			list: async () => ({
-				result: {
-					ok: true as const,
-					value: { items: [], archivedSessionIds: [] as string[] },
-				},
-			}),
-		},
-	}
-	const sessionsList = createSnapshotStore({
-		ids: [] as string[],
-		byId: {} as Record<string, { id: string; blank: boolean; updatedAt: number }>,
-		current: undefined as string | undefined,
-		phase: "ready" as const,
+	const createCalls: Array<{ workspaceId?: string; cwd?: string }> = []
+	const sessions = createSessionsPort(async (input) => {
+		createCalls.push(input)
+		return "session-configured" as never
 	})
-	let receivedCwd: string | undefined
-	let receivedSessionId: string | undefined
-	const sessions: SessionsPort = {
-		list: sessionsList,
-		async create({ cwd, sessionId }) {
-			receivedCwd = cwd
-			receivedSessionId = sessionId
-			return sessionId!
-		},
-		open: () => {},
-		clear: () => {},
-	}
-	const runtime = new WorkspaceRuntime(new Context(), api as never, sessions)
+	const runtime = new WorkspaceRuntime(new Context(), {} as never, sessions)
 
 	runtime.configureDefaultStorage("/tmp/recent-cocode")
 	const sessionId = await runtime.connectDefaultSession()
-	assert.equal(receivedSessionId, sessionId)
-	assert.match(sessionId, /^session-[0-9a-f-]{36}$/)
-	assert.equal(receivedCwd, `/tmp/recent-cocode/${sessionId}`)
+
+	assert.equal(sessionId, "session-configured")
+	assert.deepEqual(createCalls, [{ cwd: "/tmp/recent-cocode" }])
 })

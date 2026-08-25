@@ -4,7 +4,7 @@ import {
 	DEFAULT_LOGO_PREFERENCE,
 	isLogoPreference,
 	LOGO_PREFERENCES,
-} from "../../packages/client/ui-theme/src/client/logo-settings.ts"
+} from "../../packages/client/client/ui-theme/src/client/logo-settings.ts"
 
 test("sidebar logo preference defaults to Cocode and accepts both supported brands", () => {
 	assert.equal(DEFAULT_LOGO_PREFERENCE, "cocode")

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { Session } from "../../packages/client/runtime/src/client/sessions/session"
+import { Session } from "../../packages/client/client/runtime/src/client/sessions/session"
 
 function historyEntries(fromSeq: number, toSeq: number) {
 	return Array.from({ length: toSeq - fromSeq + 1 }, (_, index) => {
@@ -16,7 +16,7 @@ function historyEntries(fromSeq: number, toSeq: number) {
 	})
 }
 
-test("explicit history paging advances beyond a trimmed materialized tail", async () => {
+test("explicit history paging prepends contiguous older pages", async () => {
 	const requestedBeforeSeqs: Array<number | undefined> = []
 	const api = {
 		sessions: {
@@ -26,15 +26,7 @@ test("explicit history paging advances beyond a trimmed materialized tail", asyn
 					return {
 						result: {
 							ok: true as const,
-							value: { events: historyEntries(1, 2_200), hasMore: true },
-						},
-					}
-				}
-				if (beforeSeq === 401) {
-					return {
-						result: {
-							ok: true as const,
-							value: { events: historyEntries(151, 400), hasMore: true },
+							value: { events: historyEntries(151, 2_200), hasMore: true },
 						},
 					}
 				}
@@ -42,7 +34,15 @@ test("explicit history paging advances beyond a trimmed materialized tail", asyn
 					return {
 						result: {
 							ok: true as const,
-							value: { events: historyEntries(1, 150), hasMore: false },
+							value: { events: historyEntries(101, 150), hasMore: true },
+						},
+					}
+				}
+				if (beforeSeq === 101) {
+					return {
+						result: {
+							ok: true as const,
+							value: { events: historyEntries(1, 100), hasMore: false },
 						},
 					}
 				}
@@ -56,6 +56,6 @@ test("explicit history paging advances beyond a trimmed materialized tail", asyn
 	await session.loadOlder()
 	await session.loadOlder()
 
-	assert.deepEqual(requestedBeforeSeqs, [undefined, 401, 151])
+	assert.deepEqual(requestedBeforeSeqs, [undefined, 151, 101])
 	assert.equal(session.getSnapshot().hasMore, false)
 })

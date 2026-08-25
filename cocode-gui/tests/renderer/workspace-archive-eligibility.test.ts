@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { indexSubagentDescendants } from "../../packages/client/runtime/src/client/sessions/subagent-lineage"
-import type { SessionSummary } from "../../packages/client/runtime/src/client/sessions/service"
-import { sessionArchiveEligible } from "../../packages/client/ui-workspace/src/client/archive"
+import { indexSubagentDescendants } from "../../packages/client/client/runtime/src/client/sessions/subagent-lineage"
+import type { SessionSummary } from "../../packages/client/client/runtime/src/client/sessions/service"
+import { sessionArchiveEligible } from "../../packages/client/client/ui-workspace/src/client/archive"
 
 function summary(id: string, overrides: Partial<SessionSummary> = {}): SessionSummary {
 	return {

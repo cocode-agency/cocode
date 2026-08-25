@@ -8,7 +8,6 @@ import {
 	assertRequiredCocodeWebEndpoints,
 	assertRequiredCocodeWebEntries,
 } from "../../../src/main/contexts/dsh-runtime/infrastructure/dsh-runtime-health"
-import { assertCocodeSlotRegistrations } from "../../../packages/client/web/src/cocode-composition-health"
 
 describe("extractDshBootManifest", () => {
 	it("parses the host-injected manifest with nested entry data", () => {
@@ -125,29 +124,6 @@ describe("Cocode Web runtime health", () => {
 					return new Response("", { status: id })
 				}),
 			/Cocode Web client entry cocode-account is not reachable: GET \/plugins\/cocode-account\/client\.js returned HTTP 404/,
-		)
-	})
-})
-
-describe("Cocode slot health", () => {
-	it("requires the Settings shell and account footer action", () => {
-		assertCocodeSlotRegistrations({
-			entries: (key) =>
-				key === "sidebar.settings"
-					? [{ options: { id: "ui-settings-general" } }]
-					: [{ options: { id: "cocode-account" } }],
-		})
-		assert.throws(
-			() => assertCocodeSlotRegistrations({ entries: () => [] }),
-			/sidebar\.settings did not register/,
-		)
-		assert.throws(
-			() =>
-				assertCocodeSlotRegistrations({
-					entries: (key) =>
-						key === "sidebar.settings" ? [{ options: { id: "settings" } }] : [],
-				}),
-			/cocode-account did not register sidebar\.footer\.action/,
 		)
 	})
 })

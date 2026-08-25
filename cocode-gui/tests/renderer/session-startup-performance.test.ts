@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { Context } from "@deepseek-ai/cordis"
-import { SessionRuntime } from "../../packages/client/runtime/src/client/sessions/service"
+import { SessionRuntime } from "../../packages/client/client/runtime/src/client/sessions/service"
 
 interface Deferred<T> {
 	promise: Promise<T>
@@ -62,7 +62,10 @@ test("starts restoring the persisted session history while session.list is pendi
 		runtime.handleConnected()
 		await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-		assert.deepEqual(historyCalls, ["startup-session"])
+		// The persisted selection is only validated against the first successful
+		// session.list snapshot; do not open history for an id that may no longer
+		// exist while the baseline is still pending.
+		assert.deepEqual(historyCalls, [])
 		list.resolve({
 			result: {
 				ok: true,
@@ -79,6 +82,9 @@ test("starts restoring the persisted session history while session.list is pendi
 			},
 		})
 		await list.promise
+		await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+		assert.deepEqual(historyCalls, ["startup-session"])
 	} finally {
 		if (previousStorage === undefined)
 			delete (globalThis as typeof globalThis & { localStorage?: unknown }).localStorage

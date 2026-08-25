@@ -4,11 +4,14 @@ import { resolve } from "pathe"
 import test from "node:test"
 
 const css = readFileSync(
-	resolve(process.cwd(), "packages/client/ui-sidebar/src/client/SidebarRoot.module.css"),
+	resolve(process.cwd(), "packages/client/client/ui-sidebar/src/client/SidebarRoot.module.css"),
 	"utf8",
 )
 const settingsRoot = readFileSync(
-	resolve(process.cwd(), "packages/client/ui-settings-general/src/client/SettingsRoot.tsx"),
+	resolve(
+		process.cwd(),
+		"packages/client/client/ui-settings-general/src/client/SettingsRoot.tsx",
+	),
 	"utf8",
 )
 
