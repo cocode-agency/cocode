@@ -9,6 +9,13 @@ export type ContentBlock = {
   [key: string]: unknown
 }
 
+/** Stable business error carried by the Cocode Host JSON-RPC boundary. */
+export type TuiRpcErrorView = {
+  code: string
+  message: string
+  details: Record<string, unknown>
+}
+
 export type TuiImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 
 export type TuiImageAttachmentRef = {

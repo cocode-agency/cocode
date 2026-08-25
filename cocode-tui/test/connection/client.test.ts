@@ -6,6 +6,7 @@ import { probeRuntimeCapabilities } from '../../packages/connection/src/capabili
 import {
   createTuiRuntime,
   parseModelCatalogResult,
+  readTuiRpcError,
   resolveHostRuntimeEnv,
   resolveHostScope,
 } from '../../packages/connection/src/client.ts'
@@ -14,6 +15,20 @@ import { fingerprintRuntimePlugins } from '../../packages/connection/src/runtime
 type ProbeCall = { method: string; params: object; timeoutMs?: number }
 
 describe('runtime capability negotiation', () => {
+  it('reads stable Host business errors without matching message text', () => {
+    const error = Object.assign(new Error('missing queue item'), {
+      code: 'queue-item-not-found',
+      details: { itemId: 'q1' },
+    })
+
+    expect(readTuiRpcError(error)).toEqual({
+      code: 'queue-item-not-found',
+      message: 'missing queue item',
+      details: { itemId: 'q1' },
+    })
+    expect(readTuiRpcError(new Error('transport failed'))).toBeUndefined()
+  })
+
   it('passes the cloud provider route to the Host without forwarding credentials', () => {
     const env = {
       COCODE_HOME: '/tmp/cocode-home',

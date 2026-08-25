@@ -73,6 +73,16 @@ describe('displayError', () => {
     expect(message).not.toMatch(/sk-secret|API_KEY=/)
   })
 
+  it('shows stable Host business codes and redacts their messages', () => {
+    const error = Object.assign(new Error('queue API_KEY=sk-secret failed'), {
+      code: 'queue-item-not-found',
+      details: { itemId: 'q1' },
+    })
+    const message = displayError(error, 'en')
+    expect(message).toMatch(/^queue-item-not-found · /)
+    expect(message).not.toMatch(/sk-secret|API_KEY=/)
+  })
+
   it('includes the underlying transport cause', () => {
     const error = new TypeError('fetch failed', {
       cause: new Error('connect ECONNRESET 203.0.113.1:443'),

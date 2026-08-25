@@ -49,6 +49,7 @@ import type {
   TuiAttachmentReadResult,
   TuiSessionCreateResult,
   TuiSubagentCatalog,
+  TuiRpcErrorView,
 } from './types.ts'
 import { fallbackCapabilitySnapshot, probeRuntimeCapabilities } from './capability.ts'
 
@@ -59,6 +60,12 @@ export interface TuiRuntimeLogSink {
   info(eventName: string, attributes?: Readonly<Record<string, string | number | boolean | null>>): void
   warn(eventName: string, attributes?: Readonly<Record<string, string | number | boolean | null>>): void
   error(eventName: string, attributes?: Readonly<Record<string, string | number | boolean | null>>): void
+}
+
+export function readTuiRpcError(error: unknown): TuiRpcErrorView | undefined {
+  if (!isRecord(error) || typeof error.code !== 'string' || typeof error.message !== 'string') return undefined
+  const details = isRecord(error.details) ? { ...error.details } : {}
+  return { code: error.code, message: error.message, details }
 }
 
 export function createTuiRuntime(launch: TuiLaunch, logger?: TuiRuntimeLogSink): TuiRuntime {

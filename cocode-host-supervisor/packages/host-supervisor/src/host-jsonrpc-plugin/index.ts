@@ -10,6 +10,7 @@ import {
 import type { Agent, RuntimeContext } from "./types.js";
 
 export { TuiCompanionGateway } from "./gateway.js";
+export { CompanionTransport } from "./transport.js";
 
 export const name = "cocode-host-jsonrpc";
 export const inject = ["agents"];

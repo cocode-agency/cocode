@@ -88,16 +88,29 @@ export class CompanionTransport {
       const result = await handler(method, objectParams(frame.params))
       this.write({ jsonrpc: '2.0', id, result })
     } catch (error) {
-      this.writeError(id, -32603, error instanceof Error ? error.message : String(error))
+      this.writeError(id, -32603, error instanceof Error ? error.message : String(error), error)
     }
   }
 
-  private writeError(id: JsonRpcId, code: number, message: string): void {
-    this.write({ jsonrpc: '2.0', id, error: { code, message } })
+  private writeError(id: JsonRpcId, code: number, message: string, cause?: unknown): void {
+    const data = rpcErrorData(cause)
+    this.write({
+      jsonrpc: '2.0',
+      id,
+      error: data === undefined ? { code, message } : { code, message, data },
+    })
   }
 
   private write(frame: Record<string, unknown>): void {
     if (!this.closed) this.output.write(`${JSON.stringify(frame)}\n`)
+  }
+}
+
+function rpcErrorData(error: unknown): { code: string; details?: unknown } | undefined {
+  if (!isRecord(error) || typeof error.code !== 'string') return undefined
+  return {
+    code: error.code,
+    ...(Object.hasOwn(error, 'details') ? { details: error.details } : {}),
   }
 }
 

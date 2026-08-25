@@ -28,6 +28,22 @@ type SessionRecord = {
   owned: boolean;
 };
 
+type RpcFailure = Error & {
+  code: string;
+  details?: Record<string, unknown>;
+};
+
+function rpcFailure(
+  code: string,
+  message: string,
+  details: Record<string, unknown> = {},
+): RpcFailure {
+  const error = new Error(message) as RpcFailure;
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
 type AgentPresetsService = {
   resolve(id?: string): Promise<{ id: string }>;
   mount(agentCtx: unknown, id?: string): Promise<unknown>;
@@ -1487,6 +1503,17 @@ export class TuiCompanionGateway {
     method: string,
     params: Record<string, unknown> = {},
   ): Promise<unknown> {
+    try {
+      return await this.handleRequestUnsafe(method, params);
+    } catch (error) {
+      throw normalizeRpcFailure(method, params, error);
+    }
+  }
+
+  private async handleRequestUnsafe(
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
     switch (method) {
       case "initialize":
         return this.initialize(params as unknown as InitializeParams);
@@ -1933,6 +1960,77 @@ function safeModelCatalogError(error: unknown): string {
     .replace(/[\r\n]+/g, " ")
     .trim();
   return redacted.length > 240 ? `${redacted.slice(0, 237)}...` : redacted;
+}
+
+function normalizeRpcFailure(
+  method: string,
+  params: Record<string, unknown>,
+  error: unknown,
+): RpcFailure {
+  if (isRpcFailure(error)) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  const sessionId = stringParam(params.sessionId);
+  if (method.endsWith("session/rename") || method === "session.rename") {
+    if (params.title !== undefined && String(params.title).trim() === "") {
+      return rpcFailure("title-invalid", message, { sessionId: sessionId ?? "" });
+    }
+    if (isMissingSessionMessage(message)) {
+      return rpcFailure("session-not-found", message, { sessionId: sessionId ?? "" });
+    }
+  }
+  if (method.endsWith("session/updateQueue") || method === "session.updateQueue") {
+    const itemId = stringParam(params.itemId) ?? "";
+    if (/queued item not found/i.test(message)) {
+      return rpcFailure("queue-item-not-found", message, { itemId });
+    }
+    if (/steer.*unavailable|cannot steer/i.test(message)) {
+      return rpcFailure("steer-unavailable", message, { itemId });
+    }
+  }
+  if (method.endsWith("session/attachment") || method === "session.attachment") {
+    return rpcFailure("attachment-error", message, { reason: message });
+  }
+  if (method.endsWith("session/history") || method === "session.history" || method.endsWith("session/models") || method === "session.models") {
+    if (isMissingSessionMessage(message)) {
+      return rpcFailure("session-not-found", message, { sessionId: sessionId ?? "" });
+    }
+  }
+  if (method.endsWith("subagent/list") || method === "subagent.list") {
+    if (/capability is unavailable|persistence is unavailable/i.test(message)) {
+      return rpcFailure("subagent-parent-unavailable", message, {
+        parentSessionId: stringParam(params.parentSessionId) ?? "",
+      });
+    }
+  }
+  if (method.includes("subagent")) {
+    const parentSessionId = stringParam(params.parentSessionId) ?? "";
+    const childSessionId = stringParam(params.childSessionId) ?? "";
+    if (/parent .*not live|parent .*unavailable/i.test(message)) {
+      return rpcFailure("subagent-parent-unavailable", message, { parentSessionId });
+    }
+    if (/one-shot/i.test(message)) {
+      return rpcFailure("subagent-not-resumable", message, { childSessionId });
+    }
+    if (/not found|unknown|disappeared/i.test(message)) {
+      return rpcFailure("subagent-not-found", message, { parentSessionId, childSessionId });
+    }
+    if (/delivery|followup|prompt/i.test(message) && (method.includes("prompt") || method.includes("interrupt"))) {
+      return rpcFailure("subagent-delivery-unavailable", message, { childSessionId });
+    }
+  }
+  return rpcFailure("internal", message);
+}
+
+function isRpcFailure(error: unknown): error is RpcFailure {
+  return error instanceof Error && typeof (error as Partial<RpcFailure>).code === "string";
+}
+
+function isMissingSessionMessage(message: string): boolean {
+  return /session .*not found|unknown companion session|session agent was disposed/i.test(message);
+}
+
+function stringParam(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function createUserMessage(

@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { writeLineFrame } from '../lib/index.js'
 
 test('writes one newline-delimited frame to a writable connection', () => {
@@ -35,4 +36,34 @@ test('turns synchronous connection write failures into a false result', () => {
       throw new Error('closed between checks')
     },
   }, { id: 3, error: { code: -32000, message: 'failed' } }), false)
+})
+
+test('preserves business error details in the line response payload', async () => {
+  const writes = []
+  const input = new EventEmitter()
+  const output = {
+    write(value) {
+      writes.push(value)
+    },
+  }
+  const { CompanionTransport } = await import('../lib/host-jsonrpc-plugin.js')
+  const transport = new CompanionTransport(input, output)
+  transport.onRequest(async () => {
+    const error = new Error('missing queue item')
+    error.code = 'queue-item-not-found'
+    error.details = { itemId: 'q1' }
+    throw error
+  })
+  transport.start()
+  input.emit?.('data', `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'queue' })}\n`)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(writes[0]), {
+    jsonrpc: '2.0',
+    id: 1,
+    error: {
+      code: -32603,
+      message: 'missing queue item',
+      data: { code: 'queue-item-not-found', details: { itemId: 'q1' } },
+    },
+  })
 })

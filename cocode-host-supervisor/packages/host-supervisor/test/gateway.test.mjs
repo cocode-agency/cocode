@@ -225,6 +225,36 @@ test('exposes session create, history, and content search through the companion'
   })
 })
 
+test('normalizes session and queue failures to stable business codes', async () => {
+  const { ctx } = createContext()
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  await assert.rejects(
+    gateway.handleRequest('cocode/session/rename', { sessionId: 'missing', title: 'Renamed' }),
+    (error) => {
+      assert.equal(error.code, 'session-not-found')
+      assert.deepEqual(error.details, { sessionId: 'missing' })
+      return true
+    },
+  )
+
+  await gateway.prompt({ sessionId: 'queue-session', contentBlocks: [{ type: 'text', text: 'hello' }] })
+  ctx.agents.get('queue-session').inbox = { nextTurn: [], nextStep: [] }
+  await assert.rejects(
+    gateway.handleRequest('cocode/session/updateQueue', {
+      sessionId: 'queue-session',
+      itemId: 'missing-item',
+      action: { kind: 'remove' },
+    }),
+    (error) => {
+      assert.equal(error.code, 'queue-item-not-found')
+      assert.deepEqual(error.details, { itemId: 'missing-item' })
+      return true
+    },
+  )
+})
+
 test('reads cold session metadata and model selection without creating an Agent', async () => {
   const { ctx, created } = createContext({
     sessionPersistence: {

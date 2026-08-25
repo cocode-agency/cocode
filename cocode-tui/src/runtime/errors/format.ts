@@ -2,6 +2,7 @@
  * Format catalog codes as "CODE · explanation".
  */
 
+import { readTuiRpcError } from '@cocode/tui-connection'
 import { redactSecrets } from '../diagnostics.ts'
 import { ERROR_CATALOG, type ErrorCode, type ErrorParams, type Locale } from './catalog.ts'
 import { resolveLocale } from './locale.ts'
@@ -32,6 +33,8 @@ export function displayError(error: unknown, locale: Locale = resolveLocale()): 
   if (error instanceof TuiError) return formatError(error.code, error.params, locale)
   const code = errorCodeOf(error)
   if (code !== undefined) return formatError(code, {}, locale)
+  const rpcError = readTuiRpcError(error)
+  if (rpcError !== undefined) return `${rpcError.code} · ${redactSecrets(rpcError.message)}`
   const raw = errorDetail(error)
   if (isErrorCode(raw)) return formatError(raw, {}, locale)
   return formatError('RUNTIME_UNKNOWN', { detail: redactSecrets(raw) }, locale)

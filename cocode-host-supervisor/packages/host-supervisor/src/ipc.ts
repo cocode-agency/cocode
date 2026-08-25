@@ -2,7 +2,15 @@ import net from 'node:net'
 import { once } from 'node:events'
 
 export type RpcRequest = { id: number; method: string; params?: Record<string, unknown> }
-export type RpcResponse = { id: number; result?: unknown; error?: { code: number; message: string; data?: { code?: string } } }
+export type RpcResponse = {
+  id: number
+  result?: unknown
+  error?: {
+    code: number
+    message: string
+    data?: { code?: string; details?: unknown }
+  }
+}
 
 export type LineFrameOutput = NodeJS.WritableStream & {
   destroyed?: boolean
@@ -96,6 +104,9 @@ export class LinePeer {
           const error = new Error(frame.error.message)
           const code = frame.error.data?.code
           if (typeof code === 'string') Object.defineProperty(error, 'code', { value: code, enumerable: true })
+          if (frame.error.data !== undefined && 'details' in frame.error.data) {
+            Object.defineProperty(error, 'details', { value: frame.error.data.details, enumerable: true })
+          }
           pending.reject(error)
         }
         else pending.resolve(frame.result)
