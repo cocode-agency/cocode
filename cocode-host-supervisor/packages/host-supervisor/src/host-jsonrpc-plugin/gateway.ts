@@ -702,12 +702,12 @@ export class TuiCompanionGateway {
     const query = (params.query ?? "").trim().toLocaleLowerCase();
     if (query === "") return { items: [], hasMore: false };
     const terms = query.split(/\s+/).filter(Boolean);
-    const items: { sessionId: string; snippet: string }[] = [];
+    const items: { sessionId: string; snippet: string; updatedAt: number }[] = [];
     for (const header of await persistence.list()) {
       if (header.cwd !== undefined && resolve(header.cwd) !== resolve(this.cwd)) continue;
       const inspection = await persistence.inspect(header.id);
       const text = inspection.events
-        .filter((event) => event.type === "user/message" || event.type === "assistant/message")
+        .filter((event) => event.type === "user/message" || event.type === "assistant/message" || event.type === "steering/message")
         .map(eventText)
         .filter(Boolean)
         .join("\n");
@@ -716,10 +716,11 @@ export class TuiCompanionGateway {
       const first = lower.indexOf(terms[0] ?? query);
       const start = Math.max(0, first - 80);
       const snippet = text.slice(start, start + 240).replace(/\s+/g, " ").trim();
-      items.push({ sessionId: String(header.id), snippet });
-      if (items.length >= 20) break;
+      items.push({ sessionId: String(header.id), snippet, updatedAt: inspection.events.at(-1)?.time ?? header.createdAt });
     }
-    return { items, hasMore: items.length >= 20 };
+    items.sort((left, right) => right.updatedAt - left.updatedAt || left.sessionId.localeCompare(right.sessionId));
+    const hasMore = items.length > 20;
+    return { items: items.slice(0, 20).map(({ sessionId, snippet }) => ({ sessionId, snippet })), hasMore };
   }
 
   async createSessionRpc(params: { sessionId?: string; cwd?: string } = {}): Promise<{ sessionId: string }> {

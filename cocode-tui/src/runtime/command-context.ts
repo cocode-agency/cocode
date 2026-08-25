@@ -50,6 +50,9 @@ export type CommandContextOptions = {
   showChecklist?: TuiCommandCtx['showChecklist']
   showSubagents?: TuiCommandCtx['showSubagents']
   showHistory?: TuiCommandCtx['showHistory']
+  showSubagentHistory?: TuiCommandCtx['showSubagentHistory']
+  promptSubagent?: TuiCommandCtx['promptSubagent']
+  interruptSubagent?: TuiCommandCtx['interruptSubagent']
 }
 
 export type AppCommandContextOptions = {
@@ -98,6 +101,9 @@ export type AppCommandContextOptions = {
   showChecklist?: TuiCommandCtx['showChecklist']
   showSubagents?: TuiCommandCtx['showSubagents']
   showHistory?: TuiCommandCtx['showHistory']
+  showSubagentHistory?: TuiCommandCtx['showSubagentHistory']
+  promptSubagent?: TuiCommandCtx['promptSubagent']
+  interruptSubagent?: TuiCommandCtx['interruptSubagent']
 }
 
 export function createCommandContext(options: CommandContextOptions): TuiCommandCtx {
@@ -168,6 +174,9 @@ export function createCommandContext(options: CommandContextOptions): TuiCommand
     showChecklist: options.showChecklist,
     showSubagents: options.showSubagents,
     showHistory: options.showHistory,
+    showSubagentHistory: options.showSubagentHistory,
+    promptSubagent: options.promptSubagent,
+    interruptSubagent: options.interruptSubagent,
   }
 }
 
@@ -227,5 +236,8 @@ export function createAppCommandContext(options: AppCommandContextOptions): TuiC
     showChecklist: options.showChecklist,
     showSubagents: options.showSubagents,
     showHistory: options.showHistory,
+    showSubagentHistory: options.showSubagentHistory,
+    promptSubagent: options.promptSubagent,
+    interruptSubagent: options.interruptSubagent,
   })
 }

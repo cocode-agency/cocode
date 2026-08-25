@@ -335,6 +335,40 @@ export function createBuiltinCommands(): CommandRegistry {
     available: (caps) => caps.sessionHistory,
     run: (ctx) => ctx.showHistory?.(),
   })
+  registry.register({
+    name: 'subagent-history',
+    summary: 'Open a direct child subagent history as read-only',
+    summaryZh: '以只读方式打开直接子代理历史',
+    input: { hint: '<child-session-id>' },
+    kind: 'local',
+    available: (caps) => caps.subagentHistory,
+    run: (ctx, args) => ctx.showSubagentHistory?.(args.trim()),
+  })
+  registry.register({
+    name: 'subagent-prompt',
+    summary: 'Send a prompt to a continuable direct child',
+    summaryZh: '向可继续的直接子代理发送输入',
+    input: { hint: '<child-session-id> <text>' },
+    kind: 'local',
+    available: (caps) => caps.subagentPrompt,
+    run: (ctx, args) => {
+      const match = /^(\S+)\s+([\s\S]+)$/.exec(args.trim())
+      if (match === null) {
+        ctx.notice('info', 'Use /subagent-prompt <child-session-id> <text>.')
+        return
+      }
+      ctx.promptSubagent?.(match[1] ?? '', match[2] ?? '')
+    },
+  })
+  registry.register({
+    name: 'subagent-interrupt',
+    summary: 'Interrupt a continuable direct child',
+    summaryZh: '中断可继续的直接子代理',
+    input: { hint: '<child-session-id>' },
+    kind: 'local',
+    available: (caps) => caps.subagentInterrupt,
+    run: (ctx, args) => ctx.interruptSubagent?.(args.trim()),
+  })
 
   return registry
 }

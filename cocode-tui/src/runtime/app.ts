@@ -480,6 +480,9 @@ export type TuiCommandCtx = {
   showChecklist?: () => void
   showSubagents?: () => void
   showHistory?: () => void
+  showSubagentHistory?: (childSessionId: string) => void
+  promptSubagent?: (childSessionId: string, text: string) => void
+  interruptSubagent?: (childSessionId: string) => void
 }
 
 export type TuiApp = {
@@ -1717,6 +1720,9 @@ class TuiAppImpl implements TuiApp {
       showChecklist: () => this.openChecklist(),
       showSubagents: () => { void this.showSubagents() },
       showHistory: () => { void this.showSessionHistory() },
+      showSubagentHistory: (childSessionId) => { void this.showSubagentHistory(childSessionId) },
+      promptSubagent: (childSessionId, content) => { void this.promptSubagent(childSessionId, content) },
+      interruptSubagent: (childSessionId) => { void this.interruptSubagent(childSessionId) },
     })
   }
 
@@ -1858,6 +1864,76 @@ class TuiAppImpl implements TuiApp {
           ? this.locale === 'zh' ? '已加载最近 100 条消息；更早内容请使用 resume。' : 'Loaded the latest 100 messages; resume for older history.'
           : this.locale === 'zh' ? '会话历史已刷新。' : 'Session history refreshed.',
       }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
+    }
+    this.emit()
+  }
+
+  private async showSubagentHistory(childSessionId: string): Promise<void> {
+    const childId = childSessionId.trim()
+    if (childId === '' || this.runtime.subagentHistory === undefined) {
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? '需要提供子代理 session id。' : 'A child session id is required.' }
+      this.emit()
+      return
+    }
+    const parentSessionId = this.sessionId
+    try {
+      const history = await this.runtime.subagentHistory(parentSessionId, childId)
+      this.previousSessionView = {
+        sessionId: this.sessionId,
+        assembler: this.assembler,
+        telemetry: this.telemetry,
+        sessionState: this.sessionState,
+        externalSession: this.externalSession,
+        sessionTitleOverride: this.sessionTitleOverride,
+        provider: this.provider,
+        model: this.model,
+        capabilities: this.capabilities,
+        skills: this.skills,
+        remoteCommands: this.remoteCommands,
+      }
+      this.replaceSessionProjection(history.events)
+      this.sessionId = childId
+      this.externalSession = {
+        id: childId,
+        identity: childId,
+        canMutate: false,
+        concurrency: 'no-concurrent-writes',
+      }
+      this.sessionTitleOverride = `subagent ${childId.slice(0, 8)}`
+      this.resetSubagentActivity()
+      this.clearQueuedPrompts()
+      this.remoteQueue = []
+      this.agent = 'idle'
+      this.notice = {
+        tone: 'info',
+        message: history.hasMore
+          ? `${childId.slice(0, 8)} · ${this.locale === 'zh' ? '子代理历史（部分）' : 'subagent history (partial)'}`
+          : `${childId.slice(0, 8)} · ${this.locale === 'zh' ? '子代理历史' : 'subagent history'}`,
+      }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
+    }
+    this.emit()
+  }
+
+  private async promptSubagent(childSessionId: string, content: string): Promise<void> {
+    if (this.rejectExternalWrite() || this.runtime.promptSubagent === undefined || content.trim() === '') return
+    try {
+      const messageId = await this.runtime.promptSubagent(this.sessionId, childSessionId.trim(), [{ type: 'text', text: content }])
+      this.notice = { tone: 'info', message: `${this.locale === 'zh' ? '子代理输入已接收' : 'Subagent prompt accepted'} · ${messageId.slice(0, 8)}` }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
+    }
+    this.emit()
+  }
+
+  private async interruptSubagent(childSessionId: string): Promise<void> {
+    if (this.rejectExternalWrite() || this.runtime.interruptSubagent === undefined) return
+    try {
+      await this.runtime.interruptSubagent(this.sessionId, childSessionId.trim())
+      this.notice = { tone: 'info', message: this.locale === 'zh' ? '子代理中断请求已发送。' : 'Subagent interrupt requested.' }
     } catch (error) {
       this.notice = { tone: 'error', message: errorMessage(error) }
     }
