@@ -220,6 +220,11 @@ describe('SettingsPanel navigation', () => {
     })
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByTestId('section-models')).toBeTruthy()
+    // Opening Settings is an explicit escape hatch from onboarding. Once the
+    // panel owns the screen, a later step must not remain mounted above it and
+    // make the shell inert (the real account/credential steps are full-screen
+    // overlays, not passive slot content).
+    expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.onboarding')).toHaveLength(2)
 
     cleanup()
     const inactive = mount({ onboardingActive: false }).renderSlot.mock.calls

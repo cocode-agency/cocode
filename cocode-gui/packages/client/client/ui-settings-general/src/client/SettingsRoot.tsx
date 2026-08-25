@@ -138,7 +138,11 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const onboardingActive = useSessions(state =>
     state.phase === 'ready'
     && (state.current === undefined || state.byId[state.current]?.blank === true))
-  const onboardingStep = onboardingActive
+  // An explicitly opened Settings panel owns the interaction surface. Do not
+  // mount a first-run takeover above it: onboarding may open Models itself
+  // (for example after "稍后再说" on account sign-in), and leaving the next
+  // step mounted would either cover the panel or make its close button inert.
+  const onboardingStep = onboardingActive && !open
     ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
     : undefined
 
