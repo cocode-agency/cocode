@@ -885,12 +885,7 @@ export class TuiCompanionGateway {
 
   async interruptSubagent(params: { parentSessionId: string; childSessionId: string }): Promise<{ accepted: true }> {
     const child = this.ctx.agents.get(params.childSessionId);
-    if (child === undefined) {
-      const inspected = await this.inspectSubagent(params.parentSessionId, params.childSessionId);
-      const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
-      if (descriptor?.mode !== "continuable") throw new Error("subagent interrupt is unavailable for one-shot children");
-      return { accepted: true };
-    }
+    if (child === undefined) return { accepted: true };
     assertSubagentAddress(child, params.parentSessionId);
     const descriptor = readSubagentDescriptor(child.session.events, child.session.header.seedLength);
     if (descriptor?.mode !== "continuable") throw new Error("subagent interrupt is unavailable for one-shot children");
@@ -1593,10 +1588,18 @@ export class TuiCompanionGateway {
         }
       case "cocode/subagent/prompt":
       case "subagent.prompt":
-        return this.promptSubagent(params as { parentSessionId: string; childSessionId: string; content: ContentBlock[] });
+        {
+          const input = params as { parentSessionId: string; childSessionId: string; mode?: string; content: ContentBlock[] };
+          if (input.mode !== undefined && input.mode !== "continuable") throw new Error("subagent prompt is unavailable for one-shot children");
+          return this.promptSubagent({ parentSessionId: input.parentSessionId, childSessionId: input.childSessionId, content: input.content });
+        }
       case "cocode/subagent/interrupt":
       case "subagent.interrupt":
-        return this.interruptSubagent(params as { parentSessionId: string; childSessionId: string });
+        {
+          const input = params as { parentSessionId: string; childSessionId: string; mode?: string };
+          if (input.mode !== undefined && input.mode !== "continuable") throw new Error("subagent interrupt is unavailable for one-shot children");
+          return this.interruptSubagent({ parentSessionId: input.parentSessionId, childSessionId: input.childSessionId });
+        }
       case "cocode/session/search":
       case "session.search":
         return this.searchSessions(params as { query: string });

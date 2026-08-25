@@ -440,14 +440,14 @@ class SdkTuiRuntime implements TuiRuntime {
 
   async promptSubagent(parentSessionId: string, childSessionId: string, blocks: ContentBlock[]): Promise<string> {
     this.requireCapability('subagentPrompt')
-    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/prompt', 'subagent.prompt'), { parentSessionId, childSessionId, content: blocks })
+    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/prompt', 'subagent.prompt'), { parentSessionId, childSessionId, mode: 'continuable', content: blocks })
     if (!isRecord(result) || typeof result.messageId !== 'string') throw new Error(`subagent.prompt returned an invalid result: ${JSON.stringify(result)}`)
     return result.messageId
   }
 
   async interruptSubagent(parentSessionId: string, childSessionId: string): Promise<boolean> {
     this.requireCapability('subagentInterrupt')
-    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/interrupt', 'subagent.interrupt'), { parentSessionId, childSessionId })
+    const result = await this.requireClient().request(this.wireMethod('cocode/subagent/interrupt', 'subagent.interrupt'), { parentSessionId, childSessionId, mode: 'continuable' })
     if (!isRecord(result) || result.accepted !== true) throw new Error(`subagent.interrupt returned an invalid result: ${JSON.stringify(result)}`)
     return true
   }
