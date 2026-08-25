@@ -233,9 +233,9 @@ function elevatedRungs(): Set<string> {
     while (definitions.has(current) && !seen.has(current)) {
       seen.add(current)
       const value = definitions.get(current)!
-      const [reference] = varReferences(value)
-      if (reference === undefined) return value
-      current = reference
+      const match = value.match(/^var\(\s*(--[\w-]+)\s*\)$/)
+      if (match === null) return value
+      current = match[1]
     }
     return current
   }
@@ -286,14 +286,16 @@ describe('design-platform.css scrollbar tokens', () => {
     expect(sorted(darkTokens)).toEqual(sorted(allTokens))
   })
 
-  it('resolves every scrollbar token to a static scale value, not to another alias', () => {
-    // The alias layer is the only indirection in the token sheet: an alias
-    // pointing at a second alias makes the dark override order-dependent.
+  it('resolves every scrollbar token to a palette or semantic token, not to another alias', () => {
+    // Cocode keeps the scrollbar palette semantic (for example
+    // --cocode-border-strong) while the upstream DSH palette uses static steps.
+    // Either is valid; a scrollbar token must not point at another --dsw-alias-*
+    // token because that makes the dark override order-dependent.
     for (const rule of platformRules) {
       for (const [property, value] of rule.declarations) {
         if (!property.startsWith(TOKEN_PREFIX)) continue
         for (const reference of varReferences(value)) {
-          expect(reference, `${property}: ${value}`).toMatch(/^--dsw-static-/)
+          expect(reference, `${property}: ${value}`).toMatch(/^--(?:dsw-static|cocode)-/)
         }
       }
     }
@@ -562,13 +564,15 @@ describe('elevated surface rebinds', () => {
     // scrolled on it unrebound while a rebind-derived set stayed green.
     expect(elevatedSurfaces).toContain('--dsw-alias-bg-layer-2')
     expect(elevatedSurfaces).toContain('--dsw-alias-bg-layer-3')
+    expect(elevatedSurfaces).toContain('--dsw-alias-bg-layer-1')
     expect(elevatedSurfaces).toContain('--dsw-specific-menu')
-    expect(elevatedSurfaces).toContain('--dsw-specific-input-major')
-    expect(elevatedSurfaces).toContain('--dsw-specific-tip')
+    // Input and tip surfaces intentionally use their own Cocode semantic
+    // colors (#121215 and #0d0d0f in dark mode), not the layer-2/3 rungs.
+    expect(elevatedSurfaces).not.toContain('--dsw-specific-input-major')
+    expect(elevatedSurfaces).not.toContain('--dsw-specific-tip')
     // Base surfaces stay out, or every scroll container would be in scope and
     // the check would say nothing.
     expect(elevatedSurfaces).not.toContain('--dsw-alias-bg-base')
-    expect(elevatedSurfaces).not.toContain('--dsw-alias-bg-layer-1')
   })
 
   it('every sheet that scrolls on an elevated surface rebinds', () => {

@@ -1,4 +1,6 @@
 .root {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   --json-tree-property: #881391;
   --json-tree-string: #c41a16;
   --json-tree-number: #1c00cf;

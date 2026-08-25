@@ -4,7 +4,7 @@
    cascade as every other token sheet. Background/foreground deliberately
    alias the markdown code-block tokens so highlighted and plain blocks agree. */
 
-:root {
+body {
   --shiki-foreground: var(--dsw-alias-label-primary);
   --shiki-background: var(--dsw-alias-markdown-code-block);
   --shiki-token-constant: #1c7ed6;
