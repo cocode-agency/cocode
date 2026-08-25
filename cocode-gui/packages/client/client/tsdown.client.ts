@@ -77,6 +77,10 @@ const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
 const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const SUPERVISOR_MANIFEST = resolvePath(REPOSITORY_ROOT, '../cocode-host-supervisor/package.json')
+const SUPERVISOR_REQUIRE = existsSync(SUPERVISOR_MANIFEST)
+  ? createRequire(SUPERVISOR_MANIFEST)
+  : undefined
 
 /** Rebase a physical lib-relative source onto a browser URL that mirrors the repository directories. */
 function browserSourcePath(source: string, sourcemapPath: string): string {
@@ -478,6 +482,36 @@ function clientConfig(id: string, entry: string): UserConfig {
       'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
     },
     plugins: [{
+      // The mirrored DSH client tree is intentionally outside the GUI pnpm
+      // workspace. Its package-local links may therefore be absent after a
+      // GUI-only install, while the Supervisor install still owns the same
+      // ordinary browser dependencies. Resolve those packages from the local
+      // package first and fall back to the Supervisor virtual store so an
+      // ordinary dependency can still be inlined into this browser bundle.
+      name: 'dsh-client-dependency-fallback',
+      resolveId(source: string, importer: string | undefined) {
+        if (
+          importer === undefined ||
+          source.startsWith('.') ||
+          source.startsWith('/') ||
+          source.endsWith('.css') ||
+          source.includes('.css?') ||
+          source.startsWith('@deepseek-ai/') ||
+          isBuiltin(source) ||
+          isRequested(source)
+        ) return null
+        try {
+          return createRequire(importer).resolve(source)
+        } catch {
+          // Continue to the Supervisor-owned dependency closure below.
+        }
+        try {
+          return SUPERVISOR_REQUIRE?.resolve(source) ?? null
+        } catch {
+          return null
+        }
+      },
+    }, {
       // Bundle purity gate (build-time mirror of the module-edge rules): the
       // baseline and package-specific requests stay external, inline-safe wire layers
       // inline, and every other @deepseek-ai value import is a build error — a

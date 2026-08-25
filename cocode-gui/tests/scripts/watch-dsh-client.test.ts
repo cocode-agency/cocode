@@ -198,4 +198,15 @@ test("forces ordinary client dependencies into the browser bundle", async () => 
 	assert.equal(config.deps?.alwaysBundle?.("@tanstack/react-virtual"), true)
 	assert.equal(config.deps?.alwaysBundle?.("diff"), true)
 	assert.equal(config.deps?.alwaysBundle?.("react"), false)
+
+	const resolver = (config.plugins as Array<{ name?: string; resolveId?: Function }>).find(
+		(plugin) => plugin.name === "dsh-client-dependency-fallback",
+	)
+	assert.equal(typeof resolver?.resolveId, "function")
+	const importer = path.resolve(
+		"packages/client/client/ui-trajectory/src/client/TrajectoryTable.tsx",
+	)
+	assert.match(String(resolver?.resolveId?.("@tanstack/react-virtual", importer)), /react-virtual/)
+	assert.match(String(resolver?.resolveId?.("diff", importer)), /diff/)
+	assert.equal(resolver?.resolveId?.("@xterm/xterm/css/xterm.css", importer), null)
 })
