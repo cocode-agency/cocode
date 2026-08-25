@@ -1,0 +1,15 @@
+.host {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/*
+ * Read-only source hint. The toolbar flag (`preview.readOnly`) sits above the
+ * fold; dimming the editing surface keeps the mode visible while the reader is
+ * inside the document. Opacity is used instead of a token color so syntax
+ * highlighting stays intact and light/dark themes both keep working.
+ */
+.host[data-readonly] :global(.cm-scroller) {
+  opacity: 0.62;
+}
