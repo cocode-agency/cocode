@@ -4,10 +4,9 @@
 	// node types (packages that need them override locally).
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
-	  "jsx": "react-jsx",
-	  "lib": ["ES2024", "DOM", "DOM.Iterable"],
-	  "typeRoots": ["./scripts/types", "./node_modules/@types"],
-	  "types": ["client-build-environment"]
+		"jsx": "react-jsx",
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"typeRoots": ["./scripts/types", "./node_modules/@types"],
+		"types": ["client-build-environment"]
 	}
-  }
-  
+}

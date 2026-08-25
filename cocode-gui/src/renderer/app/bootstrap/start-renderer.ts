@@ -73,9 +73,12 @@ async function preloadDshModuleSystem(
 	entries: readonly { readonly id: string; readonly url: string }[],
 ): Promise<void> {
 	if (target.mode !== "queue") {
-		throw new Error("web boot: DSH module loader was already activated before the shell started")
+		throw new Error(
+			"web boot: DSH module loader was already activated before the shell started",
+		)
 	}
-	if (target.pendingQueue.some((registration) => registration.id === DSH_CLIENT_MODULES_ID)) return
+	if (target.pendingQueue.some((registration) => registration.id === DSH_CLIENT_MODULES_ID))
+		return
 	const modulesEntry = entries.find((entry) => entry.id === DSH_CLIENT_MODULES_ID)
 	if (modulesEntry === undefined) {
 		throw new Error(`web boot: ${DSH_CLIENT_MODULES_ID} is missing from the bootstrap graph`)

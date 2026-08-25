@@ -37,17 +37,22 @@ test("installs the queue facade and materializes the preloaded modules bundle", 
 		const system = target.create({
 			boot: {
 				rev: "test",
-				entries: [{
-					id: DSH_CLIENT_MODULES_ID,
-					url: "/dsh-client/modules/client.js",
-					rev: "modules",
-				}],
+				entries: [
+					{
+						id: DSH_CLIENT_MODULES_ID,
+						url: "/dsh-client/modules/client.js",
+						rev: "modules",
+					},
+				],
 			},
 			staticModules: {},
 		})
 
 		assert.equal(system.manifest.rev, "test")
-		assert.equal((received as { bootstrapModule: { id: string } }).bootstrapModule.id, DSH_CLIENT_MODULES_ID)
+		assert.equal(
+			(received as { bootstrapModule: { id: string } }).bootstrapModule.id,
+			DSH_CLIENT_MODULES_ID,
+		)
 		assert.equal(target.mode, "live")
 		assert.deepEqual(target.pendingQueue, [])
 	} finally {

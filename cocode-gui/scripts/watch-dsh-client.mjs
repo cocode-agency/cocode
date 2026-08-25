@@ -34,7 +34,8 @@ export function discoverDshClientPackages(root = clientRoot) {
 
 	function visit(directory) {
 		for (const entry of readdirSync(directory, { withFileTypes: true })) {
-			if (!entry.isDirectory() || entry.name === "node_modules" || entry.name === "lib") continue
+			if (!entry.isDirectory() || entry.name === "node_modules" || entry.name === "lib")
+				continue
 			const packageRoot = path.join(directory, entry.name)
 			const manifestPath = path.join(packageRoot, "package.json")
 			if (!existsSync(manifestPath)) {

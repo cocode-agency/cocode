@@ -92,10 +92,16 @@ test("continues scanning below a non-client package manifest", () => {
 		const parent = path.join(root, "category")
 		const nested = path.join(parent, "ui-sidebar")
 		mkdirSync(path.join(nested, "src", "client"), { recursive: true })
-		writeFileSync(path.join(parent, "package.json"), JSON.stringify({ name: "@example/category" }))
+		writeFileSync(
+			path.join(parent, "package.json"),
+			JSON.stringify({ name: "@example/category" }),
+		)
 		writeFileSync(
 			path.join(nested, "package.json"),
-			JSON.stringify({ name: "@example/dsh-client-ui-sidebar", dsh: { client: { platform: "web" } } }),
+			JSON.stringify({
+				name: "@example/dsh-client-ui-sidebar",
+				dsh: { client: { platform: "web" } },
+			}),
 		)
 		writeFileSync(path.join(nested, "tsdown.config.ts"), "export default {}")
 		writeFileSync(path.join(nested, "src", "client", "index.ts"), "export {}")
@@ -182,7 +188,7 @@ test("forces ordinary client dependencies into the browser bundle", async () => 
 		tsconfigPath: path.resolve("tsconfig.base.client.json"),
 	})
 
-	const neverBundle = config.deps?.neverBundle as ((specifier: string) => boolean)
+	const neverBundle = config.deps?.neverBundle as (specifier: string) => boolean
 	assert.equal(typeof neverBundle, "function")
 	for (const specifier of [
 		"react",
@@ -193,7 +199,8 @@ test("forces ordinary client dependencies into the browser bundle", async () => 
 		"@deepseek-ai/dsh-client-ui-slots",
 		"@deepseek-ai/dsh-client-ui-primitives",
 		"@deepseek-ai/dsh-client-runtime/client",
-	]) assert.equal(neverBundle(specifier), true, specifier)
+	])
+		assert.equal(neverBundle(specifier), true, specifier)
 	assert.equal(neverBundle("@deepseek-ai/dsh-client-schema-form"), false)
 	assert.equal(config.deps?.alwaysBundle?.("@tanstack/react-virtual"), true)
 	assert.equal(config.deps?.alwaysBundle?.("diff"), true)
@@ -206,7 +213,10 @@ test("forces ordinary client dependencies into the browser bundle", async () => 
 	const importer = path.resolve(
 		"packages/client/client/ui-trajectory/src/client/TrajectoryTable.tsx",
 	)
-	assert.match(String(resolver?.resolveId?.("@tanstack/react-virtual", importer)), /react-virtual/)
+	assert.match(
+		String(resolver?.resolveId?.("@tanstack/react-virtual", importer)),
+		/react-virtual/,
+	)
 	assert.match(String(resolver?.resolveId?.("diff", importer)), /diff/)
 	assert.equal(resolver?.resolveId?.("@xterm/xterm/css/xterm.css", importer), null)
 })

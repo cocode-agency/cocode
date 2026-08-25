@@ -11,9 +11,7 @@ export const DSH_CLIENT_MODULES_ID = "@deepseek-ai/dsh-client-modules"
 
 export interface DshClientBundleRegistration {
 	readonly id: string
-	readonly factory: (
-		require: (specifier: string) => unknown,
-	) => Record<string, unknown>
+	readonly factory: (require: (specifier: string) => unknown) => Record<string, unknown>
 }
 
 export interface DshModuleCreateOptions {
@@ -68,9 +66,13 @@ export function ensureDshModuleLoader(): DshModuleLoaderTarget {
 	}
 	target.create = (options) => {
 		if (target.mode !== "queue") {
-			throw new Error("client-modules: window.__ModuleLoader__.create called after module-system boot")
+			throw new Error(
+				"client-modules: window.__ModuleLoader__.create called after module-system boot",
+			)
 		}
-		const index = pendingQueue.findIndex((registration) => registration.id === DSH_CLIENT_MODULES_ID)
+		const index = pendingQueue.findIndex(
+			(registration) => registration.id === DSH_CLIENT_MODULES_ID,
+		)
 		const registration = pendingQueue[index]
 		if (registration === undefined) {
 			throw new Error(
@@ -92,11 +94,7 @@ export function ensureDshModuleLoader(): DshModuleLoaderTarget {
 				`client-modules: ${DSH_CLIENT_MODULES_ID}/client.js did not export the bootstrap module face`,
 			)
 		}
-		return face.createClientModuleSystem(
-			target,
-			{ id: registration.id, exports },
-			options,
-		)
+		return face.createClientModuleSystem(target, { id: registration.id, exports }, options)
 	}
 	win.__ModuleLoader__ = target
 	return target
