@@ -18,7 +18,8 @@ function blockToText(block: unknown): string {
   const width = typeof attachment.width === 'number' && attachment.width > 0 ? attachment.width : undefined
   const height = typeof attachment.height === 'number' && attachment.height > 0 ? attachment.height : undefined
   const dimensions = width !== undefined && height !== undefined ? ` ${width}x${height}` : ''
-  return `[image${name === undefined ? '' : ` ${name}`}${dimensions}]`
+  const unavailable = attachment.unavailable === true ? ' unavailable' : ''
+  return `[image${name === undefined ? '' : ` ${name}`}${dimensions}${unavailable}]`
 }
 
 export function reasoningToText(blocks: unknown): string {

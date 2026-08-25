@@ -165,6 +165,7 @@ import { refreshRuntimeCapabilities } from './capability-adapter.ts'
 import { PromptQueueCoordinator } from './prompt-queue-coordinator.ts'
 import { renameSession } from './session-rename.ts'
 import { createSessionProjectionStore } from './session-projections.ts'
+import { markUnavailableHistoryAttachments } from './history-attachments.ts'
 import type { DraftImage } from './prompt-queue.ts'
 import type { PromptQueuePickerState } from './prompt-queue-picker.ts'
 import {
@@ -1917,7 +1918,10 @@ class TuiAppImpl implements TuiApp {
       const events = older
         ? [...result.events, ...this.historyEvents]
         : result.events
-      this.replaceSessionProjection(events, result.projections)
+      this.replaceSessionProjection(
+        await markUnavailableHistoryAttachments(this.runtime, this.sessionId, events),
+        result.projections,
+      )
       this.historyHasMore = result.hasMore
       this.assembler.settleOpen()
       this.notice = {
@@ -1955,7 +1959,9 @@ class TuiAppImpl implements TuiApp {
         skills: this.skills,
         remoteCommands: this.remoteCommands,
       }
-      this.replaceSessionProjection(history.events)
+      this.replaceSessionProjection(
+        await markUnavailableHistoryAttachments(this.runtime, childId, history.events),
+      )
       this.sessionId = childId
       this.externalSession = {
         id: childId,
@@ -2275,7 +2281,9 @@ class TuiAppImpl implements TuiApp {
         skills: this.skills,
         remoteCommands: this.remoteCommands,
       }
-      this.replaceSessionProjection(history.events.map(toSessionEvent))
+      this.replaceSessionProjection(
+        await markUnavailableHistoryAttachments(this.runtime, this.sessionId, history.events.map(toSessionEvent)),
+      )
       this.sessionId = externalId
       const canMutate = history.status === 'ok' && hostOpened
       const revision = await reader.getSessionRevision?.(externalId)
