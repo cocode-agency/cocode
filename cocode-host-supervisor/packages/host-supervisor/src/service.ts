@@ -252,7 +252,9 @@ class SupervisorService {
     })
     const startupBuffer = new RingBuffer(256 * 1024)
     const streamBuffers = { stdout: '', stderr: '' }
+    const requiresWeb = request.requiredServices.includes('web')
     let readyObserved = false
+    let jsonRpcReady = false
     const consume = (stream: 'stdout' | 'stderr', chunk: Buffer | string): void => {
       const value = chunk.toString()
       startupBuffer.push(value)
@@ -277,15 +279,30 @@ class SupervisorService {
       readyObserved = true
       reject(error)
     }
-    const ready = new Promise<string>((resolve, reject) => {
+    const ready = new Promise<string | undefined>((resolve, reject) => {
       const timer = setTimeout(() => rejectStartup(reject, startupFailureError(`DSH Host startup timed out.\n${startupBuffer.value}`, startupBuffer.value)), 60_000)
       const inspect = (chunk: Buffer | string) => {
         consume('stdout', chunk)
+        if (!requiresWeb || readyObserved) return
         const match = startupBuffer.value.match(/dsh web: (http:\/\/127\.0\.0\.1:\d+)/)
-        if (match?.[1] && !readyObserved) { readyObserved = true; clearTimeout(timer); resolve(match[1]) }
+        if (match?.[1]) { readyObserved = true; clearTimeout(timer); resolve(match[1]) }
       }
       child.stdout?.on('data', inspect)
       child.stderr?.on('data', (chunk) => consume('stderr', chunk))
+      if (!requiresWeb) {
+        void waitJsonRpc(jsonRpcEndpoint).then(
+          () => {
+            if (readyObserved) return
+            jsonRpcReady = true
+            readyObserved = true
+            clearTimeout(timer)
+            resolve(undefined)
+          },
+          (error: unknown) => {
+            rejectStartup(reject, error instanceof Error ? error : new Error(String(error)))
+          },
+        )
+      }
       child.once('error', (error) => {
         clearTimeout(timer)
         this.logger.log('error', 'dsh.host.spawn.failed', { errorCode: String((error as NodeJS.ErrnoException).code ?? 'unknown') })
@@ -309,12 +326,15 @@ class SupervisorService {
         }
       })
     })
-    let webUrl: string
+    let webUrl: string | undefined
     try {
       webUrl = await ready
       startupBuffer.clear()
-      await waitHttp(webUrl)
-      await waitJsonRpc(jsonRpcEndpoint)
+      if (webUrl !== undefined) await waitHttp(webUrl)
+      if (!jsonRpcReady) {
+        await waitJsonRpc(jsonRpcEndpoint)
+        jsonRpcReady = true
+      }
     } catch (error) {
       await terminateChild(child)
       rmSync(descriptorPath(this.directory), { force: true })
@@ -335,16 +355,19 @@ class SupervisorService {
       hostProtocolRevision: HOST_PROTOCOL_REVISION,
       hostConfigFingerprint: this.scope.hostConfigFingerprint,
       services: [
-        { service: 'web', transport: 'tcp', endpoint: webUrl, protocolRevision: '1.0' },
+        ...(webUrl === undefined ? [] : [{ service: 'web' as const, transport: 'tcp' as const, endpoint: webUrl, protocolRevision: '1.0' as const }]),
         { service: 'jsonrpc', transport: process.platform === 'win32' ? 'named-pipe' : 'unix', endpoint: jsonRpcEndpoint, protocolRevision: '1.0' },
       ],
-      capabilities: ['web', 'jsonrpc', 'session', 'event', 'workspace', 'approval', 'question'],
+      capabilities: [
+        ...(webUrl === undefined ? [] : ['web']),
+        'jsonrpc', 'session', 'event', 'workspace', 'approval', 'question',
+      ],
       startedAt: new Date().toISOString(),
     }
     this.host = { child, descriptor }
     this.hadHost = true
     this.writeDescriptor(descriptor)
-    this.logger.log('info', 'dsh.host.ready', { hostPid: child.pid ?? -1, endpoint: webUrl })
+    this.logger.log('info', 'dsh.host.ready', { hostPid: child.pid ?? -1, endpoint: webUrl ?? jsonRpcEndpoint })
   }
 
   private async status(): Promise<HostDescriptor | null> { return this.host?.descriptor ?? this.readDescriptor() }
@@ -596,9 +619,9 @@ async function waitForProcessTreeExit(pid: number, timeoutMs: number): Promise<v
 async function hostHealth(descriptor: HostDescriptor): Promise<boolean> {
   const web = descriptor.services.find((service) => service.service === 'web')
   const jsonrpc = descriptor.services.find((service) => service.service === 'jsonrpc')
-  if (web === undefined || jsonrpc === undefined) return false
+  if (jsonrpc === undefined) return false
   try {
-    await fetch(web.endpoint)
+    if (web !== undefined) await fetch(web.endpoint)
     const socket = net.createConnection(jsonrpc.endpoint)
     await new Promise<void>((resolve, reject) => {
       socket.once('connect', () => resolve())

@@ -160,6 +160,25 @@ test('descriptor compatibility accepts required services and capabilities', () =
   }), true)
 })
 
+test('descriptor compatibility accepts a JSON-RPC-only TUI Host', () => {
+  const jsonrpcOnly = descriptor({
+    services: [
+      { service: 'jsonrpc', transport: 'unix', endpoint: '/tmp/cocode-jsonrpc.sock', protocolRevision: '1.0' },
+    ],
+    capabilities: ['jsonrpc', 'session'],
+  })
+  assert.equal(isHostDescriptorCompatible(jsonrpcOnly, scope, {
+    requiredServices: ['jsonrpc'],
+    requiredCapabilities: ['session'],
+    minProtocolRevision: '1.0',
+  }), true)
+  assert.equal(isHostDescriptorCompatible(jsonrpcOnly, scope, {
+    requiredServices: ['web', 'jsonrpc'],
+    requiredCapabilities: ['session'],
+    minProtocolRevision: '1.0',
+  }), false)
+})
+
 test('descriptor compatibility rejects mismatched scope, protocol, service, and capability', () => {
   const request = {
     requiredServices: ['web', 'jsonrpc'],
