@@ -6,6 +6,11 @@ import type {
 } from "../../../contracts/ipc/dsh-runtime.contract"
 import { createDshBundleLoader } from "./dsh-bundle-loader"
 import { selectDshBootEntries } from "./dsh-boot-entries"
+import {
+	DSH_CLIENT_MODULES_ID,
+	ensureDshModuleLoader,
+	type DshModuleLoaderTarget,
+} from "./dsh-module-loader"
 import { installDshTransport, rebindDshTransport } from "./dsh-transport"
 import {
 	isDesktopDshBridgeAvailable,
@@ -24,6 +29,7 @@ const DESKTOP_DARWIN_TITLEBAR_INSET_PX = 32
 export async function startRenderer(element: HTMLElement): Promise<void> {
 	logger.info("renderer.start.started", { component: "renderer" })
 	try {
+		const moduleLoader = ensureDshModuleLoader()
 		const bootstrap = await loadDshBootstrap()
 		applyInitialTheme(bootstrap.themePreference)
 		markDesktopHost()
@@ -48,6 +54,7 @@ export async function startRenderer(element: HTMLElement): Promise<void> {
 					new URL(entry.url, runtimeOrigin).href,
 			})),
 		}
+		await preloadDshModuleSystem(moduleLoader, window.__DSH_BOOT__.entries)
 
 		await new AppWebEntry(element, {
 			loadBundle: createDshBundleLoader(),
@@ -58,6 +65,22 @@ export async function startRenderer(element: HTMLElement): Promise<void> {
 		logger.error("renderer.start.failed", error, { component: "renderer" })
 		element.replaceChildren(createFailureView(error))
 	}
+}
+
+/** Load the bootstrap bundle that the Host normally parser-preloads in HTML. */
+async function preloadDshModuleSystem(
+	target: DshModuleLoaderTarget,
+	entries: readonly { readonly id: string; readonly url: string }[],
+): Promise<void> {
+	if (target.mode !== "queue") {
+		throw new Error("web boot: DSH module loader was already activated before the shell started")
+	}
+	if (target.pendingQueue.some((registration) => registration.id === DSH_CLIENT_MODULES_ID)) return
+	const modulesEntry = entries.find((entry) => entry.id === DSH_CLIENT_MODULES_ID)
+	if (modulesEntry === undefined) {
+		throw new Error(`web boot: ${DSH_CLIENT_MODULES_ID} is missing from the bootstrap graph`)
+	}
+	await createDshBundleLoader()(modulesEntry.url)
 }
 
 function installRuntimeRecoveryListeners(): void {

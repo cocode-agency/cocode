@@ -6,7 +6,7 @@ import { parseDshBootManifest } from "../../contracts/schemas/dsh-runtime.schema
 
 export function extractDshBootManifest(html: string): DshBootManifestDto {
 	const match = html.match(
-		/<script\b[^>]*>\s*window\.__DSH_BOOT__\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/,
+		/<script\b[^>]*>\s*(?:window\.__DSH_BOOT__|(?:window|globalThis)\s*\[\s*["']__DSH_BOOT__["']\s*\])\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/,
 	)
 	if (match?.[1] === undefined) {
 		throw new Error("DSH runtime index did not contain window.__DSH_BOOT__.")

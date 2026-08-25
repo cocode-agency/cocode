@@ -89,7 +89,7 @@ test('writes a new file as flat and keeps an existing flat file flat', async () 
 })
 
 test('keeps v1 layout and records during set and unset', async () => {
-  const { filename } = await tempCredentials('version: 1\nrefs:\n  A: old\nrecords:\n  r:\n    kind: api-key\n')
+  const { filename } = await tempCredentials('version: 1\nrefs:\n  A: old\nrecords:\n  test/example:\n    kind: api-key\n')
   await writeCredentialRef(filename, 'B', 'new')
   await writeCredentialRef(filename, 'A', undefined)
   const text = await readFile(filename, 'utf8')

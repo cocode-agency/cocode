@@ -36,6 +36,17 @@ describe("extractDshBootManifest", () => {
 		})
 	})
 
+	it("parses the globalThis bracket form emitted by the DSH webserver", () => {
+		const manifest = extractDshBootManifest(
+			`<script>globalThis["__DSH_BOOT__"] = ${JSON.stringify({
+				rev: "globalThis",
+				entries: [],
+			})}</script>`,
+		)
+
+		assert.deepEqual(manifest, { rev: "globalThis", entries: [] })
+	})
+
 	it("rejects a page without the boot script", () => {
 		assert.throws(
 			() => extractDshBootManifest("<html><body>missing</body></html>"),

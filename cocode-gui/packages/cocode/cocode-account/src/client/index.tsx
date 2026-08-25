@@ -775,7 +775,7 @@ export function apply(ctx: ClientContext): void {
       connection.hostDescription.subscribe(() => { providers.refreshSelection() }),
       ctx.remote.$on("llm/adapters-updated", refresh),
       ctx.remote.$on("settings/document-updated", refresh),
-      ctx.remote.$on("credentials/updated", refresh),
+      ctx.remote.$on("credentials/reference-updated", refresh),
       ctx.on("connection/reset", refresh),
     ]
     refresh()

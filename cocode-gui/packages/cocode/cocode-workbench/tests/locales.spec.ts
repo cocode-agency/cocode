@@ -48,3 +48,12 @@ describe("tab context menu translations", () => {
     expect(t("tabMenu.closeOthers")).toBe("Close Others")
   })
 })
+
+describe("diagnostic translations", () => {
+  it("uses desktop terminology for the memory metric in both locales", () => {
+    expect(zh["diagnostics.electronMemory"]).toBe("桌面端内存")
+    expect(en["diagnostics.electronMemory"]).toBe("Desktop memory")
+    expect(zh["diagnostics.electronMemory"]).not.toContain("Electron")
+    expect(en["diagnostics.electronMemory"]).not.toContain("Electron")
+  })
+})

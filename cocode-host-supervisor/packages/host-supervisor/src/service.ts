@@ -226,7 +226,11 @@ class SupervisorService {
     const workspace = join(this.scope.dshHome, 'workspaces', 'default')
     mkdirSync(workspace, { recursive: true })
     const args = this.scope.profile === 'web' ? ['web'] : ['--profile', this.scope.profile]
-    args.push('--patch', slot.patch, '--port', '0')
+    // Electron owns the Cocode surface. The Web app is still required as the
+    // Host/API service, but its default browser handoff must stay disabled.
+    // Launcher-owned flags must precede the first app-owned flag. Otherwise
+    // the cmdline splitter hands --patch to web-startup, which rejects it.
+    args.push('--patch', slot.patch, '--no-open', '--port', '0')
     this.logger.log('info', 'dsh.host.spawn.started', { profile: this.scope.profile, runtimeChannel: this.scope.runtimeChannel })
     const child = spawn(process.execPath, [slot.entry, ...args], {
       cwd: workspace,

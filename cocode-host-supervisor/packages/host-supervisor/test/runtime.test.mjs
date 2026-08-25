@@ -44,6 +44,11 @@ test('repairs an incomplete DSH runtime slot before booting it', () => {
   }
 })
 
+test('Supervisor host launch disables the Web app default-browser handoff', () => {
+  const serviceSource = readFileSync(fileURLToPath(new URL('../src/service.ts', import.meta.url)), 'utf8')
+  assert.match(serviceSource, /args\.push\('--patch', slot\.patch, '--no-open', '--port', '0'\)/)
+})
+
 test('repairs a complete slot when a registered plugin package is missing', () => {
   const runtimeHome = mkdtempSync(join(tmpdir(), 'cocode-runtime-dependency-slot-test-'))
   const pluginSource = fileURLToPath(new URL('../../../runtime/plugins/cocode-runtime-test-plugin', import.meta.url))

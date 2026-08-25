@@ -3,10 +3,19 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { watch } from 'chokidar'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { CredentialProvider, credentialRef } from '@deepseek-ai/dsh-credentials'
+import { CredentialProvider, credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
+import type {
+  CredentialKey,
+  CredentialRecord,
+  CredentialRecordEntry,
+  CredentialRecordInfo,
+} from '@deepseek-ai/dsh-credentials'
 import {
+  deleteCredentialRecord,
   loadCredentials,
+  modifyCredentialRecord,
   refreshCredentials,
+  sameCredentialRecord,
   writeCredentialRef,
   type CredentialsDocument,
 } from './credentials-local.js'
@@ -52,6 +61,16 @@ export class LocalCredentialProvider extends CredentialProvider {
     this.ctx.logger.info(`credentials-local: document-layout=${this.document.layout}`)
   }
 
+  private notifyDocumentChanges(previous: CredentialsDocument, next: CredentialsDocument): void {
+    for (const ref of new Set([...previous.refs.keys(), ...next.refs.keys()])) {
+      if (previous.refs.get(ref) !== next.refs.get(ref)) this.notifyUpdated(credentialRef(ref))
+    }
+    for (const key of new Set([...previous.records.keys(), ...next.records.keys()])) {
+      if (sameCredentialRecord(previous.records.get(key), next.records.get(key))) continue
+      this.notifyRecordUpdated(parseCredentialKey(key))
+    }
+  }
+
   async *[Service.init]() {
     yield async () => { this.closed = true; await this.operations }
     await this.loadCurrent()
@@ -93,6 +112,56 @@ export class LocalCredentialProvider extends CredentialProvider {
     return this.write(ref, undefined)
   }
 
+  readRecord(key: CredentialKey): Promise<CredentialRecord | undefined> {
+    return Promise.resolve(this.document.records.get(key) as CredentialRecord | undefined)
+  }
+
+  describeRecord(key: CredentialKey): Promise<CredentialRecordInfo> {
+    const stored = this.document.records.get(key)
+    return Promise.resolve(stored === undefined
+      ? { configured: false, writable: true }
+      : { configured: true, kind: stored.kind as CredentialRecord['kind'], writable: true })
+  }
+
+  listRecords(): Promise<readonly CredentialRecordEntry[]> {
+    return Promise.resolve([...this.document.records].map(([key, record]) => ({
+      key: parseCredentialKey(key),
+      kind: record.kind as CredentialRecord['kind'],
+    })))
+  }
+
+  modifyRecord(
+    key: CredentialKey,
+    mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
+  ): Promise<CredentialRecord | undefined> {
+    if (this.closed) throw new Error(`credentials-local: disposed; cannot modify "${key}"`)
+    const task = this.operations.then(async () => {
+      if (this.closed) throw new Error(`credentials-local: disposed before modifying "${key}"`)
+      const result = await modifyCredentialRecord(this.spec.filename, key, async current => mutate(current as CredentialRecord | undefined))
+      const previous = this.document
+      this.document = result.document
+      if (result.changed && !sameCredentialRecord(previous.records.get(key), this.document.records.get(key))) {
+        this.notifyRecordUpdated(key)
+      }
+      return result.record as CredentialRecord | undefined
+    })
+    this.operations = task.then(() => undefined, () => undefined)
+    return task
+  }
+
+  deleteRecord(key: CredentialKey): Promise<void> {
+    if (this.closed) throw new Error(`credentials-local: disposed; cannot delete "${key}"`)
+    const task = this.operations.then(async () => {
+      if (this.closed) throw new Error(`credentials-local: disposed before deleting "${key}"`)
+      const result = await deleteCredentialRecord(this.spec.filename, key)
+      const previous = this.document
+      this.document = result.document
+      if (result.changed && previous.records.has(key)) this.notifyRecordUpdated(key)
+    })
+    this.operations = task.then(() => undefined, () => undefined)
+    return task
+  }
+
   private write(ref: string, value: string | undefined) {
     const credential = credentialRef(ref)
     if (this.inherited(ref) !== undefined) throw new Error(`credentials-local: "${ref}" is supplied by the launching environment`)
@@ -100,7 +169,7 @@ export class LocalCredentialProvider extends CredentialProvider {
       await writeCredentialRef(this.spec.filename, credential, value)
       const previous = this.document
       await this.loadCurrent()
-      if (previous.refs.get(ref) !== this.document.refs.get(ref)) this.notifyUpdated(credential)
+      this.notifyDocumentChanges(previous, this.document)
     })
     this.operations = task.then(() => undefined, () => undefined)
     return task
@@ -113,9 +182,7 @@ export class LocalCredentialProvider extends CredentialProvider {
       try {
         const next = await refreshCredentials(this.spec.filename, previous)
         this.document = next
-        for (const ref of new Set([...previous.refs.keys(), ...next.refs.keys()])) {
-          if (previous.refs.get(ref) !== next.refs.get(ref)) this.notifyUpdated(credentialRef(ref))
-        }
+        this.notifyDocumentChanges(previous, next)
       } catch (error) {
         const details = error as { code?: unknown; line?: unknown; column?: unknown; field?: unknown }
         const code = typeof details.code === 'string' ? details.code : 'CREDENTIALS_RELOAD_FAILED'

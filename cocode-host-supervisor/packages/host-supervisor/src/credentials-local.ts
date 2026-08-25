@@ -2,12 +2,14 @@ import { chmod, lstat, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Document, parseDocument } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
+import type { CredentialRecord as DshCredentialRecord } from '@deepseek-ai/dsh-credentials'
 
 export const DOCUMENT_VERSION = 1
 
 export type CredentialsLayout = 'flat' | 'v1' | 'empty'
 export type CredentialRefMap = Map<string, string>
-export type CredentialRecord = Record<string, unknown>
+export type CredentialRecord = DshCredentialRecord
 export type CredentialRecordMap = Map<string, CredentialRecord>
 
 export type CredentialsDocument = {
@@ -106,9 +108,78 @@ function recordsFrom(value: unknown, filename: string): CredentialRecordMap {
     if (item === null || typeof item !== 'object' || Array.isArray(item)) {
       throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} must be a mapping`, filename, undefined, undefined, key)
     }
-    records.set(key, item as CredentialRecord)
+    try {
+      parseCredentialKey(key)
+    } catch {
+      throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} has an invalid key`, filename, undefined, undefined, key)
+    }
+    records.set(key, parseRecord(key, item as Record<string, unknown>, filename))
   }
   return records
+}
+
+function parseRecord(key: string, value: Record<string, unknown>, filename: string): CredentialRecord {
+  const kind = value.kind
+  if (kind === 'grant') {
+    assertRecordFields(key, value, ['kind', 'payload'], filename)
+    if (!Object.prototype.hasOwnProperty.call(value, 'payload')) {
+      throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} must have a payload`, filename, undefined, undefined, key)
+    }
+    assertJsonValue(`record ${key} payload`, value.payload, filename)
+    return { kind, payload: value.payload }
+  }
+  if (kind === 'api-key') {
+    assertRecordFields(key, value, ['kind', 'key', 'env'], filename)
+    if (value.key !== undefined && (typeof value.key !== 'string' || value.key.length === 0)) {
+      throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} has an invalid key`, filename, undefined, undefined, key)
+    }
+    let env: Record<string, string> | undefined
+    if (value.env !== undefined) {
+      if (value.env === null || typeof value.env !== 'object' || Array.isArray(value.env)) {
+        throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} env must be a mapping`, filename, undefined, undefined, key)
+      }
+      env = {}
+      for (const [ref, envValue] of Object.entries(value.env as Record<string, unknown>)) {
+        try {
+          credentialRef(ref)
+        } catch {
+          throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} env has an invalid ref`, filename, undefined, undefined, ref)
+        }
+        if (typeof envValue !== 'string' || envValue.length === 0) {
+          throw new CredentialsError('CREDENTIALS_EMPTY_VALUE', `record ${key} env ${ref} must be non-empty`, filename, undefined, undefined, ref)
+        }
+        env[ref] = envValue
+      }
+    }
+    return { kind, ...(value.key === undefined ? {} : { key: value.key }), ...(env === undefined ? {} : { env }) }
+  }
+  throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} has an unknown kind`, filename, undefined, undefined, key)
+}
+
+function assertRecordFields(key: string, value: Record<string, unknown>, allowed: readonly string[], filename: string): void {
+  for (const field of Object.keys(value)) {
+    if (!allowed.includes(field)) {
+      throw new CredentialsError('CREDENTIALS_INVALID_YAML', `record ${key} has an unknown field ${field}`, filename, undefined, undefined, field)
+    }
+  }
+}
+
+function assertJsonValue(where: string, value: unknown, filename: string, seen = new Set<object>()): void {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) return
+    throw new CredentialsError('CREDENTIALS_INVALID_YAML', `${where} has a non-finite number`, filename)
+  }
+  if (typeof value === 'object') {
+    if (seen.has(value)) throw new CredentialsError('CREDENTIALS_INVALID_YAML', `${where} is cyclic`, filename)
+    if (Object.getPrototypeOf(value) === Object.prototype || Array.isArray(value)) {
+      seen.add(value)
+      for (const nested of Object.values(value)) assertJsonValue(where, nested, filename, seen)
+      seen.delete(value)
+      return
+    }
+  }
+  throw new CredentialsError('CREDENTIALS_INVALID_YAML', `${where} is not JSON-compatible`, filename)
 }
 
 export function detectCredentialsLayout(text: string, filename: string): CredentialsLayout {
@@ -210,6 +281,118 @@ export function renderCredentialsUpdate(document: CredentialsDocument, ref: stri
     else next.setIn(['refs', ref], value)
   }
   return next.toString()
+}
+
+function ensureRecordKey(key: string, filename: string): void {
+  try {
+    parseCredentialKey(key)
+  } catch {
+    throw new CredentialsError('CREDENTIALS_INVALID_YAML', `invalid credential record key ${key}`, filename, undefined, undefined, key)
+  }
+}
+
+function renderRecordDocument(document: CredentialsDocument, key: string, record: CredentialRecord | undefined): string {
+  ensureRecordKey(key, '<credentials>')
+  if (record !== undefined) parseRecord(key, record as unknown as Record<string, unknown>, '<credentials>')
+
+  const next = document.text.trim() === ''
+    ? new Document()
+    : parseDocument(document.text, { uniqueKeys: true })
+
+  if (document.layout === 'flat') {
+    // A flat document predates record storage. Move its existing references
+    // under the versioned refs section before introducing records, retaining
+    // all values while leaving reference writes' legacy flat behavior intact.
+    next.set('version', DOCUMENT_VERSION)
+    next.set('refs', Object.fromEntries(document.refs))
+    for (const ref of document.refs.keys()) next.delete(ref)
+  } else if (next.get('version') === undefined) {
+    next.set('version', DOCUMENT_VERSION)
+  }
+
+  if (record === undefined) next.deleteIn(['records', key])
+  else next.setIn(['records', key], record)
+  return next.toString()
+}
+
+export function renderCredentialRecordUpdate(
+  document: CredentialsDocument,
+  key: string,
+  record: CredentialRecord | undefined,
+): string {
+  return renderRecordDocument(document, key, record)
+}
+
+export type CredentialRecordMutation = {
+  readonly document: CredentialsDocument
+  readonly record: CredentialRecord | undefined
+  readonly changed: boolean
+}
+
+async function updateCredentialRecord(
+  filename: string,
+  key: string,
+  mutate: ((current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>) | undefined,
+  remove: boolean,
+): Promise<CredentialRecordMutation> {
+  ensureRecordKey(key, filename)
+  await assertPrivateFile(filename)
+  await ensurePrivateDirectory(filename)
+  try {
+    return await withFileLock(filename, async () => {
+      await assertPrivateFile(filename)
+      const currentText = await readText(filename)
+      const current = currentText === undefined || currentText.trim() === ''
+        ? { layout: 'empty', refs: new Map(), records: new Map(), text: currentText ?? '' } satisfies CredentialsDocument
+        : parseCredentialsDocument(currentText, filename)
+      const existing = current.records.get(key)
+
+      if (remove) {
+        if (existing === undefined) return { document: current, record: undefined, changed: false }
+        const nextText = renderRecordDocument(current, key, undefined)
+        await writeFileAtomic(filename, nextText, { mode: 0o600, dirMode: 0o700 })
+        const next = parseCredentialsDocument(nextText, filename)
+        return { document: next, record: undefined, changed: true }
+      }
+
+      const nextRecord = await mutate!(existing)
+      if (nextRecord === undefined) return { document: current, record: existing, changed: false }
+      const nextText = renderRecordDocument(current, key, nextRecord)
+      await writeFileAtomic(filename, nextText, { mode: 0o600, dirMode: 0o700 })
+      const next = parseCredentialsDocument(nextText, filename)
+      return { document: next, record: next.records.get(key), changed: true }
+    }, { waitMs: 30_000 })
+  } catch (error) {
+    if (error instanceof CredentialsError) throw error
+    throw new CredentialsError('CREDENTIALS_WRITE_FAILED', 'credential record write failed', filename)
+  }
+}
+
+export function modifyCredentialRecord(
+  filename: string,
+  key: string,
+  mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
+): Promise<CredentialRecordMutation> {
+  return updateCredentialRecord(filename, key, mutate, false)
+}
+
+export function deleteCredentialRecord(filename: string, key: string): Promise<CredentialRecordMutation> {
+  return updateCredentialRecord(filename, key, undefined, true)
+}
+
+export function sameCredentialRecord(left: CredentialRecord | undefined, right: CredentialRecord | undefined): boolean {
+  return sameJsonValue(left, right)
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (typeof left !== 'object' || typeof right !== 'object' || left === null || right === null) return false
+  if (Array.isArray(left) !== Array.isArray(right)) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every(key => key in right
+    && sameJsonValue((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]))
 }
 
 export async function writeCredentialRef(filename: string, ref: string, value: string | undefined): Promise<void> {
