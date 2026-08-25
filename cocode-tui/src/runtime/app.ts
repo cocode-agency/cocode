@@ -161,6 +161,7 @@ import {
 } from './question-coordinator.ts'
 import { refreshRuntimeCapabilities } from './capability-adapter.ts'
 import { PromptQueueCoordinator } from './prompt-queue-coordinator.ts'
+import { renameSession } from './session-rename.ts'
 import type { DraftImage } from './prompt-queue.ts'
 import type { PromptQueuePickerState } from './prompt-queue-picker.ts'
 import { routeBoundaryPickerAction } from './action-router.ts'
@@ -439,6 +440,7 @@ export type TuiCommandCtx = {
   setTheme?: (name: 'dark' | 'light') => void
   setLocale?: (value: string) => void
   setModel?: (value: string) => void
+  renameSession?: (title: string) => void
   resumeSessions?: () => Promise<void>
   showSkillsPicker?: () => void
   showPlugins?: (args: string) => void
@@ -1513,6 +1515,29 @@ class TuiAppImpl implements TuiApp {
       },
       setModel: (value) => {
         this.setModel(value)
+      },
+      renameSession: (title) => {
+        if (this.externalSession !== undefined) {
+          this.notice = { tone: 'info', message: 'Session rename is unavailable for this session.' }
+          this.emit()
+          return
+        }
+        void renameSession(this.runtime, this.capabilities, this.sessionId, title).then(
+          (outcome) => {
+            if (outcome.kind === 'unavailable' || outcome.result === undefined) {
+              this.notice = { tone: 'info', message: 'Session rename is unavailable for this session.' }
+              this.emit()
+              return
+            }
+            this.sessionTitleOverride = outcome.result.title
+            this.notice = { tone: 'info', message: `Session renamed to ${outcome.result.title}` }
+            this.emit()
+          },
+          (error: unknown) => {
+            this.notice = { tone: 'error', message: errorMessage(error) }
+            this.emit()
+          },
+        )
       },
       showModelPicker: () => {
         void this.openModelPicker()
@@ -3682,6 +3707,7 @@ function runtimeCapabilityEntries(
     'commands',
     'plugins',
     'pluginsMutate',
+    'sessionRename',
     'promptMode',
     'queueMode',
   ]
@@ -3696,7 +3722,7 @@ function runtimeCapabilityEntries(
         ? name === 'sessionList'
           ? effective.sessionList !== 'none'
           : effective[name as keyof Omit<TuiCapabilities, 'sessionList'>] === true
-        : snapshot.capabilities[name],
+        : snapshot.capabilities[name] === true,
   }))
 }
 

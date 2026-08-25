@@ -120,6 +120,15 @@ export function createBuiltinCommands(): CommandRegistry {
     if (value === '') ctx.showModelPicker?.()
     else ctx.setModel?.(value)
   })
+  registry.register({
+    name: 'rename',
+    summary: 'Rename the current session',
+    summaryZh: '重命名当前会话',
+    input: { hint: '<title>' },
+    kind: 'local',
+    available: (caps) => caps.sessionRename === true,
+    run: (ctx, args) => ctx.renameSession?.(args),
+  })
   localWithInput('effort', 'Set reasoning effort for the current model', '<level>', (ctx, args) => {
     const value = args.trim()
     if (value === '') ctx.showEffortPicker?.()

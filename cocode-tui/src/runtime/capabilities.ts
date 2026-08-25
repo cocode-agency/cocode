@@ -19,6 +19,7 @@ export type TuiCapabilities = {
   commands: boolean
   plugins: boolean
   pluginsMutate: boolean
+  sessionRename?: boolean
 }
 
 export const P0_CAPABILITIES: TuiCapabilities = {

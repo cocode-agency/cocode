@@ -27,6 +27,7 @@ export type CommandContextOptions = {
   setTheme?: TuiCommandCtx['setTheme']
   setLocale?: TuiCommandCtx['setLocale']
   setModel?: TuiCommandCtx['setModel']
+  renameSession?: TuiCommandCtx['renameSession']
   showModelPicker?: TuiCommandCtx['showModelPicker']
   showEffortPicker?: TuiCommandCtx['showEffortPicker']
   setEffort?: TuiCommandCtx['setEffort']
@@ -72,6 +73,7 @@ export type AppCommandContextOptions = {
   setTheme?: TuiCommandCtx['setTheme']
   setLocale?: TuiCommandCtx['setLocale']
   setModel?: TuiCommandCtx['setModel']
+  renameSession?: TuiCommandCtx['renameSession']
   showModelPicker?: TuiCommandCtx['showModelPicker']
   showEffortPicker?: TuiCommandCtx['showEffortPicker']
   setEffort?: TuiCommandCtx['setEffort']
@@ -107,6 +109,7 @@ export function createCommandContext(options: CommandContextOptions): TuiCommand
     setTheme: options.setTheme,
     setLocale: options.setLocale,
     setModel: options.setModel,
+    renameSession: options.renameSession,
     showModelPicker: options.showModelPicker,
     showEffortPicker: options.showEffortPicker,
     setEffort: options.setEffort,
@@ -195,6 +198,7 @@ export function createAppCommandContext(options: AppCommandContextOptions): TuiC
     setTheme: options.setTheme,
     setLocale: options.setLocale,
     setModel: options.setModel,
+    renameSession: options.renameSession,
     showModelPicker: options.showModelPicker,
     showEffortPicker: options.showEffortPicker,
     setEffort: options.setEffort,

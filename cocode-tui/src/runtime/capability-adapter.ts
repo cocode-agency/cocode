@@ -29,6 +29,7 @@ export function applyRuntimeCapabilities(
     commands: runtime.capabilities.commands,
     plugins: runtime.capabilities.plugins,
     pluginsMutate: runtime.capabilities.pluginsMutate,
+    sessionRename: runtime.capabilities.sessionRename === true,
     sessionList: runtime.capabilities.sessionList
       ? 'rpc'
       : configured.sessionList === 'jsonl'
