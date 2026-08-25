@@ -44,6 +44,8 @@ type SessionProjectionSnapshot = {
 
 type SessionProjectionService = {
   snapshot?: (session: Agent["session"]) => SessionProjectionSnapshot;
+  cachedSnapshot?: (meta: { id: string; createdAt: number; cwd?: string }) => SessionProjectionSnapshot | undefined;
+  coldSnapshot?: (id: string) => Promise<SessionProjectionSnapshot>;
   onChanged?: (
     listener: (
       session: Agent["session"],
@@ -703,10 +705,11 @@ export class TuiCompanionGateway {
         const blank = !inspection.events.some((event) => event.type === "turn/start");
         const agentPreset = resolveSessionPreset(inspection.meta, inspection.events);
         const title = readSessionTitle(inspection.events);
+        const projectionService = this.ctx.get("sessionProjections") as SessionProjectionService | undefined;
+        const projectionCache = this.ctx.get("sessionProjectionCache") as SessionProjectionService | undefined;
         const projections = live === undefined
-          ? undefined
-          : (this.ctx.get("sessionProjections") as SessionProjectionService | undefined)
-              ?.snapshot?.(live.session);
+          ? projectionCache?.cachedSnapshot?.({ id: String(header.id), createdAt: header.createdAt, ...(header.cwd === undefined ? {} : { cwd: header.cwd }) })
+          : projectionService?.snapshot?.(live.session);
         return {
           sessionId: String(header.id),
           createdAt: header.createdAt,
@@ -879,10 +882,20 @@ export class TuiCompanionGateway {
     const before = params.beforeSeq === undefined ? Number.POSITIVE_INFINITY : params.beforeSeq;
     const filtered = events.filter((event) => event.seq < before);
     const maxMessages = params.maxMessages === undefined ? undefined : Math.max(1, Math.trunc(params.maxMessages));
-    const projections = before === Number.POSITIVE_INFINITY && live !== undefined
-      ? (this.ctx.get("sessionProjections") as SessionProjectionService | undefined)
-          ?.snapshot?.(live.session)
-      : undefined;
+    let projections: SessionProjectionSnapshot | undefined;
+    if (before === Number.POSITIVE_INFINITY) {
+      if (live !== undefined) {
+        projections = (this.ctx.get("sessionProjections") as SessionProjectionService | undefined)
+          ?.snapshot?.(live.session);
+      } else {
+        try {
+          projections = await (this.ctx.get("sessionProjectionCache") as SessionProjectionService | undefined)
+            ?.coldSnapshot?.(params.sessionId);
+        } catch {
+          projections = undefined;
+        }
+      }
+    }
     if (maxMessages === undefined) return { events: [...filtered], hasMore: false, ...(projections === undefined ? {} : { projections }) };
     const messageIndexes = filtered
       .map((event, index) => isHistoryMessage(event) ? index : -1)
