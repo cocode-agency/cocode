@@ -17,6 +17,7 @@ import type {
   TuiPluginEntry,
   TuiWorkspaceEnsureResult,
   TuiModelCatalog,
+  TuiRemoteQueueItem,
 } from '@cocode/tui-connection'
 import type {
   ExternalDshReadSource,
@@ -164,6 +165,15 @@ import { PromptQueueCoordinator } from './prompt-queue-coordinator.ts'
 import { renameSession } from './session-rename.ts'
 import type { DraftImage } from './prompt-queue.ts'
 import type { PromptQueuePickerState } from './prompt-queue-picker.ts'
+import {
+  closeRemoteQueuePicker,
+  createRemoteQueuePicker,
+  moveRemoteQueueSelection,
+  selectedRemoteQueueItem,
+  setRemoteQueueItems,
+  setRemoteQueueQuery,
+  type RemoteQueuePickerState,
+} from './remote-queue-picker.ts'
 import { routeBoundaryPickerAction } from './action-router.ts'
 import {
   closeSessionTreePicker,
@@ -283,6 +293,12 @@ export type TuiAction =
   | { type: 'queue.close' }
   | { type: 'queue.delete' }
   | { type: 'queue.restore' }
+  | { type: 'remoteQueue.open' }
+  | { type: 'remoteQueue.setQuery'; query: string }
+  | { type: 'remoteQueue.move'; delta: number }
+  | { type: 'remoteQueue.close' }
+  | { type: 'remoteQueue.delete' }
+  | { type: 'remoteQueue.steer' }
   | { type: 'checklist.open' }
   | { type: 'checklist.move'; delta: number }
   | { type: 'checklist.close' }
@@ -359,11 +375,13 @@ export type TuiSnapshot = {
     transcript?: { evicted: number }
     subagents?: TuiSubagentActivity
     queueCount: number
+    remoteQueueCount: number
     focusMode: boolean
     permissionMode: string
     planMode: boolean
   }
   queuePicker?: PromptQueuePickerState
+  remoteQueuePicker?: RemoteQueuePickerState
   checklist?: ChecklistState
   helpOpen: boolean
   verbose: boolean
@@ -556,6 +574,8 @@ class TuiAppImpl implements TuiApp {
   private highestSessionSeq = -1
   private lastSubagent: TuiSubagentActivity['last']
   private readonly promptQueue = new PromptQueueCoordinator()
+  private remoteQueue: TuiRemoteQueueItem[] = []
+  private remoteQueuePicker: RemoteQueuePickerState | undefined
   private capturingByok = false
   private emitScheduled = false
   private closePromise: Promise<void> | undefined
@@ -783,16 +803,18 @@ class TuiAppImpl implements TuiApp {
         ...(assemblerStats.evictedNodes === 0
           ? {}
           : { transcript: { evicted: assemblerStats.evictedNodes } }),
-        subagents: {
+      subagents: {
           running: this.activeSubagents.size,
           ...(this.lastSubagent === undefined ? {} : { last: this.lastSubagent }),
-        },
-        queueCount: this.promptQueue.size,
+      },
+      queueCount: this.promptQueue.size,
+      remoteQueueCount: this.remoteQueue.length,
         focusMode: this.focusMode,
         permissionMode: this.permissionMode,
         planMode: this.planMode,
       },
       queuePicker: this.promptQueue.picker,
+      remoteQueuePicker: this.remoteQueuePicker,
       checklist:
         this.checklist === undefined
           ? undefined
@@ -1304,6 +1326,39 @@ class TuiAppImpl implements TuiApp {
         return
       case 'queue.restore':
         this.restoreSelectedQueuedPrompt()
+        return
+      case 'remoteQueue.open':
+        if (!this.capabilities.queueMutation || this.remoteQueue.length === 0) {
+          this.notice = { tone: 'info', message: this.locale === 'zh' ? 'Host 队列为空或当前运行时不支持。' : 'The Host queue is empty or unavailable.' }
+        } else {
+          this.remoteQueuePicker = createRemoteQueuePicker(this.remoteQueue)
+          this.notice = undefined
+        }
+        this.emit()
+        return
+      case 'remoteQueue.setQuery':
+        if (this.remoteQueuePicker !== undefined) {
+          this.remoteQueuePicker = setRemoteQueueQuery(this.remoteQueuePicker, action.query)
+          this.emit()
+        }
+        return
+      case 'remoteQueue.move':
+        if (this.remoteQueuePicker !== undefined) {
+          this.remoteQueuePicker = moveRemoteQueueSelection(this.remoteQueuePicker, action.delta)
+          this.emit()
+        }
+        return
+      case 'remoteQueue.close':
+        if (this.remoteQueuePicker !== undefined) {
+          this.remoteQueuePicker = closeRemoteQueuePicker(this.remoteQueuePicker)
+          this.emit()
+        }
+        return
+      case 'remoteQueue.delete':
+        void this.mutateRemoteQueue('remove')
+        return
+      case 'remoteQueue.steer':
+        void this.mutateRemoteQueue('steer')
         return
       case 'checklist.open':
         this.openChecklist()
@@ -3332,13 +3387,21 @@ class TuiAppImpl implements TuiApp {
   }
 
   private openQueuePicker(): void {
-    if (!this.promptQueue.open()) {
-      this.notice = { tone: 'info', message: text(this.locale, 'queueEmpty') }
+    if (this.promptQueue.open()) {
+      this.helpOpen = false
+      this.notice = undefined
       this.emit()
       return
     }
+    if (this.capabilities.queueMutation && this.remoteQueue.length > 0) {
+      this.remoteQueuePicker = createRemoteQueuePicker(this.remoteQueue)
+      this.helpOpen = false
+      this.notice = undefined
+      this.emit()
+      return
+    }
+    this.notice = { tone: 'info', message: text(this.locale, 'queueEmpty') }
     this.helpOpen = false
-    this.notice = undefined
     this.emit()
   }
 
@@ -3363,6 +3426,25 @@ class TuiAppImpl implements TuiApp {
       return
     }
     this.notice = { tone: 'info', message: text(this.locale, 'queueRestored') }
+    this.emit()
+  }
+
+  private async mutateRemoteQueue(action: 'remove' | 'steer'): Promise<void> {
+    const selected = this.remoteQueuePicker === undefined
+      ? undefined
+      : selectedRemoteQueueItem(this.remoteQueuePicker)
+    if (selected === undefined || this.runtime.updateQueue === undefined || !this.capabilities.queueMutation) return
+    try {
+      await this.runtime.updateQueue(this.sessionId, selected.id, { kind: action })
+      this.notice = {
+        tone: 'info',
+        message: action === 'remove'
+          ? text(this.locale, 'queueDeleted')
+          : this.locale === 'zh' ? 'Host 队列项已 steer。' : 'Host queue item steered.',
+      }
+    } catch (error) {
+      this.notice = { tone: 'error', message: errorMessage(error) }
+    }
     this.emit()
   }
 
@@ -3672,6 +3754,12 @@ class TuiAppImpl implements TuiApp {
       subagentFinished: (childSessionId) => {
         this.recordSubagent(childSessionId, 'finished')
         return text(this.locale, 'subagentFinished', { id: safeSubagentId(childSessionId) })
+      },
+      queueSnapshot: (items) => {
+        this.remoteQueue = [...items]
+        if (this.remoteQueuePicker !== undefined) {
+          this.remoteQueuePicker = setRemoteQueueItems(this.remoteQueuePicker, this.remoteQueue)
+        }
       },
       notice: (message) => {
         this.notice = { tone: 'info', message }

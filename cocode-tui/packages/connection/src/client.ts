@@ -1287,6 +1287,17 @@ function mapNotification(notification: {
     if (status !== 'idle' && status !== 'running') return undefined
     return { method: 'session.status', params: { sessionId, status } }
   }
+  if (notification.method === 'session.queue') {
+    const sessionId = params.sessionId
+    if (typeof sessionId !== 'string' || !Array.isArray(params.items)) return undefined
+    const items = params.items.flatMap((value) => {
+      if (!isRecord(value) || typeof value.id !== 'string' || !isRecord(value.message) || !Array.isArray(value.message.content)) return []
+      if (value.placement !== 'queued' && value.placement !== 'steering' && value.placement !== 'context') return []
+      return [{ id: value.id, placement: value.placement as 'queued' | 'steering' | 'context', content: value.message.content as ContentBlock[] }]
+    })
+    if (items.length !== params.items.length) return undefined
+    return { method: 'session.queue', params: { sessionId, items } }
+  }
   if (notification.method === 'subagent.started') {
     const parentSessionId = params.parentSessionId
     const childSessionId = params.childSessionId

@@ -17,6 +17,7 @@ import type {
   RuntimeContext,
   SessionEvent,
   UserMessage,
+  QueueSnapshotItem,
   PluginEntry,
   PluginFiberPhase,
 } from "./types.js";
@@ -358,8 +359,8 @@ export class TuiCompanionGateway {
     options: { registerQuestionProvider?: boolean } = {},
   ) {
     this.disposers.push(
-      ctx.on(
-        "session/event",
+        ctx.on(
+          "session/event",
         (session: Agent["session"], event: SessionEvent) => {
           if (event.type === "turn/start" || event.type === "turn/end") {
             this.turnAllowances.delete(String(session.id));
@@ -368,6 +369,7 @@ export class TuiCompanionGateway {
             sessionId: String(session.id),
             event,
           });
+          this.notifyQueueSnapshot(String(session.id));
         },
       ),
     );
@@ -379,6 +381,7 @@ export class TuiCompanionGateway {
             sessionId: String(agent.session.id),
             status,
           });
+          this.notifyQueueSnapshot(String(agent.session.id));
         },
       ),
     );
@@ -394,6 +397,17 @@ export class TuiCompanionGateway {
     );
     if (options.registerQuestionProvider !== false)
       this.tryRegisterQuestionProvider();
+  }
+
+  private notifyQueueSnapshot(sessionId: string): void {
+    const agent = this.ctx.agents.get(sessionId);
+    const inbox = agent?.inbox;
+    if (inbox === undefined) return;
+    const items: QueueSnapshotItem[] = [
+      ...inbox.nextTurn.map((message) => ({ id: message.id, placement: "queued" as const, message })),
+      ...inbox.nextStep.map((message) => ({ id: message.id, placement: "steering" as const, message })),
+    ];
+    this.transport.notify("session.queue", { sessionId, items });
   }
 
   /** Register optional question provider when the service is already mounted. */
@@ -519,6 +533,7 @@ export class TuiCompanionGateway {
           `session/prompt has unsupported mode: ${String(params.mode)}`,
         );
     }
+    this.notifyQueueSnapshot(params.sessionId);
     return { messageId: message.id };
   }
 
@@ -791,6 +806,7 @@ export class TuiCompanionGateway {
     const child = await this.assertSubagent(params.parentSessionId, params.childSessionId);
     const message = createUserMessage(params.content);
     child.followup(message);
+    this.notifyQueueSnapshot(String(child.session.id));
     return { messageId: message.id };
   }
 
@@ -806,6 +822,7 @@ export class TuiCompanionGateway {
     const descriptor = readSubagentDescriptor(child.session.events, child.session.header.seedLength);
     if (descriptor?.mode !== "continuable") throw new Error("subagent interrupt is unavailable for one-shot children");
     child.cancel({ kind: "user" }, { keepInbox: true });
+    this.notifyQueueSnapshot(String(child.session.id));
     return { accepted: true };
   }
 
@@ -886,6 +903,7 @@ export class TuiCompanionGateway {
       inbox.remove(params.itemId);
       if (params.action.kind === "steer") record.handle.agent.steer(message);
     }
+    this.notifyQueueSnapshot(params.sessionId);
     return { accepted: true };
   }
 

@@ -32,6 +32,7 @@ export type {
   TuiSessionHistoryResult,
   TuiSessionModels,
   TuiQueueAction,
+  TuiRemoteQueueItem,
   TuiAttachmentReadResult,
   TuiWorkspaceEnsureResult,
   TuiModel,

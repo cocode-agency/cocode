@@ -63,6 +63,12 @@ export type UserMessage = {
   source: { kind: "user" };
 };
 
+export type QueueSnapshotItem = {
+  id: string;
+  placement: "queued" | "steering" | "context";
+  message: UserMessage;
+};
+
 export type RuntimeContext = {
   agents: {
     get(id: string): Agent | undefined;

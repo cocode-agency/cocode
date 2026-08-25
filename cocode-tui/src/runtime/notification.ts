@@ -1,6 +1,6 @@
 /** Route runtime notifications into app-owned state callbacks. */
 
-import type { SessionEvent, TuiNotification } from '@cocode/tui-connection'
+import type { SessionEvent, TuiNotification, TuiRemoteQueueItem } from '@cocode/tui-connection'
 
 export function handleNotification(
   notification: TuiNotification,
@@ -12,6 +12,7 @@ export function handleNotification(
     clearInterrupt: () => void
     subagentStarted: (childSessionId: string) => string
     subagentFinished: (childSessionId: string) => string
+    queueSnapshot?: (items: readonly TuiRemoteQueueItem[]) => void
     notice: (message: string) => void
     fail: (message: string) => void
     recover: () => void
@@ -40,6 +41,12 @@ export function handleNotification(
     if (host.isDeadOrExiting()) return
     host.setAgent(notification.params.status)
     host.clearInterrupt()
+    host.emit()
+    return
+  }
+  if (notification.method === 'session.queue') {
+    if (notification.params.sessionId !== host.sessionId) return
+    host.queueSnapshot?.(notification.params.items)
     host.emit()
     return
   }

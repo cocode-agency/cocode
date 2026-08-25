@@ -191,6 +191,12 @@ export type TuiQueueAction =
   | { kind: 'remove' }
   | { kind: 'steer' }
 
+export type TuiRemoteQueueItem = {
+  id: string
+  placement: 'queued' | 'steering' | 'context'
+  content: ContentBlock[]
+}
+
 export type TuiAttachmentReadResult = {
   attachment: TuiImageAttachmentRef
   data: Uint8Array
@@ -375,6 +381,10 @@ export type TuiNotification =
   | {
       method: 'session.status'
       params: { sessionId: string; status: 'idle' | 'running' }
+    }
+  | {
+      method: 'session.queue'
+      params: { sessionId: string; items: TuiRemoteQueueItem[] }
     }
   | {
       method: 'subagent.started'

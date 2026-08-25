@@ -114,6 +114,7 @@ import { terminalViewport } from './terminal-output.ts'
 import { ReviewPicker } from './components/ReviewPicker.tsx'
 import { ApprovalPanel } from './components/ApprovalPanel.tsx'
 import { QueuePicker } from './components/QueuePicker.tsx'
+import { RemoteQueuePicker } from './components/RemoteQueuePicker.tsx'
 import { ChecklistPanel } from './components/ChecklistPanel.tsx'
 import { QuitConfirmation } from './components/QuitConfirmation.tsx'
 import {
@@ -1913,6 +1914,39 @@ export function Chat(props: {
       return
     }
 
+    if (snap.remoteQueuePicker?.open === true) {
+      if (key.escape) {
+        app.dispatch({ type: 'remoteQueue.close' })
+        return
+      }
+      if (key.upArrow || key.downArrow) {
+        app.dispatch({ type: 'remoteQueue.move', delta: key.upArrow ? -1 : 1 })
+        return
+      }
+      if (key.ctrl && input === 'd') {
+        app.dispatch({ type: 'remoteQueue.delete' })
+        return
+      }
+      if (key.ctrl && input === 'r') {
+        app.dispatch({ type: 'remoteQueue.steer' })
+        return
+      }
+      if (key.backspace || key.delete) {
+        app.dispatch({
+          type: 'remoteQueue.setQuery',
+          query: snap.remoteQueuePicker.query.slice(0, -1),
+        })
+        return
+      }
+      if (input !== '' && !key.ctrl && !key.meta && !key.super) {
+        app.dispatch({
+          type: 'remoteQueue.setQuery',
+          query: snap.remoteQueuePicker.query + input,
+        })
+      }
+      return
+    }
+
     if (snap.queuePicker?.open === true) {
       if (key.escape) {
         app.dispatch({ type: 'queue.close' })
@@ -2437,6 +2471,13 @@ export function Chat(props: {
       {queueOpen && snap.queuePicker !== undefined ? (
         <QueuePicker
           state={snap.queuePicker}
+          locale={snap.locale}
+          maxRows={layout.rows.overlay}
+        />
+      ) : null}
+      {snap.remoteQueuePicker?.open === true ? (
+        <RemoteQueuePicker
+          state={snap.remoteQueuePicker}
           locale={snap.locale}
           maxRows={layout.rows.overlay}
         />
