@@ -2188,6 +2188,9 @@ class TuiAppImpl implements TuiApp {
       }))
       this.sessionTreePicker = replaceSessionTreeItems(this.sessionTreePicker, items)
       this.sessionTreePicker = setSessionTreeQuery(this.sessionTreePicker, query)
+      this.notice = result.hasMore
+        ? { tone: 'info', message: this.locale === 'zh' ? '匹配结果超过 20 条，请继续缩小搜索条件。' : 'More than 20 sessions match; refine the search.' }
+        : undefined
       this.emit()
     } catch {
       // Local filtering remains available when a runtime search provider is
