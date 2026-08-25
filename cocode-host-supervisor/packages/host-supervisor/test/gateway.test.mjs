@@ -579,6 +579,23 @@ test('switches the live session model without creating a new agent', async () =>
   })
 })
 
+test('keeps a selected model scoped to its session', async () => {
+  const { ctx, created } = createContext()
+  const gateway = createGateway(ctx)
+  await initialize(gateway)
+
+  await gateway.prompt({ sessionId: 's1', contentBlocks: [{ type: 'text', text: 'hello' }] })
+  await gateway.handleRequest('session.selectModel', {
+    sessionId: 's1',
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-reasoner',
+  })
+  await gateway.prompt({ sessionId: 's2', contentBlocks: [{ type: 'text', text: 'new session' }] })
+
+  assert.equal(created[1].options.agentOptions.provider, 'deepseek-official')
+  assert.equal(created[1].options.agentOptions.model, 'deepseek-v4-flash')
+})
+
 test('keeps the model selection when a companion reconnects to the same agent', async () => {
   const { ctx, created } = createContext()
   const first = createGateway(ctx)

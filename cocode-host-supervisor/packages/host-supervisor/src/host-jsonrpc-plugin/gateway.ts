@@ -204,13 +204,6 @@ type LlmService = {
     reasoning?: LlmModelReasoning;
   }>;
 };
-type AgentDefaultModelService = {
-  saveSelection(selection: {
-    provider: string;
-    model: string;
-    reasoningEffort?: string;
-  }): Promise<void>;
-};
 type AttachmentService = {
   imageLimits: {
     maxImageBytes: number;
@@ -1441,17 +1434,6 @@ export class TuiCompanionGateway {
       provider: this.provider,
       model: this.model,
     }).current = selected;
-    this.provider = selected.provider;
-    this.model = selected.model;
-    const defaults = this.ctx.get("agentDefaultModel") as
-      | AgentDefaultModelService
-      | undefined;
-    try {
-      await defaults?.saveSelection(selected);
-    } catch {
-      // The live session has already switched; a persistence failure must not
-      // force the TUI to create a replacement session.
-    }
     return { selected };
   }
 
