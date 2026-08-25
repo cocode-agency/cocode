@@ -64,6 +64,7 @@ out/
 
 # Cocode package build artifacts
 /cocode-host-supervisor/packages/host-supervisor/lib/
+/cocode-host-supervisor/packages/host-supervisor/package.json
 /cocode-host-supervisor/runtime/
 /cocode-gui/packages/**/lib/
 

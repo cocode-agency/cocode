@@ -25,6 +25,12 @@ mkdirSync(lib, { recursive: true })
 
 execFileSync(process.execPath, [resolve(workspaceRoot, 'node_modules/typescript/bin/tsc'), '-p', join(packageRoot, 'tsconfig.build.json')], { cwd: workspaceRoot, stdio: 'inherit' })
 
+// The bundled DSH LLM attribution helper resolves ../package.json relative to
+// lib/index.js. Materialize the package manifest beside the build output so
+// the bundle keeps working in tests and packaged Supervisor installs.
+const dshLlmManifest = join(workspaceRoot, 'node_modules/@deepseek-ai/dsh-llm/package.json')
+if (existsSync(dshLlmManifest)) cpSync(dshLlmManifest, join(packageRoot, 'package.json'))
+
 await build({
   absWorkingDir: workspaceRoot,
   entryPoints: [join(packageRoot, 'src/index.ts')],
