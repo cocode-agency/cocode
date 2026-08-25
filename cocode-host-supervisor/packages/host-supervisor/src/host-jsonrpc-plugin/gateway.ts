@@ -227,6 +227,7 @@ type PersistenceService = {
       createdAt: number;
       cwd?: string;
       parentSession?: string;
+      origin?: "subagent";
       seedLength?: number;
     }[]
   >;
@@ -236,6 +237,7 @@ type PersistenceService = {
       createdAt: number;
       cwd?: string;
       parentSession?: string;
+      origin?: "subagent";
       seedLength?: number;
       agentPreset?: string;
     };
@@ -501,6 +503,7 @@ export class TuiCompanionGateway {
     );
     const record = await this.getOrCreateSession(params.sessionId);
     this.assertLive(params.sessionId, record);
+    this.assertOrdinarySession(record.handle.agent);
     const message = createUserMessage(contentBlocks);
     switch (params.mode ?? "normal") {
       case "normal":
@@ -640,7 +643,7 @@ export class TuiCompanionGateway {
       );
     const cwd = resolve(params.cwd ?? this.cwd);
     const headers = (await persistence.list()).filter(
-      (header) => header.cwd === cwd,
+      (header) => header.cwd === undefined || resolve(header.cwd) === cwd,
     );
     const sessions = await Promise.all(
       headers.map(async (header) => {
@@ -655,6 +658,7 @@ export class TuiCompanionGateway {
           ...(header.parentSession === undefined
             ? {}
             : { parentSessionId: String(header.parentSession) }),
+          ...(header.origin === undefined ? {} : { origin: header.origin }),
           ...(header.seedLength === undefined
             ? {}
             : { seedLength: header.seedLength }),
@@ -710,32 +714,65 @@ export class TuiCompanionGateway {
     const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
     if (persistence === undefined) throw new Error("subagent/list capability is unavailable");
     const headers = await persistence.list();
-    const children = headers.filter((header) => String(header.parentSession ?? "") === params.parentSessionId);
+    const children = headers.filter((header) => header.origin === "subagent" && String(header.parentSession ?? "") === params.parentSessionId);
     const childIds = new Set(children.map((child) => String(child.id)));
-    const entries = children.map((child) => {
+    const entries = await Promise.all(children.map(async (child) => {
       const agent = this.ctx.agents.get(String(child.id));
+      let mode: "one-shot" | "continuable" = "continuable";
+      let label: string | undefined = String(child.id);
+      try {
+        const inspected = await persistence.inspect(String(child.id));
+        const descriptor = readSubagentDescriptor(inspected.events, inspected.meta.seedLength);
+        if (descriptor !== undefined) {
+          mode = descriptor.mode;
+          label = descriptor.label;
+        }
+      } catch {
+        // A child that disappears during a catalog read is omitted by the
+        // next refresh; the list contract remains fail-soft for one row.
+      }
       return {
         kind: "child",
         id: String(child.id),
         activity: agent?.status === "running" ? "running" : "inactive",
-        mode: "continuable",
-        label: String(child.id),
+        mode,
+        ...(label === undefined ? {} : { label }),
         hasChildren: headers.some((candidate) => childIds.has(String(candidate.parentSession ?? ""))),
       };
-    });
+    }));
     return { entries, parentAvailable: this.ctx.agents.get(params.parentSessionId) !== undefined };
   }
 
   private async assertSubagent(parentSessionId: string, childSessionId: string): Promise<Agent> {
     const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
     const child = this.ctx.agents.get(childSessionId);
-    if (child !== undefined && String(child.session.header.parentSession ?? "") === parentSessionId) return child;
+    if (child !== undefined) {
+      assertSubagentAddress(child, parentSessionId);
+      return child;
+    }
     if (persistence === undefined) throw new Error("subagent persistence is unavailable");
     const inspection = await persistence.inspect(childSessionId);
-    if (String(inspection.meta.parentSession ?? "") !== parentSessionId) throw new Error("subagent is not a child of the requested parent");
-    const record = await this.getOrCreateSession(childSessionId);
+    assertSubagentMetadata(inspection.meta, parentSessionId);
+    const record = await this.resumeSession(childSessionId);
+    this.sessions.set(childSessionId, record);
     this.assertLive(childSessionId, record);
     return record.handle.agent;
+  }
+
+  private async inspectSubagent(parentSessionId: string, childSessionId: string): Promise<{
+    meta: { id: string; parentSession?: string; origin?: "subagent"; seedLength?: number };
+    events: SessionEvent[];
+  }> {
+    const live = this.ctx.agents.get(childSessionId);
+    if (live !== undefined) {
+      assertSubagentAddress(live, parentSessionId);
+      return { meta: live.session.header, events: [...live.session.events] };
+    }
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    if (persistence === undefined) throw new Error("subagent persistence is unavailable");
+    const inspection = await persistence.inspect(childSessionId);
+    assertSubagentMetadata(inspection.meta, parentSessionId);
+    return { meta: inspection.meta, events: inspection.events };
   }
 
   async promptSubagent(params: { parentSessionId: string; childSessionId: string; content: ContentBlock[] }): Promise<{ messageId: string }> {
@@ -748,7 +785,9 @@ export class TuiCompanionGateway {
   }
 
   async interruptSubagent(params: { parentSessionId: string; childSessionId: string }): Promise<{ accepted: true }> {
-    const child = await this.assertSubagent(params.parentSessionId, params.childSessionId);
+    const child = this.ctx.agents.get(params.childSessionId);
+    if (child === undefined) return { accepted: true };
+    assertSubagentAddress(child, params.parentSessionId);
     child.cancel({ kind: "user" }, { keepInbox: true });
     return { accepted: true };
   }
@@ -767,7 +806,7 @@ export class TuiCompanionGateway {
     const maxMessages = params.maxMessages === undefined ? undefined : Math.max(1, Math.trunc(params.maxMessages));
     if (maxMessages === undefined) return { events: [...filtered], hasMore: false };
     const messageIndexes = filtered
-      .map((event, index) => event.type === "user/message" ? index : -1)
+      .map((event, index) => isHistoryMessage(event) ? index : -1)
       .filter((index) => index >= 0);
     const cut = messageIndexes.length <= maxMessages ? 0 : messageIndexes[messageIndexes.length - maxMessages] ?? 0;
     return { events: filtered.slice(cut), hasMore: cut > 0 };
@@ -789,6 +828,7 @@ export class TuiCompanionGateway {
   async renameSession(params: { sessionId: string; title: string }): Promise<{ title: string; seq: number }> {
     const record = await this.getOrCreateSession(params.sessionId);
     this.assertLive(params.sessionId, record);
+    this.assertOrdinarySession(record.handle.agent);
     const titles = this.ctx.get("sessionTitle") as SessionTitleService | undefined;
     if (titles === undefined) throw new Error("session/rename capability is unavailable");
     const accepted = titles.rename(record.handle.agent.session, params.title);
@@ -801,6 +841,7 @@ export class TuiCompanionGateway {
     action: { kind: "edit" | "remove" | "steer"; content?: ContentBlock[] };
   }): Promise<{ accepted: true }> {
     const record = this.requireSession(params.sessionId);
+    this.assertOrdinarySession(record.handle.agent);
     const inbox = record.handle.agent.inbox;
     if (inbox === undefined) throw new Error("session/updateQueue capability is unavailable");
     const target = inbox.nextTurn.some((message) => message.id === params.itemId)
@@ -1272,6 +1313,7 @@ export class TuiCompanionGateway {
     if (params.provider.trim() === "" || params.model.trim() === "")
       throw new Error("session.selectModel requires provider and model");
     const record = this.requireSession(params.sessionId);
+    this.assertOrdinarySession(record.handle.agent);
     const llm = this.ctx.get("llm") as LlmService | undefined;
     if (llm?.resolveCallConfig === undefined)
       throw new Error(
@@ -1376,7 +1418,7 @@ export class TuiCompanionGateway {
       case "subagent.history":
         {
           const input = params as { parentSessionId: string; childSessionId: string; beforeSeq?: number; maxMessages?: number };
-          await this.assertSubagent(input.parentSessionId, input.childSessionId);
+          await this.inspectSubagent(input.parentSessionId, input.childSessionId);
           return this.history({ sessionId: input.childSessionId, beforeSeq: input.beforeSeq, maxMessages: input.maxMessages });
         }
       case "cocode/subagent/prompt":
@@ -1588,13 +1630,29 @@ export class TuiCompanionGateway {
     if (opening !== undefined) return opening;
     const pending = this.sessionCreations.get(sessionId);
     if (pending !== undefined) return pending;
-    const creation = this.createSession(sessionId);
+    const persistence = this.ctx.get("sessionPersistence") as PersistenceService | undefined;
+    const creation = persistence === undefined
+      ? this.createSession(sessionId)
+      : this.findPersistedSession(persistence, sessionId).then((stored) => {
+          if (stored === undefined) return this.createSession(sessionId);
+          if (stored.origin === "subagent") {
+            throw new Error(`session "${sessionId}" is owned by subagent routing`);
+          }
+          return this.resumeSession(sessionId);
+        });
     this.sessionCreations.set(sessionId, creation);
     void creation.then(
       () => this.sessionCreations.delete(sessionId),
       () => this.sessionCreations.delete(sessionId),
     );
     return creation;
+  }
+
+  private async findPersistedSession(
+    persistence: PersistenceService,
+    sessionId: string,
+  ): Promise<{ id: string; origin?: "subagent" } | undefined> {
+    return (await persistence.list()).find((header) => header.id === sessionId);
   }
 
   private async createSession(sessionId: string): Promise<SessionRecord> {
@@ -1708,6 +1766,12 @@ export class TuiCompanionGateway {
         `session agent was disposed outside the companion: ${sessionId}`,
       );
     return record;
+  }
+
+  private assertOrdinarySession(agent: Agent): void {
+    if (agent.session.header.origin === "subagent") {
+      throw new Error(`session "${agent.session.id}" is owned by subagent routing`);
+    }
   }
 
   private assertInitialized(): void {
@@ -1912,6 +1976,40 @@ function readSessionTitle(events: readonly SessionEvent[]): string | undefined {
       return event.data.title;
   }
   return undefined;
+}
+
+function isHistoryMessage(event: SessionEvent): boolean {
+  return event.type === "user/message"
+    || event.type === "assistant/message"
+    || event.type === "steering/message";
+}
+
+function readSubagentDescriptor(
+  events: readonly SessionEvent[],
+  seedLength = 0,
+): { mode: "one-shot" | "continuable"; label?: string } | undefined {
+  const ownEvents = events.slice(Math.max(0, seedLength));
+  const event = ownEvents.find((candidate) => candidate.type === "subagent/descriptor");
+  if (!isRecord(event?.data)) return undefined;
+  const mode = event.data.mode;
+  if (mode !== "one-shot" && mode !== "continuable") return undefined;
+  const label = typeof event.data.label === "string" && event.data.label.trim() !== ""
+    ? event.data.label
+    : undefined;
+  return { mode, ...(label === undefined ? {} : { label }) };
+}
+
+function assertSubagentMetadata(
+  meta: { id?: string; parentSession?: string; origin?: "subagent" },
+  parentSessionId: string,
+): void {
+  if (meta.origin !== "subagent" || meta.parentSession !== parentSessionId) {
+    throw new Error("subagent is not a direct child of the requested parent");
+  }
+}
+
+function assertSubagentAddress(agent: Agent, parentSessionId: string): void {
+  assertSubagentMetadata(agent.session.header, parentSessionId);
 }
 
 function eventText(event: SessionEvent): string {

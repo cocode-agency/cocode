@@ -32,6 +32,7 @@ export type SessionHeader = {
   createdAt: number;
   cwd?: string;
   parentSession?: string;
+  origin?: "subagent";
   seedLength?: number;
   agentPreset?: string;
 };
