@@ -38,7 +38,11 @@ export async function readCredentialsRecovering(home: string): Promise<Record<st
     } catch (error) {
       if (!isRecoverableCredentialError(error)) throw error
       const path = credentialsPath(home)
-      await rename(path, `${path}.invalid-${Date.now()}-${randomUUID()}`)
+      try {
+        await rename(path, `${path}.invalid-${Date.now()}-${randomUUID()}`)
+      } catch (renameError) {
+        if ((renameError as NodeJS.ErrnoException).code !== 'ENOENT') throw renameError
+      }
       return {}
     }
   })
