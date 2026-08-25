@@ -16,6 +16,28 @@ describe("file mention path ranking", () => {
     ])
   })
 
+  it("keeps the exact directory candidate when the query has a trailing slash", () => {
+    expect(rankFilePaths([
+      "src/",
+      "src/main.ts",
+      "src/components/",
+      "src/components/button.tsx",
+    ], "src/", 20)).toEqual([
+      "src/",
+      "src/main.ts",
+      "src/components/",
+      "src/components/button.tsx",
+    ])
+
+    expect(rankFilePaths([
+      "src/components/",
+      "src/components/button.tsx",
+    ], "src\\components\\", 20)).toEqual([
+      "src/components/",
+      "src/components/button.tsx",
+    ])
+  })
+
   it("keeps fuzzy matches deterministic and applies the requested limit", () => {
     expect(rankFilePaths([
       "src/components/file-mention.tsx",

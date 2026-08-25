@@ -15,7 +15,7 @@ export const MAX_FILE_SEARCH_QUERY_LENGTH = 256
 
 /** Rank paths identically on Host and client while retaining only the requested Top N. */
 export function rankFilePaths(paths: readonly string[], query: string, limit: number): string[] {
-  const needle = query.trim().toLowerCase()
+  const needle = normalizeSearchQuery(query)
   if (limit <= 0) return []
   const best: RankedPath[] = []
   for (let index = 0; index < paths.length; index += 1) {
@@ -36,7 +36,7 @@ export async function rankFilePathsCooperatively(
   options: CooperativeRankingOptions,
 ): Promise<string[] | undefined> {
   if (limit <= 0) return []
-  const needle = query.trim().toLowerCase()
+  const needle = normalizeSearchQuery(query)
   const best: RankedPath[] = []
   const chunkSize = Math.max(1, options.chunkSize ?? 4_096)
   for (let index = 0; index < paths.length; index += 1) {
@@ -73,6 +73,14 @@ function rankPath(
 
 function compareRankedPaths(left: RankedPath, right: RankedPath): number {
   return right.score - left.score || left.index - right.index
+}
+
+function normalizeSearchQuery(query: string): string {
+  return query
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/\/+$/, "")
+    .toLowerCase()
 }
 
 function filePathScore(path: string, query: string): number | undefined {
