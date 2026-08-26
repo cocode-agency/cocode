@@ -29,6 +29,8 @@ const TIMEOUT_PROMPT = 'COCODE_E2E_FORCE_TIMEOUT'
 const QUESTION_PROMPT = 'COCODE_E2E_FORCE_QUESTION'
 const QUESTION_REPLY = 'COCODE_E2E_QUESTION_CANCELLED'
 const TOOL_PROMPT = 'COCODE_E2E_FORCE_BASH_TOOL'
+const APPROVAL_PROMPT = 'COCODE_E2E_FORCE_BASH_APPROVAL'
+const APPROVAL_FILE_NAME = 'cocode-e2e-approval-output.txt'
 const TOOL_FILE_NAME = 'cocode-e2e-tool-output.txt'
 const TOOL_FILE_CONTENT = 'COCODE_E2E_TOOL_OK\n'
 const TOOL_REPLY = 'COCODE_E2E_TOOL_COMPLETED'
@@ -458,15 +460,59 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain(TOOL_REPLY)
   })
 
+  it('rejects a real bash approval without creating the file', async () => {
+    const sessionId = 'e2e-bash-tool-rejected'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const setup = await runHeadlessCli({
+      eventLog: join(eventRoot, `${sessionId}-setup.jsonl`),
+      prompt: SUCCESS_PROMPT,
+      sessionId,
+    })
+    expect(setup.code, setup.stderr).toBe(0)
+    await rm(join(workspace, APPROVAL_FILE_NAME), { force: true })
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: APPROVAL_PROMPT,
+      sessionId,
+      approvalPolicy: 'reject',
+    })
+
+    expect(result.code, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: 'completed',
+      sessionId,
+      approvals: 1,
+    })
+    await expect(readFile(join(workspace, APPROVAL_FILE_NAME), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toEqual(expect.arrayContaining(['tool/call', 'tool/result', 'turn/end']))
+    expectEventOrder(events, ['running', 'tool/call', 'tool/result', 'turn/end', 'idle'])
+    expect(JSON.stringify(events)).toContain('rejected')
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(APPROVAL_PROMPT)
+    expect(persisted).toContain('tool/call')
+    expect(persisted).toContain('tool/result')
+    expect(persisted).toContain('approval/asked')
+    expect(persisted).toContain('approval/decided')
+    expect(persisted).toContain('"outcome":"rejected"')
+    expect(persisted).toContain('rejected')
+    expect(persisted).toContain('turn/end')
+  })
+
   function runHeadlessCli(options: {
     eventLog: string
     prompt: string
     sessionId: string
     timeout?: string
+    approvalPolicy?: 'allow' | 'reject'
   }): Promise<ProcessResult> {
     return runCli([
       'run',
-      '--allow-tools',
+      options.approvalPolicy === 'reject' ? '--reject-tools' : '--allow-tools',
       '--cwd', workspace,
       '--event-log', options.eventLog,
       '--json',
@@ -518,6 +564,19 @@ async function startFixtureServer(): Promise<{
           && 'role' in message
           && message.role === 'tool'
         ))
+      if (JSON.stringify(body).includes(APPROVAL_PROMPT)) {
+        if (hasToolResult) {
+          writeCompletion(response, false, TOOL_REPLY)
+        } else {
+          writeBashToolCall(response, {
+            command: `printf 'COCODE_E2E_APPROVAL_OK\\n' > ${APPROVAL_FILE_NAME}`,
+            description: 'Create the approval E2E marker file',
+            sandbox_permissions: 'danger-full-access',
+            justification: 'Write the isolated approval E2E marker file',
+          })
+        }
+        return
+      }
       if (hasBashTool && JSON.stringify(body).includes(TOOL_PROMPT)) {
         if (hasToolResult) {
           writeCompletion(response, false, TOOL_REPLY)
@@ -706,7 +765,15 @@ function writeDelayedSse(response: ServerResponse): void {
   response.once('close', () => clearTimeout(timer))
 }
 
-function writeBashToolCall(response: ServerResponse): void {
+function writeBashToolCall(
+  response: ServerResponse,
+  override?: {
+    command?: string
+    description?: string
+    sandbox_permissions?: string
+    justification?: string
+  },
+): void {
   response.writeHead(200, {
     'cache-control': 'no-cache',
     connection: 'keep-alive',
@@ -728,8 +795,15 @@ function writeBashToolCall(response: ServerResponse): void {
           function: {
             name: 'bash',
             arguments: JSON.stringify({
-              command: `printf '${TOOL_FILE_CONTENT.replace('\n', '\\n')}' > ${TOOL_FILE_NAME}`,
-              description: 'Create the E2E marker file',
+              command: override?.command
+                ?? `printf '${TOOL_FILE_CONTENT.replace('\n', '\\n')}' > ${TOOL_FILE_NAME}`,
+              description: override?.description ?? 'Create the E2E marker file',
+              ...(override?.sandbox_permissions === undefined
+                ? {}
+                : { sandbox_permissions: override.sandbox_permissions }),
+              ...(override?.justification === undefined
+                ? {}
+                : { justification: override.justification }),
             }),
           },
         }],
