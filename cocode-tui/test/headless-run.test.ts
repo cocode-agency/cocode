@@ -121,6 +121,42 @@ describe('headless Cocode run', () => {
     expect(harness.released).toBe(true)
   })
 
+  it('cancels the session and exposes a SIGINT exit classification', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cocode-run-sigint-'))
+    temporaryDirectories.push(directory)
+    const eventLog = join(directory, 'events.jsonl')
+    const harness = createHarness({ cancelCompletes: true, complete: false })
+    const signalProcess = createSignalProcess()
+    const runPromise = runHeadless({
+      ...parseRunArgs([
+        '--cwd', directory,
+        '--allow-tools',
+        '--event-log', eventLog,
+        'wait for SIGINT',
+      ]),
+      prompt: 'wait for SIGINT',
+      sessionId: 'session-sigint',
+    }, {
+      supervisor: harness.supervisor,
+      env: {},
+      process: signalProcess,
+    }).catch((caught) => caught)
+
+    setTimeout(() => signalProcess.emit('SIGINT'), 5)
+    const error = await runPromise
+
+    expect(error).toMatchObject({
+      code: 'COCODE_RUN_INTERRUPTED',
+      message: 'Cocode agent turn interrupted by SIGINT',
+    })
+    expect(harness.requests).toContainEqual([
+      'cocode/session/cancel',
+      { sessionId: 'session-sigint' },
+    ])
+    expect(harness.closedAfterCancelCompleted).toBe(true)
+    expect(harness.released).toBe(true)
+  })
+
   it('fails when the completed turn reports a provider error', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cocode-run-error-'))
     temporaryDirectories.push(directory)
@@ -235,6 +271,21 @@ function createHarness(options: {
         }
       },
       async connectJsonRpc() { return peer },
+    },
+  }
+}
+
+function createSignalProcess() {
+  const handlers = new Map<string, () => void>()
+  return {
+    once(signal: string, handler: () => void) {
+      handlers.set(signal, handler)
+    },
+    off(signal: string, handler: () => void) {
+      if (handlers.get(signal) === handler) handlers.delete(signal)
+    },
+    emit(signal: string) {
+      handlers.get(signal)?.()
     },
   }
 }

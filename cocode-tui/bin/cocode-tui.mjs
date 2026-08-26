@@ -93,7 +93,12 @@ if (options.command === 'run') {
     process.exit(0)
   } catch (error) {
     process.stderr.write(`cocode run: ${error instanceof Error ? error.message : String(error)}\n`)
-    process.exit(error && typeof error === 'object' && error.code === 'COCODE_RUN_TIMEOUT' ? 124 : 1)
+    const exitCode = error && typeof error === 'object' && error.code === 'COCODE_RUN_TIMEOUT'
+      ? 124
+      : error && typeof error === 'object' && error.code === 'COCODE_RUN_INTERRUPTED'
+        ? 130
+        : 1
+    process.exit(exitCode)
   }
 }
 

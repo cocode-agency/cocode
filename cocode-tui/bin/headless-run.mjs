@@ -7,6 +7,7 @@ import { finished } from 'node:stream/promises'
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1_000
 const CANCELLATION_GRACE_MS = 1_000
 const CANCEL_REQUEST_TIMEOUT_MS = 500
+const INTERRUPTED_ERROR_CODE = 'COCODE_RUN_INTERRUPTED'
 const APPROVAL_POLICIES = new Set(['allow', 'reject'])
 
 export function parseRunArgs(args, env = process.env) {
@@ -92,6 +93,7 @@ export async function runHeadless(options, dependencies) {
     resolveHostRuntimeEnv,
   } = dependencies.supervisor
   const env = dependencies.env ?? process.env
+  const signalProcess = dependencies.process ?? process
   const now = dependencies.now ?? Date.now
   const sessionId = options.sessionId ?? `benchmark-${randomUUID()}`
   const startedAt = now()
@@ -104,6 +106,17 @@ export async function runHeadless(options, dependencies) {
   let eventStream
   let messageId
   let completed = false
+  let interrupted = false
+  let resolveInterrupt
+  const interruptRequested = new Promise((resolveInterruptRequest) => {
+    resolveInterrupt = resolveInterruptRequest
+  })
+  const onInterrupt = () => {
+    if (completed || interrupted) return
+    interrupted = true
+    resolveInterrupt()
+  }
+  signalProcess.once('SIGINT', onInterrupt)
   let sawRunning = false
   let eventCount = 0
   let approvalCount = 0
@@ -149,7 +162,7 @@ export async function runHeadless(options, dependencies) {
       if (notification.method === 'session.status' && params.sessionId === sessionId) {
         writeEvent(eventStream, { method: notification.method, params })
         if (params.status === 'running') sawRunning = true
-        if (params.status === 'idle' && sawRunning && !completed) {
+        if (params.status === 'idle' && sawRunning && !completed && !interrupted) {
           completed = true
           finishTurn()
         }
@@ -206,13 +219,26 @@ export async function runHeadless(options, dependencies) {
     if (typeof messageId !== 'string') {
       throw new Error(`session/prompt returned no message id: ${JSON.stringify(promptResult)}`)
     }
-    await withTimeout(turnDone, options.timeoutMs, async () => {
-      const cancelRequest = Promise.resolve()
-        .then(() => peer.request('cocode/session/cancel', { sessionId }, CANCEL_REQUEST_TIMEOUT_MS))
-        .catch(() => undefined)
-      await waitForGrace(cancelRequest, CANCELLATION_GRACE_MS)
-      await waitForGrace(turnEnded, CANCELLATION_GRACE_MS)
+    let cancelPromise
+    const cancelTurn = () => {
+      if (cancelPromise !== undefined) return cancelPromise
+      cancelPromise = (async () => {
+        const cancelRequest = Promise.resolve()
+          .then(() => peer.request('cocode/session/cancel', { sessionId }, CANCEL_REQUEST_TIMEOUT_MS))
+          .catch(() => undefined)
+        await waitForGrace(cancelRequest, CANCELLATION_GRACE_MS)
+        await waitForGrace(turnEnded, CANCELLATION_GRACE_MS)
+      })()
+      return cancelPromise
+    }
+    const interruptOutcome = interruptRequested.then(async () => {
+      await cancelTurn()
+      throw createInterruptedError()
     })
+    await Promise.race([
+      withTimeout(turnDone, options.timeoutMs, cancelTurn),
+      interruptOutcome,
+    ])
     return {
       schemaVersion: 1,
       status: 'completed',
@@ -234,6 +260,7 @@ export async function runHeadless(options, dependencies) {
     }
   } finally {
     completed = true
+    signalProcess.off('SIGINT', onInterrupt)
     unsubscribe?.()
     peer?.close()
     await lease?.release().catch(() => undefined)
@@ -319,6 +346,12 @@ function readTurnError(event) {
   const message = event.data.reason.error?.message ?? 'Cocode turn failed'
   const error = new Error(String(message))
   if (typeof event.data.reason.error?.code === 'string') error.code = event.data.reason.error.code
+  return error
+}
+
+function createInterruptedError() {
+  const error = new Error('Cocode agent turn interrupted by SIGINT')
+  error.code = INTERRUPTED_ERROR_CODE
   return error
 }
 

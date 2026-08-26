@@ -422,6 +422,40 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain('step/end')
   })
 
+  it('cancels a running turn when the CLI receives SIGINT', async () => {
+    const sessionId = 'e2e-provider-sigint'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const setup = await runHeadlessCli({
+      eventLog: join(eventRoot, `${sessionId}-setup.jsonl`),
+      prompt: SUCCESS_PROMPT,
+      sessionId,
+    })
+    expect(setup.code, setup.stderr).toBe(0)
+    const requestStart = fixture.requests.length
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: TIMEOUT_PROMPT,
+      sessionId,
+      interruptWhen: () => fixture.requests
+        .slice(requestStart)
+        .some((entry) => JSON.stringify(entry.body).includes(TIMEOUT_PROMPT)),
+    })
+
+    expect(result.code).toBe(130)
+    expect(result.signal).toBeNull()
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Cocode agent turn interrupted by SIGINT')
+
+    const events = await readEventLog(eventLog)
+    expectEventOrder(events, ['running', 'turn/start', 'step/start', 'step/end', 'idle'])
+    expect(eventTypes(events)).not.toContain('assistant/message')
+    expect(fixture.requests.some((entry) => JSON.stringify(entry.body).includes(TIMEOUT_PROMPT))).toBe(true)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId, TIMEOUT_PROMPT)
+    expect(persisted).toContain(TIMEOUT_PROMPT)
+    expect(persisted).toContain('step/end')
+  })
+
   it('executes a real bash tool and persists its file side effect', async () => {
     const sessionId = 'e2e-bash-tool'
     const eventLog = join(eventRoot, `${sessionId}.jsonl`)
@@ -510,6 +544,7 @@ describe('cocode run with the real Host', () => {
     sessionId: string
     timeout?: string
     approvalPolicy?: 'allow' | 'reject'
+    interruptWhen?: () => boolean
   }): Promise<ProcessResult> {
     return runCli([
       'run',
@@ -522,7 +557,7 @@ describe('cocode run with the real Host', () => {
       '--session-id', options.sessionId,
       '--timeout', options.timeout ?? '60s',
       options.prompt,
-    ], env, 90_000).catch((error) => {
+    ], env, 90_000, options.interruptWhen).catch((error) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\nfixture requests: ${JSON.stringify(fixture.requests)}`)
     })
   }
@@ -831,7 +866,12 @@ function readRequestBody(request: IncomingMessage): Promise<string> {
   })
 }
 
-function runCli(args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Promise<ProcessResult> {
+function runCli(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number,
+  interruptWhen?: () => boolean,
+): Promise<ProcessResult> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, [CLI_ENTRY, ...args], {
       cwd: TUI_ROOT,
@@ -846,6 +886,14 @@ function runCli(args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Prom
     let timedOut = false
     let forceKillTimer: NodeJS.Timeout | undefined
     let finalKillTimer: NodeJS.Timeout | undefined
+    let interruptPoll
+    if (interruptWhen !== undefined) {
+      interruptPoll = setInterval(() => {
+        if (!interruptWhen()) return
+        clearInterval(interruptPoll)
+        child.kill('SIGINT')
+      }, 25)
+    }
     const timeoutError = () => new Error(
       `Cocode CLI timed out after ${timeoutMs}ms\nstdout:\n${stdout}\nstderr:\n${stderr}`,
     )
@@ -862,6 +910,7 @@ function runCli(args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Prom
     }, timeoutMs)
     const cleanup = () => {
       clearTimeout(timer)
+      if (interruptPoll !== undefined) clearInterval(interruptPoll)
       if (forceKillTimer !== undefined) clearTimeout(forceKillTimer)
       if (finalKillTimer !== undefined) clearTimeout(finalKillTimer)
     }
