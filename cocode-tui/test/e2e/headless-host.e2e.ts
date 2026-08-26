@@ -22,6 +22,7 @@ const SUCCESS_PROMPT = 'Return the exact marker COCODE_E2E_ASSISTANT_OK.'
 const SUCCESS_REPLY = 'COCODE_E2E_ASSISTANT_OK'
 const FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_ERROR'
 const HTTP_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_ERROR'
+const MALFORMED_SSE_PROMPT = 'COCODE_E2E_FORCE_MALFORMED_SSE'
 const TOOL_PROMPT = 'COCODE_E2E_FORCE_BASH_TOOL'
 const TOOL_FILE_NAME = 'cocode-e2e-tool-output.txt'
 const TOOL_FILE_CONTENT = 'COCODE_E2E_TOOL_OK\n'
@@ -266,6 +267,34 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain('502')
   })
 
+  it('reports malformed provider SSE as a terminal error', async () => {
+    const sessionId = 'e2e-provider-malformed-sse'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: MALFORMED_SSE_PROMPT,
+      sessionId,
+    })
+
+    expect(result.code).toBe(1)
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toContain('turn/end')
+    expectEventOrder(events, ['running', 'turn/end'])
+    const terminal = events.find((entry) =>
+      entry.method === 'session.event' && entry.params?.event?.type === 'turn/end',
+    )
+    expect(terminal?.params?.event?.data?.reason?.kind).toBe('error')
+    const sequence = eventSequence(events)
+    const terminalIndex = sequence.indexOf('turn/end')
+    const idleIndex = sequence.indexOf('idle')
+    expect(terminalIndex).toBeGreaterThanOrEqual(0)
+    expect(idleIndex === -1 || idleIndex > terminalIndex).toBe(true)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(MALFORMED_SSE_PROMPT)
+    expect(persisted).toContain('turn/end')
+  })
+
   it('executes a real bash tool and persists its file side effect', async () => {
     const sessionId = 'e2e-bash-tool'
     const eventLog = join(eventRoot, `${sessionId}.jsonl`)
@@ -382,6 +411,10 @@ async function startFixtureServer(): Promise<{
         }))
         return
       }
+      if (JSON.stringify(body).includes(MALFORMED_SSE_PROMPT)) {
+        writeMalformedSse(response)
+        return
+      }
       writeCompletion(response, failure)
     } catch (error) {
       response.writeHead(500, { 'content-type': 'application/json' })
@@ -441,6 +474,15 @@ function writeCompletion(response: ServerResponse, failure: boolean, reply = SUC
     { prompt_tokens: 8, completion_tokens: failure ? 0 : 4, total_tokens: failure ? 8 : 12 },
   )
   response.end('data: [DONE]\n\n')
+}
+
+function writeMalformedSse(response: ServerResponse): void {
+  response.writeHead(200, {
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+    'content-type': 'text/event-stream',
+  })
+  response.end('data: {"id":"chatcmpl-e2e-malformed"\n\n')
 }
 
 function writeBashToolCall(response: ServerResponse): void {
