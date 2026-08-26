@@ -1,6 +1,6 @@
 import { Text, useInput } from 'ink'
 import { useEffect, useRef, useState } from 'react'
-import type { TuiAction, TuiApprovalSnapshot } from '../../runtime/app.ts'
+import type { TuiAction, TuiApprovalSnapshot } from '../../runtime/app-contracts.ts'
 import { text, type UiLocale } from '../../runtime/ui-locale.ts'
 import { glyphs } from '../glyphs.ts'
 import { selectionStyle } from '../selection.ts'

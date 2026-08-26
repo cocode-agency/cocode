@@ -1,5 +1,5 @@
 import { Text } from 'ink'
-import type { TuiSnapshot } from '../../runtime/app.ts'
+import type { TuiSnapshot } from '../../runtime/app-contracts.ts'
 import { isAppleTerminalEnvironment } from '../../runtime/platform.ts'
 import { useSpinnerFrame } from '../use-spinner.ts'
 import { agentColor, agentFrames } from './agent-status.ts'

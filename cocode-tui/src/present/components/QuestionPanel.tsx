@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from 'ink'
 import { useEffect, useRef, useState } from 'react'
-import type { TuiQuestionSnapshot, TuiAction } from '../../runtime/app.ts'
+import type { TuiQuestionSnapshot, TuiAction } from '../../runtime/app-contracts.ts'
 import {
   questionTabLabel,
   type TuiQuestionTab,

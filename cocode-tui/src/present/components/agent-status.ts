@@ -1,4 +1,4 @@
-import type { TuiSnapshot } from '../../runtime/app.ts'
+import type { TuiSnapshot } from '../../runtime/app-contracts.ts'
 import { glyphs } from '../glyphs.ts'
 import { theme } from '../theme.ts'
 

@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink'
-import type { TuiSnapshot } from '../../runtime/app.ts'
+import type { TuiSnapshot } from '../../runtime/app-contracts.ts'
 import { workspaceName, workspacePath } from '../../runtime/workspace.ts'
 import { glyphs } from '../glyphs.ts'
 import { theme } from '../theme.ts'

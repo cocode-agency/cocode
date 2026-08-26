@@ -3,7 +3,7 @@
  */
 
 import type { TuiCapabilities } from './capabilities.ts'
-import type { TuiCommandCtx } from './app.ts'
+import type { TuiCommandCtx } from './app-contracts.ts'
 import { DEFAULT_BINDINGS, formatKeyBinding, type CommandId, type Keymap } from './keymap.ts'
 import type { UiLocale } from './ui-locale.ts'
 

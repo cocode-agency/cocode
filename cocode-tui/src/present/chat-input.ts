@@ -1,4 +1,4 @@
-import type { TuiApp, TuiSnapshot } from '../runtime/app.ts'
+import type { TuiApp, TuiSnapshot } from '../runtime/app-contracts.ts'
 import type { CommandArgumentCompletion } from './command-completion.ts'
 
 /** Wrap a selection index while keeping empty menus at index zero. */

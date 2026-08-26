@@ -1,5 +1,5 @@
 import stringWidth from 'string-width'
-import type { TuiSnapshot } from '../runtime/app.ts'
+import type { TuiSnapshot } from '../runtime/app-contracts.ts'
 import { text, type UiLocale } from '../runtime/ui-locale.ts'
 
 export const COMPOSER_META_SEPARATOR = ' · '

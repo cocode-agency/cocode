@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink'
-import type { TuiSnapshot } from '../../runtime/app.ts'
+import type { TuiSnapshot } from '../../runtime/app-contracts.ts'
 import { AgentStatusIndicator } from './AgentStatusIndicator.tsx'
 import { theme } from '../theme.ts'
 import { text, type UiLocale } from '../../runtime/ui-locale.ts'

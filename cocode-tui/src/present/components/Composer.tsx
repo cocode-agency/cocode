@@ -1,5 +1,5 @@
 import { Box, Text, useCursor } from 'ink'
-import type { TuiSnapshot } from '../../runtime/app.ts'
+import type { TuiSnapshot } from '../../runtime/app-contracts.ts'
 import { formatFileMention } from '../../runtime/file-mentions.ts'
 import { isAppleTerminalEnvironment } from '../../runtime/platform.ts'
 import {

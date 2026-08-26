@@ -4,7 +4,7 @@
 
 import { Box, Text, useInput, useStdout, useStdin } from 'ink'
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { TuiApp, TuiSnapshot } from '../runtime/app.ts'
+import type { TuiApp, TuiSnapshot } from '../runtime/app-contracts.ts'
 import { matchKey, type Keymap } from '../runtime/keymap.ts'
 import { resolveKeymap } from '../runtime/keymap-config.ts'
 import { Composer } from './components/Composer.tsx'

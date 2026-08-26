@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink'
 import type { ReactNode } from 'react'
-import type { TuiSnapshot } from '../../runtime/app.ts'
+import type { TuiSnapshot } from '../../runtime/app-contracts.ts'
 import { text, type UiLocale } from '../../runtime/ui-locale.ts'
 import { glyphs } from '../glyphs.ts'
 import {

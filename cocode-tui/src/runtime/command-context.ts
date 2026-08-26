@@ -1,6 +1,6 @@
 /** Build the local command context from app-owned callbacks and data. */
 
-import type { TuiAuthInfo, TuiCommandCtx } from './app.ts'
+import type { TuiAuthInfo, TuiCommandCtx, TuiAppOptions } from './app-contracts.ts'
 import type { TuiCapabilities } from './capabilities.ts'
 import type { TuiCapabilitySnapshot } from '@cocode/tui-connection'
 import { formatDoctor } from './diagnostics.ts'
@@ -73,7 +73,7 @@ export type AppCommandContextOptions = {
   provider: string
   model: string
   runtimeName: string
-  diagnostics: NonNullable<import('./app.ts').TuiAppOptions['diagnostics']>
+  diagnostics: NonNullable<TuiAppOptions['diagnostics']>
   auth?: TuiAuthInfo
   nodes: readonly ConversationNode[]
   setTheme?: TuiCommandCtx['setTheme']

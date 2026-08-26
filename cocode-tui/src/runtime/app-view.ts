@@ -1,7 +1,7 @@
 /** Formatting helpers used by the session state machine. */
 
 import type { ConversationNode } from './nodes/types.ts'
-import type { TuiSnapshot } from './app.ts'
+import type { TuiSnapshot } from './app-contracts.ts'
 import { text, type UiLocale } from './ui-locale.ts'
 import { redactSecrets } from './diagnostics.ts'
 import { displayError, formatError } from './errors/index.ts'

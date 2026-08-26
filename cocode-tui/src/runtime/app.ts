@@ -5,28 +5,19 @@
 import type {
   SkillEntry,
   SessionEvent,
-  TuiSessionOpenResult,
   TuiNotification,
   TuiCapabilitySnapshot,
   TuiCommandDescriptor,
-  TuiRuntimeCapabilityName,
   TuiApprovalAnswer,
   TuiApprovalRequest,
   TuiRuntime,
   TuiImageInput,
-  TuiPluginEntry,
   TuiWorkspaceEnsureResult,
   TuiModelCatalog,
   TuiRemoteQueueItem,
   TuiSessionProjectionUpdate,
 } from '@cocode/tui-connection'
-import type {
-  ExternalDshReadSource,
-  ExternalSessionEvent,
-  ExternalSessionSummary,
-} from '@cocode-agency/host-supervisor'
-import type { SelectModeResult } from './auth/store.ts'
-import type { AuthSnapshot, ResolvedAuth } from './auth/types.ts'
+import type { ExternalDshReadSource } from '@cocode-agency/host-supervisor'
 import type { Assembler } from './assembler.ts'
 import { P0_CAPABILITIES, type TuiCapabilities } from './capabilities.ts'
 import {
@@ -37,7 +28,6 @@ import {
   helpText,
   parseSlash,
 } from './commands.ts'
-import { InputHistory } from './history.ts'
 import type { ConversationNode } from './nodes/types.ts'
 import {
   backspaceDraft,
@@ -53,10 +43,9 @@ import {
   type DraftState,
 } from './draft.ts'
 import { buildPromptBlocks, loadFileContext } from './file-context.ts'
-import type { SessionStateProjector, SessionGoal, SessionTodo } from './session-state.ts'
+import type { SessionStateProjector } from './session-state.ts'
 import {
   createSessionId,
-  createSessionProjection,
   loadSessionProjection,
 } from './session-lifecycle.ts'
 import { formatFileMention } from './file-mentions.ts'
@@ -99,7 +88,6 @@ import {
   createPluginPicker,
   failPluginMutation,
   movePluginSelection,
-  pluginPhaseLabel,
   selectedPlugin,
   setPluginQuery,
   type PluginPickerState,
@@ -137,9 +125,9 @@ import {
   submitCapturedByok,
   type ChannelSwitchHost,
 } from './channel-switch.ts'
-import type { TelemetryProjector, TelemetrySnapshot } from './telemetry.ts'
+import type { TelemetryProjector } from './telemetry.ts'
 import { copyToClipboard, readableNodeText } from './clipboard.ts'
-import { notifyTerminal, type TerminalNotifyMode } from './terminal-notify.ts'
+import { notifyTerminal } from './terminal-notify.ts'
 import {
   collectGitReview,
   parseReviewScope,
@@ -155,19 +143,21 @@ import {
   setReviewPreview,
   type ReviewPickerState,
 } from './review-picker.ts'
-import { createApprovalState, type ApprovalState, type PendingApproval } from './approval.ts'
+import { createApprovalState, type PendingApproval } from './approval.ts'
 import {
   createQuestionCoordinator,
   type QuestionCoordinator,
-  type TuiQuestionSnapshot,
 } from './question-coordinator.ts'
 import { refreshRuntimeCapabilities } from './capability-adapter.ts'
 import { PromptQueueCoordinator } from './prompt-queue-coordinator.ts'
 import { renameSession } from './session-rename.ts'
-import { createSessionProjectionStore } from './session-projections.ts'
 import { markUnavailableHistoryAttachments } from './history-attachments.ts'
+import {
+  createSessionProjectionCoordinator,
+  type SessionProjectionSnapshot,
+} from './session-projection-coordinator.ts'
+import { createComposerState } from './composer-state.ts'
 import type { DraftImage } from './prompt-queue.ts'
-import type { PromptQueuePickerState } from './prompt-queue-picker.ts'
 import {
   closeRemoteQueuePicker,
   createRemoteQueuePicker,
@@ -197,7 +187,6 @@ import {
   setSubagentQuery,
   type SubagentPickerState,
 } from './subagent-picker.ts'
-import { buildSessionTree, flattenSessionTree } from './session-tree.ts'
 import { listSessionSummaries } from './sessions-fs.ts'
 import { basename } from 'node:path'
 import {
@@ -207,125 +196,50 @@ import {
   moveChecklistSelection,
   type ChecklistState,
 } from './checklist.ts'
-import {
-  ClipboardImageError,
-  pastedImagePath,
-  readClipboardImage,
-  readImageFile,
-} from './image-clipboard.ts'
+import { pastedImagePath, readClipboardImage, readImageFile } from './image-clipboard.ts'
 import type { Keymap } from './keymap.ts'
 import { resolveKeymap } from './keymap-config.ts'
 import type { TuiLogger } from './logging.ts'
-
-export type TuiAction =
-  | { type: 'submit'; text: string }
-  | { type: 'compact' }
-  | { type: 'command'; line: string }
-  | { type: 'command.select'; line: string }
-  | { type: 'setDraft'; text: string }
-  | { type: 'insertDraft'; text: string }
-  | { type: 'insertPastedInput'; text: string }
-  | { type: 'deleteBackward' }
-  | { type: 'moveCursor'; delta: number; extendSelection?: boolean }
-  | { type: 'selectAllDraft' }
-  | { type: 'copyDraftSelection' }
-  | { type: 'cutDraftSelection' }
-  | { type: 'attachFile'; start: number; end: number; path: string }
-  | { type: 'historyPrev' }
-  | { type: 'historyNext' }
-  | { type: 'toggleVerbose' }
-  | { type: 'toggleHelp' }
-  | { type: 'interruptOrQuit' }
-  | { type: 'session.new' }
-  | { type: 'session.open' }
-  | { type: 'session.back' }
-  | { type: 'file.open' }
-  | { type: 'quit' }
-  | { type: 'quit.move'; delta: number }
-  | { type: 'quit.confirm' }
-  | { type: 'quit.cancel' }
-  | { type: 'redraw' }
-  | { type: 'resume.setQuery'; query: string }
-  | { type: 'resume.move'; delta: number }
-  | { type: 'resume.close' }
-  | { type: 'resume.confirm' }
-  | { type: 'sessionTree.setQuery'; query: string }
-  | { type: 'sessionTree.move'; delta: number }
-  | { type: 'sessionTree.close' }
-  | { type: 'sessionTree.confirm' }
-  | { type: 'subagents.setQuery'; query: string }
-  | { type: 'subagents.move'; delta: number }
-  | { type: 'subagents.close' }
-  | { type: 'subagents.confirm' }
-  | { type: 'rewind.open' }
-  | { type: 'rewind.move'; delta: number }
-  | { type: 'rewind.close' }
-  | { type: 'rewind.confirm' }
-  | { type: 'fork.open' }
-  | { type: 'fork.move'; delta: number }
-  | { type: 'fork.close' }
-  | { type: 'fork.confirm' }
-  | { type: 'skills.setQuery'; query: string }
-  | { type: 'skills.move'; delta: number }
-  | { type: 'skills.close' }
-  | { type: 'skills.confirm' }
-  | { type: 'plugins.setQuery'; query: string }
-  | { type: 'plugins.move'; delta: number }
-  | { type: 'plugins.close' }
-  | { type: 'plugins.confirm' }
-  | { type: 'model.open' }
-  | { type: 'image.paste' }
-  | { type: 'model.setQuery'; query: string }
-  | { type: 'model.move'; delta: number }
-  | { type: 'model.close' }
-  | { type: 'model.confirm' }
-  | { type: 'model.input.close' }
-  | { type: 'model.input.submit'; model: string }
-  | { type: 'effort.move'; delta: number }
-  | { type: 'effort.close' }
-  | { type: 'effort.confirm' }
-  | { type: 'question.answer'; selected: string[]; custom?: string }
-  | {
-      type: 'question.navigate'
-      direction: 'previous' | 'next'
-      selected: string[]
-      custom?: string
-      dirty: boolean
-    }
-  | { type: 'question.cancel' }
-  | { type: 'approval.answer'; outcome: TuiApprovalAnswer['outcome'] }
-  | { type: 'approval.cancel' }
-  | { type: 'permission.open' }
-  | { type: 'permission.move'; delta: number }
-  | { type: 'permission.close' }
-  | { type: 'permission.confirm' }
-  | { type: 'permission.toggle' }
-  | { type: 'plan.toggle' }
-  | { type: 'queuePrompt' }
-  | { type: 'queue.open' }
-  | { type: 'queue.setQuery'; query: string }
-  | { type: 'queue.move'; delta: number }
-  | { type: 'queue.close' }
-  | { type: 'queue.delete' }
-  | { type: 'queue.restore' }
-  | { type: 'remoteQueue.open' }
-  | { type: 'remoteQueue.setQuery'; query: string }
-  | { type: 'remoteQueue.move'; delta: number }
-  | { type: 'remoteQueue.close' }
-  | { type: 'remoteQueue.delete' }
-  | { type: 'remoteQueue.steer' }
-  | { type: 'checklist.open' }
-  | { type: 'checklist.move'; delta: number }
-  | { type: 'checklist.close' }
-  | { type: 'copyNode'; nodeKey: string }
-  | { type: 'copyText'; text: string }
-  | { type: 'review.move'; delta: number }
-  | { type: 'review.close' }
-  | { type: 'review.confirm' }
-
-export type { TuiCapabilities }
-
-type TuiDisplayedCapabilityName = TuiRuntimeCapabilityName
+import {
+  clipboardImageError,
+  formatPluginMutationResult,
+  imageExtension,
+  runtimeCapabilityEntries,
+} from './app-formatters.ts'
+import {
+  externalSessionIdentity,
+  makeExternalSessionTreeItems,
+  makeSessionTreeItems,
+  normalizeOpenResult,
+  toSessionEvent,
+} from './session-tree-adapters.ts'
+import {
+  externalCommandAllowed,
+  formatSkillInvocation,
+  safeSubagentId,
+  skillCommandName,
+} from './command-formatters.ts'
+import type {
+  TuiAction,
+  TuiApp,
+  TuiAppOptions,
+  TuiAuthInfo,
+  TuiCommandCtx,
+  TuiSnapshot,
+  TuiSubagentActivity,
+} from './app-contracts.ts'
+export type {
+  TuiAction,
+  TuiApp,
+  TuiAppOptions,
+  TuiAuthInfo,
+  TuiApprovalSnapshot,
+  TuiCommandCtx,
+  TuiQuestionSnapshot,
+  TuiSnapshot,
+  TuiSubagentActivity,
+  TuiCapabilities,
+} from './app-contracts.ts'
 
 type ExternalSessionState = {
   id: string
@@ -339,9 +253,7 @@ type ExternalSessionState = {
 
 type PreviousSessionView = {
   sessionId: string
-  assembler: Assembler
-  telemetry: TelemetryProjector
-  sessionState: SessionStateProjector
+  projection: SessionProjectionSnapshot
   externalSession: ExternalSessionState | undefined
   sessionTitleOverride: string | undefined
   provider: string
@@ -349,197 +261,6 @@ type PreviousSessionView = {
   capabilities: TuiCapabilities
   skills: SkillEntry[]
   remoteCommands: TuiCommandDescriptor[]
-  projectionStore: ReturnType<typeof createSessionProjectionStore>
-}
-
-export type TuiSnapshot = {
-  header: {
-    product: 'Cocode'
-    sessionId: string
-    source: 'cocode' | 'shared-dsh'
-    readOnly: boolean
-    canMutate: boolean
-    concurrency: 'single-writer' | 'no-concurrent-writes'
-    model: string
-    provider: string
-    reasoningEffort?: string
-    cwd: string
-    branch?: string
-  }
-  agent: 'idle' | 'running' | 'starting' | 'dead'
-  nodes: readonly ConversationNode[]
-  history: readonly string[]
-  locale: UiLocale
-  composer: {
-    text: string
-    cursor: number
-    selection?: { start: number; end: number }
-    placeholder: string
-    disabled: boolean
-    mask?: boolean
-    attachments: readonly string[]
-    images: readonly { name: string; mediaType: string; bytes: number }[]
-  }
-  status: {
-    line: string
-    tokens?: { input: number; output: number }
-    telemetry: TelemetrySnapshot
-    todos: readonly SessionTodo[]
-    goal?: SessionGoal
-    sessionTitle?: string
-    agentPreset?: string
-    transcript?: { evicted: number }
-    subagents?: TuiSubagentActivity
-    queueCount: number
-    remoteQueueCount: number
-    focusMode: boolean
-    permissionMode: string
-    planMode: boolean
-  }
-  queuePicker?: PromptQueuePickerState
-  remoteQueuePicker?: RemoteQueuePickerState
-  checklist?: ChecklistState
-  helpOpen: boolean
-  verbose: boolean
-  capabilities: TuiCapabilities
-  runtimeInfo: {
-    name: string
-    capabilitySource: TuiCapabilitySnapshot['source'] | 'unknown'
-    mcp: {
-      status: 'connected' | 'unavailable' | 'unknown'
-      name?: string
-    }
-    capabilities: readonly { name: TuiDisplayedCapabilityName; enabled: boolean }[]
-  }
-  notice?: { tone: 'info' | 'error'; message: string }
-  quitConfirmation: boolean
-  quitConfirmationSelection: 'confirm' | 'cancel'
-  helpText: string
-  commands: readonly {
-    name: string
-    summary: string
-    input?: { hint: string }
-  }[]
-  resumePicker?: ResumePickerState
-  sessionTreePicker?: SessionTreePickerState
-  subagentPicker?: SubagentPickerState
-  rewindPicker?: RewindPickerState
-  forkPicker?: RewindPickerState
-  skillsPicker?: SkillsPickerState
-  pluginPicker?: PluginPickerState
-  modelPicker?: ModelPickerState
-  effortPicker?: EffortPickerState
-  permissionPicker?: PermissionPickerState
-  modelInputOpen: boolean
-  skills: readonly SkillEntry[]
-  question?: TuiQuestionSnapshot
-  approval?: ApprovalState
-  reviewPicker?: ReviewPickerState
-  exiting: boolean
-}
-
-export type { TuiQuestionSnapshot }
-
-export type TuiApprovalSnapshot = ApprovalState
-
-export type TuiSubagentActivity = {
-  running: number
-  last?: { id: string; event: 'started' | 'finished' }
-}
-
-export type TuiAuthInfo = {
-  mode: 'byok' | 'cocode'
-  envLocked: boolean
-  accountLabel?: string
-  logout: () => Promise<void>
-  persistModel?: (provider: string, model: string) => Promise<void>
-  selectMode?: (mode: 'byok' | 'cocode') => Promise<SelectModeResult>
-  exclusiveHome?: () => Promise<boolean>
-  login?: () => void
-  submitByok?: (key: string) => Promise<void>
-  resolved?: () => ResolvedAuth
-  snapshot?: () => AuthSnapshot
-  subscribe?: (listener: () => void) => () => void
-}
-
-export type TuiCommandCtx = {
-  dispatch: (action: TuiAction) => void
-  newSession: () => void
-  clearTranscript: () => void
-  showStatus: () => void
-  notice: (tone: 'info' | 'error', message: string) => void
-  logout: () => Promise<void>
-  useAuth?: (target: 'byok' | 'cocode' | 'login') => void
-  showDoctor?: () => void
-  exportTranscript?: () => Promise<void>
-  initWorkspace?: () => Promise<void>
-  setTheme?: (name: 'dark' | 'light') => void
-  setLocale?: (value: string) => void
-  setModel?: (value: string) => void
-  renameSession?: (title: string) => void
-  resumeSessions?: () => Promise<void>
-  showSkillsPicker?: () => void
-  showPlugins?: (args: string) => void
-  showModelPicker?: () => void
-  showEffortPicker?: () => void
-  setEffort?: (value: string) => void
-  showRewindPicker?: () => void
-  showUsage?: () => void
-  copyLatestAssistant?: () => void
-  pasteImage?: () => void
-  toggleFocus?: () => void
-  review?: (args: string) => void
-  forkSession?: () => void
-  cloneSession?: () => void
-  showSessionTree?: () => Promise<void>
-  showForkPicker?: () => void
-  showQueuePicker?: () => void
-  showChecklist?: () => void
-  showSubagents?: () => void
-  showHistory?: (args?: string) => void
-  editRemoteQueue?: (itemId: string, text: string) => void
-  showSubagentHistory?: (childSessionId: string) => void
-  promptSubagent?: (childSessionId: string, text: string) => void
-  interruptSubagent?: (childSessionId: string) => void
-}
-
-export type TuiApp = {
-  start(): Promise<void>
-  close(): Promise<void>
-  snapshot(): TuiSnapshot
-  subscribe(listener: () => void): () => void
-  dispatch(action: TuiAction): void
-}
-
-export type TuiAppOptions = {
-  runtime: TuiRuntime
-  externalDsh?: ExternalDshReadSource
-  cwd: string
-  provider: string
-  model: string
-  sessionId?: string
-  capabilities?: TuiCapabilities
-  commands?: CommandRegistry
-  auth?: TuiAuthInfo
-  diagnostics?: {
-    tty: boolean
-    launchConfigured: boolean
-    argsConfigured: boolean
-    sessionRoot?: string
-    runtimeHome?: string
-    sharedDshHome?: string
-  }
-  setTheme?: (name: 'dark' | 'light') => void
-  locale?: UiLocale
-  terminalNotify?: {
-    mode?: TerminalNotifyMode
-    write?: (value: string) => void
-    platform?: NodeJS.Platform
-    env?: NodeJS.ProcessEnv
-  }
-  readClipboardImage?: () => Promise<TuiImageInput>
-  readPastedImage?: (path: string) => Promise<TuiImageInput | undefined>
-  logger?: TuiLogger
 }
 
 export function createTuiApp(options: TuiAppOptions): TuiApp {
@@ -556,10 +277,8 @@ class TuiAppImpl implements TuiApp {
   private capabilities: TuiCapabilities
   private runtimeCapabilitySnapshot: TuiCapabilitySnapshot | undefined
   private readonly commands: CommandRegistry
-  private assembler: Assembler
-  private telemetry: TelemetryProjector
-  private sessionState: SessionStateProjector
-  private readonly history = new InputHistory()
+  private readonly projections = createSessionProjectionCoordinator()
+  private readonly composer = createComposerState()
   private readonly listeners = new Set<() => void>()
   private unsubscribeRuntime: (() => void) | undefined
   private unsubscribeRuntimeClose: (() => void) | undefined
@@ -567,9 +286,6 @@ class TuiAppImpl implements TuiApp {
   private unsubscribeApproval: (() => void) | undefined
   private sessionId: string
   private agent: TuiSnapshot['agent'] = 'starting'
-  private draft: DraftState = createDraft()
-  private attachments: Array<{ path: string; token: string }> = []
-  private images: DraftImage[] = []
   private helpOpen = false
   private verbose = false
   private focusMode = false
@@ -592,17 +308,11 @@ class TuiAppImpl implements TuiApp {
   private readonly logger: TuiLogger | undefined
   private unsubscribeExternalDsh: (() => void) | undefined
   private readonly keymap: Keymap
-  private imageSerial = 0
   private readonly activeSubagents = new Set<string>()
-  private highestSessionSeq = -1
-  private historyEvents: SessionEvent[] = []
-  private historyHasMore = false
   private lastSubagent: TuiSubagentActivity['last']
   private readonly promptQueue = new PromptQueueCoordinator()
   private remoteQueue: TuiRemoteQueueItem[] = []
   private remoteQueuePicker: RemoteQueuePickerState | undefined
-  private projectionStore = createSessionProjectionStore()
-  private capturingByok = false
   private emitScheduled = false
   private closePromise: Promise<void> | undefined
   private resumePicker: ResumePickerState | undefined
@@ -624,7 +334,6 @@ class TuiAppImpl implements TuiApp {
   private modelInputOpen = false
   private skills: SkillEntry[] = []
   private remoteCommands: TuiCommandDescriptor[] = []
-  private pendingSkillInvocation: string | undefined
   private readonly questions: QuestionCoordinator
   private workspaceAuthorizationPending = false
   private readonly approvalQueue: PendingApproval[] = []
@@ -638,8 +347,87 @@ class TuiAppImpl implements TuiApp {
   private externalSession: ExternalSessionState | undefined
   private previousSessionView: PreviousSessionView | undefined
 
+  private get history() {
+    return this.composer.history
+  }
+
+  private get draft(): DraftState {
+    return this.composer.draft
+  }
+
+  private set draft(value: DraftState) {
+    this.composer.draft = value
+  }
+
+  private get attachments() {
+    return this.composer.attachments
+  }
+
+  private set attachments(value: Array<{ path: string; token: string }>) {
+    this.composer.attachments = value
+  }
+
+  private get images(): DraftImage[] {
+    return this.composer.images
+  }
+
+  private set images(value: DraftImage[]) {
+    this.composer.images = value
+  }
+
+  private get pendingSkillInvocation() {
+    return this.composer.pendingSkillInvocation
+  }
+
+  private set pendingSkillInvocation(value: string | undefined) {
+    this.composer.pendingSkillInvocation = value
+  }
+
+  private get imageSerial() {
+    return this.composer.imageSerial
+  }
+
+  private set imageSerial(value: number) {
+    this.composer.imageSerial = value
+  }
+
+  private get capturingByok() {
+    return this.composer.capturingByok
+  }
+
+  private set capturingByok(value: boolean) {
+    this.composer.capturingByok = value
+  }
+
+  private get assembler(): Assembler {
+    return this.projections.assembler
+  }
+
+  private get telemetry(): TelemetryProjector {
+    return this.projections.telemetry
+  }
+
+  private get sessionState(): SessionStateProjector {
+    return this.projections.sessionState
+  }
+
+  private get projectionStore() {
+    return this.projections.projectionStore
+  }
+
+  private get historyEvents(): readonly SessionEvent[] {
+    return this.projections.historyEvents()
+  }
+
+  private get historyHasMore(): boolean {
+    return this.projections.historyHasMore()
+  }
+
+  private set historyHasMore(value: boolean) {
+    this.projections.setHistoryHasMore(value)
+  }
+
   constructor(options: TuiAppOptions) {
-    const projection = createSessionProjection()
     this.runtime = options.runtime
     this.externalDsh = options.externalDsh
     this.cwd = options.cwd
@@ -649,9 +437,6 @@ class TuiAppImpl implements TuiApp {
     this.configuredCapabilities = options.capabilities ?? P0_CAPABILITIES
     this.capabilities = this.configuredCapabilities
     this.commands = options.commands ?? createBuiltinCommands()
-    this.assembler = projection.assembler
-    this.telemetry = projection.telemetry
-    this.sessionState = projection.sessionState
     this.auth = options.auth
     this.diagnostics = options.diagnostics ?? {
       tty: true,
@@ -1955,9 +1740,7 @@ class TuiAppImpl implements TuiApp {
       const history = await this.runtime.subagentHistory(parentSessionId, childId, entry?.mode)
       this.previousSessionView = {
         sessionId: this.sessionId,
-        assembler: this.assembler,
-        telemetry: this.telemetry,
-        sessionState: this.sessionState,
+        projection: this.projections.capture(),
         externalSession: this.externalSession,
         sessionTitleOverride: this.sessionTitleOverride,
         provider: this.provider,
@@ -1965,9 +1748,8 @@ class TuiAppImpl implements TuiApp {
         capabilities: this.capabilities,
         skills: this.skills,
         remoteCommands: this.remoteCommands,
-        projectionStore: this.projectionStore,
       }
-      this.projectionStore = createSessionProjectionStore()
+      this.projections.replaceStore()
       this.replaceSessionProjection(
         await markUnavailableHistoryAttachments(this.runtime, childId, history.events),
         history.projections,
@@ -2280,9 +2062,7 @@ class TuiAppImpl implements TuiApp {
       }
       this.previousSessionView = {
         sessionId: previousSessionId,
-        assembler: this.assembler,
-        telemetry: this.telemetry,
-        sessionState: this.sessionState,
+        projection: this.projections.capture(),
         externalSession: this.externalSession,
         sessionTitleOverride: this.sessionTitleOverride,
         provider: this.provider,
@@ -2290,9 +2070,8 @@ class TuiAppImpl implements TuiApp {
         capabilities: this.capabilities,
         skills: this.skills,
         remoteCommands: this.remoteCommands,
-        projectionStore: this.projectionStore,
       }
-      this.projectionStore = createSessionProjectionStore()
+      this.projections.replaceStore()
       this.replaceSessionProjection(
         await markUnavailableHistoryAttachments(this.runtime, this.sessionId, history.events.map(toSessionEvent)),
       )
@@ -2358,9 +2137,7 @@ class TuiAppImpl implements TuiApp {
         }
       }
       this.sessionId = previous.sessionId
-      this.assembler = previous.assembler
-      this.telemetry = previous.telemetry
-      this.sessionState = previous.sessionState
+      this.projections.restore(previous.projection)
       this.externalSession = previous.externalSession
       this.sessionTitleOverride = previous.sessionTitleOverride
       this.provider = previous.provider
@@ -2368,7 +2145,6 @@ class TuiAppImpl implements TuiApp {
       this.capabilities = previous.capabilities
       this.skills = previous.skills
       this.remoteCommands = previous.remoteCommands
-      this.projectionStore = previous.projectionStore
       this.previousSessionView = undefined
       this.agent = 'idle'
       this.notice = {
@@ -2921,8 +2697,9 @@ class TuiAppImpl implements TuiApp {
       return
     }
     const sessionModelsReader = this.capabilities.sessionModels ? this.runtime.sessionModels : undefined
+    const listModels = this.runtime.listModels
     const canReadSessionModels = sessionModelsReader !== undefined
-    if (!canReadSessionModels && (!this.capabilities.modelList || this.runtime.listModels === undefined)) {
+    if (!canReadSessionModels && (!this.capabilities.modelList || listModels === undefined)) {
       this.modelInputOpen = true
       this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
       this.emit()
@@ -2941,8 +2718,10 @@ class TuiAppImpl implements TuiApp {
         if (!sessionModels.routable) {
           this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
         }
+      } else if (listModels !== undefined) {
+        catalog = await listModels()
       } else {
-        catalog = await this.runtime.listModels!()
+        throw new Error('model catalog is unavailable')
       }
       if (catalog.groups.every((group) => group.models.length === 0)) {
         this.modelInputOpen = true
@@ -3254,9 +3033,7 @@ class TuiAppImpl implements TuiApp {
       }
       this.sessionId = sessionId
       this.externalSession = undefined
-      this.assembler = nextProjection.assembler
-      this.telemetry = nextProjection.telemetry
-      this.sessionState = nextProjection.sessionState
+      this.projections.setProjection(nextProjection)
       this.sessionTitleOverride = undefined
       this.resetSubagentActivity()
       this.clearQueuedPrompts()
@@ -4131,38 +3908,17 @@ class TuiAppImpl implements TuiApp {
     events: readonly SessionEvent[],
     projections?: import('@cocode/tui-connection').TuiSessionProjectionBaseline,
   ): void {
-    const projection = createSessionProjection()
-    this.resetHistoryState()
-    if (projections !== undefined) this.projectionStore.applyBaseline(projections)
-    for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
-      if (event.seq <= this.highestSessionSeq) continue
-      this.highestSessionSeq = event.seq
-      this.historyEvents.push(event)
-      projection.assembler.ingest(event)
-      projection.telemetry.ingest(event)
-      projection.sessionState.ingest(event)
-    }
-    this.assembler = projection.assembler
-    this.telemetry = projection.telemetry
-    this.sessionState = projection.sessionState
+    this.projections.replace(events, projections)
   }
 
   private resetHistoryState(): void {
-    this.highestSessionSeq = -1
-    this.historyEvents = []
-    this.historyHasMore = false
-    this.projectionStore.clear()
+    this.projections.resetHistory()
   }
 
   private ingestSessionEvent(event: SessionEvent): void {
-    if (event.seq <= this.highestSessionSeq) return
-    this.highestSessionSeq = event.seq
-    this.historyEvents.push(event)
-    this.telemetry.ingest(event)
-    this.sessionState.ingest(event)
+    if (!this.projections.ingest(event)) return
     if (event.type === 'turn/start') this.checklist = undefined
     if (event.type === 'session/title') this.sessionTitleOverride = undefined
-    this.assembler.ingest(event)
   }
 
   private scheduleEmit(): void {
@@ -4175,221 +3931,5 @@ class TuiAppImpl implements TuiApp {
   }
 }
 
-function runtimeCapabilityEntries(
-  snapshot: TuiCapabilitySnapshot | undefined,
-  effective: TuiCapabilities,
-): readonly { name: TuiDisplayedCapabilityName; enabled: boolean }[] {
-  const names: TuiDisplayedCapabilityName[] = [
-    'cancel',
-    'open',
-    'fork',
-    'rewind',
-    'skills',
-    'onRequest',
-    'approval',
-    'permissionMode',
-    'planMode',
-    'sessionList',
-    'modelList',
-    'imageAttachments',
-    'commands',
-    'plugins',
-    'pluginsMutate',
-    'sessionSearch',
-    'sessionHistory',
-    'sessionModels',
-    'sessionRename',
-    'queueMutation',
-    'attachmentRead',
-    'sessionCreate',
-    'subagentList',
-    'subagentHistory',
-    'subagentPrompt',
-    'subagentInterrupt',
-    'promptMode',
-    'queueMode',
-  ]
-  return names.map((name) => ({
-    name,
-    enabled:
-      name === 'skills'
-        ? effective.skills
-        : name === 'onRequest'
-        ? snapshot?.capabilities.onRequest === true
-        : snapshot === undefined
-        ? name === 'sessionList'
-          ? effective.sessionList !== 'none'
-          : effective[name as keyof Omit<TuiCapabilities, 'sessionList'>] === true
-        : snapshot.capabilities[name] === true,
-  }))
-}
-
-function formatPluginMutationResult(plugin: TuiPluginEntry, locale: UiLocale): string {
-  const phase = pluginPhaseLabel(plugin.fiberPhase, locale)
-  return locale === 'zh'
-    ? `${plugin.moduleName}（${plugin.entryId}）已${plugin.enabled ? '启用' : '禁用'}（${phase}）。`
-    : `${plugin.moduleName} (${plugin.entryId}) is ${plugin.enabled ? 'enabled' : 'disabled'} (${phase}).`
-}
-
-function makeSessionTreeItems(
-  sessions: ReadonlyArray<{
-    id: string
-    createdAt: number
-    updatedAt?: number
-    cwd?: string
-    title?: string
-    preview?: string
-    parentSession?: string
-    seedLength?: number
-    running?: boolean
-    blank?: boolean
-    origin?: 'subagent'
-    agentPreset?: string
-    path: string
-    externalSessionId?: string
-  }>,
-  source: 'rpc' | 'jsonl' | 'external',
-  currentSessionId: string,
-  activities: ReadonlyMap<string, 'idle' | 'running'>,
-): SessionTreePickerItem[] {
-  const tree = buildSessionTree(sessions)
-  return flattenSessionTree(tree, currentSessionId).map((row) => {
-    const sourceSession = sessions.find((session) => session.id === row.session.id)
-    const activity = activities.get(row.session.id)
-    return {
-      ...row,
-      source,
-      ...(sourceSession?.path === undefined || sourceSession.path === ''
-        ? {}
-        : { path: sourceSession.path }),
-      ...(sourceSession?.updatedAt === undefined ? {} : { updatedAt: sourceSession.updatedAt }),
-      ...(sourceSession?.running === undefined ? {} : { activity: sourceSession.running ? 'running' : 'idle' }),
-      ...(sourceSession?.blank === undefined ? {} : { blank: sourceSession.blank }),
-      ...(sourceSession?.origin === undefined ? {} : { origin: sourceSession.origin }),
-      ...(sourceSession?.agentPreset === undefined ? {} : { agentPreset: sourceSession.agentPreset }),
-      ...(sourceSession?.externalSessionId === undefined
-        ? {}
-        : { externalSessionId: sourceSession.externalSessionId }),
-      ...(activity === undefined ? {} : { activity }),
-    }
-  })
-}
-
-function makeExternalSessionTreeItems(
-  summaries: readonly ExternalSessionSummary[],
-  currentSessionIdentity: string,
-): SessionTreePickerItem[] {
-  const sessions = summaries.map((summary) => ({
-    id: externalSessionIdentity(summary.id),
-    createdAt: summary.createdAt,
-    updatedAt: summary.updatedAt,
-    cwd: summary.cwd,
-    title: summary.title,
-    preview: summary.preview,
-    parentSession:
-      summary.parentSession === undefined
-        ? undefined
-        : externalSessionIdentity(summary.parentSession),
-    seedLength: summary.seedLength,
-    path: summary.path,
-    externalSessionId: summary.id,
-  }))
-  return makeSessionTreeItems(
-    sessions,
-    'external',
-    currentSessionIdentity,
-    new Map(),
-  )
-}
-
-function externalSessionIdentity(sessionId: string): string {
-  return `shared-dsh:${sessionId}`
-}
-
-function toSessionEvent(event: ExternalSessionEvent): SessionEvent {
-  return {
-    type: event.type,
-    seq: event.seq,
-    time: event.time,
-    data: event.data,
-    ...(event.ignorable === true ? { ignorable: true as const } : {}),
-  }
-}
-
-function externalCommandAllowed(name: string): boolean {
-  return new Set([
-    'help',
-    'exit',
-    'quit',
-    'q',
-    'redraw',
-    'status',
-    'doctor',
-    'theme',
-    'lang',
-    'thinking',
-    'tokens',
-    'cost',
-    'export',
-    'copy',
-    'todos',
-    'focus',
-    'clear',
-    'resume',
-    'new',
-    'tree',
-    'sessions',
-  ]).has(name.toLowerCase())
-}
-
-function normalizeOpenResult(result: boolean | TuiSessionOpenResult): TuiSessionOpenResult {
-  return typeof result === 'boolean' ? { opened: result } : result
-}
-
-function safeSubagentId(value: string): string {
-  return [...value]
-    .filter((char) => {
-      const code = char.charCodeAt(0)
-      return code >= 0x20 && code !== 0x7f
-    })
-    .join('')
-    .slice(0, 32)
-}
-
-function skillCommandName(skill: SkillEntry): string {
-  const source = skill.source
-  if (source === undefined || source === '') return skill.name
-  const prefix =
-    source.startsWith('project-')
-      ? 'project'
-      : source.startsWith('user-')
-      ? 'user'
-      : source
-  return `${prefix}:${skill.name}`
-}
-
-function formatSkillInvocation(skill: SkillEntry, args: string): string {
-  const suffix = args.trim()
-  return suffix === '' ? `/${skill.name}` : `/${skill.name} ${suffix}`
-}
-
-function imageExtension(mediaType: TuiImageInput['mediaType']): string {
-  if (mediaType === 'image/jpeg') return 'jpg'
-  return mediaType.slice('image/'.length)
-}
-
-function clipboardImageError(locale: UiLocale, error: unknown): string {
-  if (!(error instanceof ClipboardImageError)) return errorMessage(error)
-  switch (error.code) {
-    case 'unavailable':
-      return text(locale, 'imageClipboardUnavailable')
-    case 'empty':
-      return text(locale, 'imageClipboardEmpty')
-    case 'too-large':
-      return text(locale, 'imageTooLarge')
-    case 'unsupported':
-      return text(locale, 'imageUnsupported')
-  }
-}
 
 const MAX_DRAFT_IMAGES = 20

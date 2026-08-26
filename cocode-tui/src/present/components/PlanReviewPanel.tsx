@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from 'ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import stringWidth from 'string-width'
-import type { TuiQuestionSnapshot, TuiAction } from '../../runtime/app.ts'
+import type { TuiQuestionSnapshot, TuiAction } from '../../runtime/app-contracts.ts'
 import { parseMarkdownBlocks, renderTable } from './Markdown.tsx'
 import { text, type UiLocale } from '../../runtime/ui-locale.ts'
 import { glyphs } from '../glyphs.ts'
