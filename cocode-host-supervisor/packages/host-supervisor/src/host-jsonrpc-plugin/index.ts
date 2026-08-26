@@ -24,6 +24,7 @@ export function apply(
   const clients = new Set<TuiCompanionGateway>();
   let questionDisposer: (() => void) | undefined;
   let approvalDisposer: (() => void) | undefined;
+  let disposed = false;
   const registerQuestionProvider = (): void => {
     if (questionDisposer !== undefined) return;
     const service = ctx.get("userQuestions") as
@@ -111,16 +112,29 @@ export function apply(
       gateway.handleRequest(method, params),
     );
   });
-  if (process.platform !== "win32" && existsSync(config.endpoint))
-    unlinkSync(config.endpoint);
-  server.listen(config.endpoint);
-  if (process.platform !== "win32") {
-    try {
-      chmodSync(config.endpoint, 0o600);
-    } catch {}
+  const startServer = (): void => {
+    if (disposed || server.listening) return;
+    if (process.platform !== "win32" && existsSync(config.endpoint))
+      unlinkSync(config.endpoint);
+    server.listen(config.endpoint);
+    if (process.platform !== "win32") {
+      try {
+        chmodSync(config.endpoint, 0o600);
+      } catch {}
+    }
+  };
+  const loader = ctx.get("loader") as { await?: () => Promise<unknown> } | undefined;
+  if (loader?.await === undefined) {
+    startServer();
+  } else {
+    void loader.await().then(
+      () => startServer(),
+      () => undefined,
+    );
   }
   ctx.effect?.(
     () => async () => {
+      disposed = true;
       questionDisposer?.();
       questionDisposer = undefined;
       approvalDisposer?.();

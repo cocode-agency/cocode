@@ -26,6 +26,7 @@
     "start": "node ./bin/cocode-tui.mjs",
     "typecheck": "tsc --noEmit && pnpm -r typecheck",
     "test": "vitest run",
+    "test:e2e": "pnpm --dir ../cocode-host-supervisor run build && vitest run --config vitest.e2e.config.ts",
     "bench": "vitest bench --run",
     "lint": "oxlint src packages test",
     "lint:fix": "oxlint --fix src packages test",

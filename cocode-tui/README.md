@@ -140,9 +140,13 @@ Run these commands from `cocode-tui/`:
 pnpm run dev          # Start from TypeScript source; requires a TTY
 pnpm run build        # Build dist/cocode-tui.mjs
 pnpm test             # Run the TUI test suite
+pnpm run test:e2e     # Run real CLI + Host end-to-end tests
 pnpm run typecheck    # Check the TUI workspace types
 pnpm run release:check
 ```
+
+Test authoring rules and validation boundaries are documented in
+[`test/README.md`](./test/README.md).
 
 `pnpm run release:check` verifies the package metadata, required build output,
 and packability. It does not publish the package and does not prove a real

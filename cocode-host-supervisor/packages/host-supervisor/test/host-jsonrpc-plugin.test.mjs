@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -74,6 +74,9 @@ function createContext(options = {}) {
       }
       if (name === 'approval') {
         return options.approval === true ? {} : undefined
+      }
+      if (name === 'loader') {
+        return options.loader
       }
       if (name === 'llm') {
         return {
@@ -181,6 +184,28 @@ async function connectAndInitialize(client) {
     model: 'deepseek-v4-flash',
   })
 }
+
+test('does not expose JSON-RPC before the Host loader settles', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'cocode-host-jsonrpc-'))
+  const endpoint = join(directory, 'host.sock')
+  let release
+  const loader = { await: () => new Promise(resolve => { release = resolve }) }
+  const runtime = createContext({ loader })
+  apply(runtime.ctx, { endpoint })
+
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(existsSync(endpoint), false)
+  release()
+  await new Promise(resolve => setImmediate(resolve))
+
+  const client = createRpcClient(endpoint)
+  t.after(async () => {
+    client.close()
+    await runtime.cleanup()
+    rmSync(directory, { recursive: true, force: true })
+  })
+  await connectAndInitialize(client)
+})
 
 test('routes questions to the client that owns the target session', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'cocode-host-jsonrpc-'))
