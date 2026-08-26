@@ -15,13 +15,14 @@ export function verifyPackagedStartupAssets(
 	{ platform, arch, nodeExecutableName = platform === "win32" ? "cocode-node.exe" : "cocode-node" } = {},
 ) {
 	const root = path.resolve(packageRoot)
-	assertFile(path.join(root, "resources", nodeExecutableName), `packaged ${nodeExecutableName}`)
+	const resourcesRoot = resolvePackagedResourcesRoot(root, platform)
+	assertFile(path.join(resourcesRoot, nodeExecutableName), `packaged ${nodeExecutableName}`)
 	assertFile(
-		path.join(root, "resources", "startup-failure.html"),
+		path.join(resourcesRoot, "startup-failure.html"),
 		"packaged startup failure diagnostic page",
 	)
 
-	const runtimeRoot = path.join(root, "resources", "dsh-runtime")
+	const runtimeRoot = path.join(resourcesRoot, "dsh-runtime")
 	assertDirectory(runtimeRoot, "packaged DSH runtime")
 	const manifestPath = path.join(runtimeRoot, "runtime-manifest.json")
 	assertFile(manifestPath, "packaged runtime manifest")
@@ -47,7 +48,7 @@ export function verifyPackagedStartupAssets(
 		"packaged DSH Web frontend",
 	)
 
-	const appRoot = resolvePackagedAppRoot(root)
+	const appRoot = resolvePackagedAppRoot(root, platform, resourcesRoot)
 	const betterSqliteRoot = path.join(appRoot, "node_modules", "better-sqlite3")
 	assertDirectory(betterSqliteRoot, "packaged better-sqlite3")
 	const betterSqliteNative = findTargetNativeAddon(betterSqliteRoot, platform, arch)
@@ -83,7 +84,7 @@ export function verifyPackagedStartupAssets(
 			assertNativeBinaryArchitecture(nativeFile, { platform, arch })
 	}
 
-	assertNativeBinaryArchitecture(path.join(root, "resources", nodeExecutableName), { platform, arch })
+	assertNativeBinaryArchitecture(path.join(resourcesRoot, nodeExecutableName), { platform, arch })
 	verifyRequiredWindowsNativePackages(runtimeRoot, { platform, arch })
 	verifyNativeRuntimeMatrix(runtimeRoot, { platform, arch })
 	const nodePtyInventory = verifyNodePtyNativesRecursively({ root: runtimeRoot, platform, arch })
@@ -98,12 +99,22 @@ export function verifyPackagedStartupAssets(
 	}
 }
 
-function resolvePackagedAppRoot(root) {
-	const candidates = [
-		root,
-		path.join(root, "resources", "app"),
-		path.join(root, "resources", "app.asar.unpacked"),
-	]
+function resolvePackagedResourcesRoot(root, platform) {
+	if (platform !== "darwin") return path.join(root, "resources")
+	const appPath = findFirstDirectoryByExtension(root, ".app")
+	if (!appPath) throw new Error(`No .app bundle was found under ${root}.`)
+	return path.join(appPath, "Contents", "Resources")
+}
+
+function resolvePackagedAppRoot(root, platform, resourcesRoot) {
+	const candidates =
+		platform === "darwin"
+			? [path.join(resourcesRoot, "app"), resourcesRoot]
+			: [
+					root,
+					path.join(root, "resources", "app"),
+					path.join(root, "resources", "app.asar.unpacked"),
+				  ]
 	const resolved = candidates.find((candidate) =>
 		existsSync(path.join(candidate, "node_modules", "better-sqlite3")),
 	)
@@ -161,6 +172,19 @@ function findFirstByExtension(root, extension) {
 		if (entry.isFile() && entry.name.toLowerCase().endsWith(extension)) return file
 		if (entry.isDirectory()) {
 			const found = findFirstByExtension(file, extension)
+			if (found) return found
+		}
+	}
+	return undefined
+}
+
+function findFirstDirectoryByExtension(root, extension) {
+	if (!existsSync(root) || !statSync(root).isDirectory()) return undefined
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		const file = path.join(root, entry.name)
+		if (entry.isDirectory() && entry.name.toLowerCase().endsWith(extension)) return file
+		if (entry.isDirectory()) {
+			const found = findFirstDirectoryByExtension(file, extension)
 			if (found) return found
 		}
 	}

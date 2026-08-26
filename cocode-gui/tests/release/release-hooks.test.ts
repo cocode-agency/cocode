@@ -509,8 +509,9 @@ test("verifies the staged Windows runtime and fails on a missing DSH entry", () 
 test("does not skip packaged runtime verification on macOS", () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-packaged-macos-assets-"))
 	try {
-		writeFixture(path.join(root, "resources", "cocode-node"), createMachOFixture(0x0100000c))
-		writeFixture(path.join(root, "resources", "startup-failure.html"), "<html />")
+		const resources = path.join(root, "Cocode.app", "Contents", "Resources")
+		writeFixture(path.join(resources, "cocode-node"), createMachOFixture(0x0100000c))
+		writeFixture(path.join(resources, "startup-failure.html"), "<html />")
 		assert.throws(
 			() => verifyPackagedStartupAssets(root, { platform: "darwin", arch: "arm64" }),
 			/packaged DSH runtime is missing/,
