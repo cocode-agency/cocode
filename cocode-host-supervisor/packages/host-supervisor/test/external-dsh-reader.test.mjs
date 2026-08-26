@@ -27,10 +27,29 @@ test('bootstraps an idempotent cocode profile without touching an official profi
     assert.equal(existsSync(join(cocodeHome, directory)), false, directory)
   }
   const patch = readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')
-  assert.deepEqual(YAML.parse(patch), [])
+  assert.deepEqual(parseGeneratedPatch(patch), [{ id: 'attachment-local', config: { dshHome: '<runtime-dsh-home>' } }])
   writeFileSync(join(profile, 'cordis.patch.yml'), `${patch}# user patch\n`)
   ensureCocodeProfile(root, cocodeHome)
   assert.equal(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8'), `${patch}# user patch\n`)
+})
+
+test('migrates the old empty Cocode patch to configure local attachments', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cocode-profile-attachment-migration-'))
+  roots.push(root)
+  const profile = join(root, 'profiles', 'cocode')
+  mkdirSync(profile, { recursive: true })
+  writeFileSync(join(profile, 'package.json'), `${JSON.stringify({
+    name: 'cocode-profile',
+    private: true,
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+  })}\n`)
+  writeFileSync(join(profile, 'cordis.patch.yml'), '# Cocode uses the shared DSH settings and credentials paths.\r\n[]\r\n\r\n')
+
+  ensureCocodeProfile(root, join(root, 'cocode-home'))
+
+  assert.deepEqual(parseGeneratedPatch(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')), [
+    { id: 'attachment-local', config: { dshHome: '<runtime-dsh-home>' } },
+  ])
 })
 
 test('removes only the previously generated private settings override', () => {
@@ -57,8 +76,14 @@ test('removes only the previously generated private settings override', () => {
 
   ensureCocodeProfile(root, join(root, 'new-cocode-home'))
 
-  assert.deepEqual(YAML.parse(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')), [])
+  assert.deepEqual(parseGeneratedPatch(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')), [
+    { id: 'attachment-local', config: { dshHome: '<runtime-dsh-home>' } },
+  ])
 })
+
+function parseGeneratedPatch(content) {
+  return YAML.parse(content.replace('!!js dshHomePath()', "'<runtime-dsh-home>'"))
+}
 
 test('rejects a Cocode profile whose bundle composition was changed', () => {
   const root = mkdtempSync(join(tmpdir(), 'cocode-profile-invalid-'))
