@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimeSlotDirectory } from './paths.js'
@@ -219,10 +220,9 @@ function isRuntimePackageComplete(sourceRoot: string, targetRoot: string, plugin
   const sourceManifestPath = join(sourceRoot, 'package.json')
   const targetManifestPath = join(targetRoot, 'package.json')
   if (!existsSync(sourceManifestPath) || !existsSync(targetManifestPath)) return false
-  const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, 'utf8')) as { version?: string }
-  const targetManifest = JSON.parse(readFileSync(targetManifestPath, 'utf8')) as { version?: string }
+  const sourceManifest = readManifest(sourceManifestPath)
+  const targetManifest = readManifest(targetManifestPath)
   if (sourceManifest.version !== targetManifest.version) return false
-  if (!listPackageFiles(sourceRoot).every((sourcePath) => existsSync(join(targetRoot, relative(sourceRoot, sourcePath))))) return false
 
   // A slot can keep a complete DSH package while a newly copied plugin has a
   // dependency that the old flat node_modules tree never materialized.
@@ -239,18 +239,60 @@ function isRuntimePackageComplete(sourceRoot: string, targetRoot: string, plugin
     fallbackRoot: sourceRoot,
   })
   return records.every((record) => {
-    const targetManifestPath = join(targetModules, ...record.destinationSegments, 'package.json')
-    if (!existsSync(targetManifestPath)) return false
-    return stableJson(readManifest(targetManifestPath)) === stableJson(readManifest(join(record.root, 'package.json')))
+    const sourcePackageManifest = readManifest(join(record.root, 'package.json'))
+    const targetPackageRoot = join(targetModules, ...record.destinationSegments)
+    const targetPackageManifestPath = join(targetPackageRoot, 'package.json')
+    if (!existsSync(targetPackageManifestPath)) return false
+
+    // registerRuntimePluginsInDshManifest intentionally augments DSH's
+    // manifest after staging. Compare it with the post-registration shape;
+    // every other package must retain its source manifest byte-for-structure.
+    const expectedManifest = record.root === realpathOrSelf(sourceRoot)
+      ? addRuntimePluginDependencies(sourcePackageManifest, pluginSources.map((root) => readManifest(join(root, 'package.json'))))
+      : sourcePackageManifest
+    if (stableJson(readManifest(targetPackageManifestPath)) !== stableJson(expectedManifest)) return false
+
+    // Version equality and file-existence checks are insufficient for a
+    // same-version runtime slot: generated/bundled assets can change while a
+    // package version stays fixed. Compare deterministic package content,
+    // excluding package-local node_modules (materialized by the resolver).
+    // DSH's package.json is excluded because the expected manifest above is
+    // validated separately after plugin dependency registration.
+    return packageContentFingerprint(record.root, { excludeManifest: record.root === realpathOrSelf(sourceRoot) })
+      === packageContentFingerprint(targetPackageRoot, { excludeManifest: record.root === realpathOrSelf(sourceRoot) })
   })
 }
 
-function listPackageFiles(root: string, current = root): string[] {
-  return readdirSync(current, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.name === 'node_modules') return []
-    const path = join(current, entry.name)
-    return entry.isDirectory() ? listPackageFiles(root, path) : [path]
-  })
+function packageContentFingerprint(root: string, options: { excludeManifest?: boolean } = {}): string {
+  const hash = createHash('sha256')
+  visit(root, '')
+  return hash.digest('hex')
+
+  function visit(current: string, relativePath: string): void {
+    const entries = readdirSync(current, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue
+      if (options.excludeManifest && relativePath === '' && entry.name === 'package.json') continue
+      const filePath = join(current, entry.name)
+      const entryRelativePath = relativePath === '' ? entry.name : join(relativePath, entry.name)
+      if (entry.isDirectory()) {
+        visit(filePath, entryRelativePath)
+        continue
+      }
+      hash.update(entryRelativePath)
+      hash.update('\0')
+      hash.update(readFileSync(filePath))
+      hash.update('\0')
+    }
+  }
+}
+
+function realpathOrSelf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
 }
 
 /**

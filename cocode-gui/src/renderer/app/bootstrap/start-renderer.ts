@@ -1,3 +1,5 @@
+// The Web boot kernel owns the framework-free entrypoint. React mounting is
+// provided later by @deepseek-ai/dsh-client-ui-renderer through the DSH graph.
 import { AppWebEntry } from "@deepseek-ai/dsh-client-web"
 import type {
 	DshRuntimeReboundDto,

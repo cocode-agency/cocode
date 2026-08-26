@@ -86,6 +86,42 @@ test('repairs a complete slot when a registered plugin package is missing', () =
   }
 })
 
+test('repairs a same-version slot when a runtime package asset is stale', () => {
+  const runtimeHome = mkdtempSync(join(tmpdir(), 'cocode-runtime-stale-asset-test-'))
+  const previousRuntimeHome = process.env.COCODE_HOST_RUNTIME_HOME
+  process.env.COCODE_HOST_RUNTIME_HOME = runtimeHome
+  const scope = {
+    dshHome: '/tmp/cocode-stale-asset-dsh',
+    profile: 'web',
+    hostConfigFingerprint: 'test-stale-runtime-asset',
+    runtimeChannel: 'stable',
+  }
+  try {
+    const sourceRendererManifest = hostRequire.resolve('@deepseek-ai/dsh-client-ui-renderer/package.json')
+    const sourceRendererRoot = dirname(sourceRendererManifest)
+    const sourceRendererAsset = join(sourceRendererRoot, 'lib', 'client.js')
+    const pluginPath = fileURLToPath(new URL('../lib/host-jsonrpc-plugin.js', import.meta.url))
+    const first = prepareRuntimeSlot(scope, '/tmp/cocode-stale-asset-jsonrpc.sock', pluginPath)
+    const stagedAsset = join(
+      first.root,
+      'node_modules',
+      '@deepseek-ai',
+      'dsh-client-ui-renderer',
+      'lib',
+      'client.js',
+    )
+    writeFileSync(stagedAsset, '/* stale same-version renderer */\n')
+
+    const repaired = prepareRuntimeSlot(scope, '/tmp/cocode-stale-asset-jsonrpc.sock', pluginPath)
+
+    assert.equal(readFileSync(repaired.root + '/node_modules/@deepseek-ai/dsh-client-ui-renderer/lib/client.js', 'utf8'), readFileSync(sourceRendererAsset, 'utf8'))
+  } finally {
+    if (previousRuntimeHome === undefined) delete process.env.COCODE_HOST_RUNTIME_HOME
+    else process.env.COCODE_HOST_RUNTIME_HOME = previousRuntimeHome
+    rmSync(runtimeHome, { recursive: true, force: true })
+  }
+})
+
 test('addRuntimePluginDependencies extends the DSH install closure', () => {
   const manifest = addRuntimePluginDependencies(
     {

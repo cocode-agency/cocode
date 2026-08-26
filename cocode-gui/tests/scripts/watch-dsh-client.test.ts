@@ -85,6 +85,28 @@ test("discovers web client packages nested below category directories", () => {
 	}
 })
 
+test("rejects the removed dsh-client-web-react package from the active Web roster", () => {
+	const root = path.join(os.tmpdir(), `dsh-client-legacy-${String(process.pid)}`)
+	rmSync(root, { recursive: true, force: true })
+	try {
+		const legacy = path.join(root, "legacy")
+		mkdirSync(path.join(legacy, "src", "client"), { recursive: true })
+		writeFileSync(
+			path.join(legacy, "package.json"),
+			JSON.stringify({
+				name: "@deepseek-ai/dsh-client-web-react",
+				dsh: { client: { platform: "web" } },
+			}),
+		)
+		writeFileSync(path.join(legacy, "tsdown.config.ts"), "export default {}")
+		writeFileSync(path.join(legacy, "src", "client", "index.ts"), "export {}")
+
+		assert.throws(() => discoverDshClientPackages(root), /legacy DSH client package/i)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
 test("continues scanning below a non-client package manifest", () => {
 	const root = path.join(os.tmpdir(), `dsh-client-manifest-parent-${String(process.pid)}`)
 	rmSync(root, { recursive: true, force: true })
@@ -160,6 +182,8 @@ test("resolves the staged runtime path from a scoped package id", () => {
 	)
 	assert.throws(() => resolveRuntimeClientBundlePath("/tmp/dsh-runtime", "bad/package/name"))
 	assert.throws(() => resolveRuntimeClientBundlePath("/tmp/dsh-runtime", "../escape"))
+	assert.throws(() => resolveRuntimeClientBundlePath("/tmp/dsh-runtime", "foo\\..\\..\\escape"))
+	assert.throws(() => resolveRuntimeClientBundlePath("/tmp/dsh-runtime", "@example/foo\\..\\bar"))
 })
 
 test("marks bundles with non-table CommonJS externals for rebuild", () => {

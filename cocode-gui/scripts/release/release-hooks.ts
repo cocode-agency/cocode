@@ -22,6 +22,7 @@ import { parse as parseYaml } from "yaml"
 import packageMetadata from "../../package.json"
 import { packagedNodeExecutableName } from "../../src/shared/packaged-node-executable"
 import { verifyPackagedStartupAssets } from "./verify-packaged-startup-assets.mjs"
+import { verifyRuntime } from "../verify-dsh-runtime.mjs"
 import {
 	createMacNotarizeOptions,
 	isReleaseSigningRequired,
@@ -44,6 +45,12 @@ import {
 	writeLinuxReleaseManifest,
 } from "./verify-linux-packages.mjs"
 import { signLinuxPackages } from "./sign-linux-packages.mjs"
+import {
+	createReleaseEvidence,
+	readReleaseEvidenceManifest,
+	updateReleaseEvidenceStage,
+	writeReleaseEvidenceManifest,
+} from "./release-evidence.mjs"
 
 interface WindowsSigningPolicy {
 	inspectAuthenticode(filePath: string): { Subject?: string; Thumbprint?: string }
@@ -357,12 +364,6 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		verifyLinuxReleaseManifest(manifest, linuxPackages, target.arch, updateMetadata, linuxSignatures)
 		additional.push(manifest)
 	}
-	const checksum = appendChecksumManifest(
-		context.outDir,
-		[...artifacts, ...additional],
-		target.platform === "linux" ? `SHA256SUMS-${target.arch}` : undefined,
-	)
-	additional.push(checksum)
 	if (target.platform === "win32") {
 		const evidence = writeWindowsReleaseEvidenceManifest({
 			outDir: context.outDir,
@@ -376,6 +377,53 @@ export async function finalizeBuilderArtifacts(context: BuildResult): Promise<st
 		})
 		additional.push(evidence)
 	}
+	const evidenceFile = path.join(context.outDir, "release-evidence.json")
+	const publishMode = resolveElectronBuilderPublishMode(process.argv)
+	const publishCommand = publishMode === undefined
+		? "electron-builder"
+		: `electron-builder --publish ${publishMode}`
+	let releaseEvidence = existsSync(evidenceFile)
+		? readReleaseEvidenceManifest(evidenceFile)
+		: createReleaseEvidence({
+				platform: target.platform,
+				arch: target.arch,
+				nativeHost: `${process.platform}/${process.arch}`,
+				version: packageMetadata.version,
+			})
+	releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "electronPackage", {
+		status: "passed",
+		command: publishCommand,
+		artifacts: finalizedArtifacts.map((artifact) => path.relative(context.outDir, artifact)),
+		summary: "Electron package, signing and package integrity checks completed.",
+	})
+	// A fresh package invalidates any smoke result from an earlier artifact.
+	releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "installSmoke", {
+		status: "not-run",
+		summary: "This package has not completed installation and launch smoke.",
+	})
+	releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "updater", {
+		status: "not-run",
+		artifacts: updateMetadata.map((file) => path.relative(context.outDir, file)),
+		summary: "Updater metadata was generated; installation and update execution were not run.",
+	})
+	releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "publication", {
+		status: "not-run",
+		command: publishCommand,
+		summary:
+			publishMode === "never"
+				? "Local release intentionally does not publish release assets."
+				: publishMode === "always"
+					? "Publication was requested; upload completion is recorded by the publication verifier, not this packaging hook."
+					: "Publication mode was not supplied; release asset publication was not verified.",
+	})
+	writeReleaseEvidenceManifest({ outDir: context.outDir, manifest: releaseEvidence })
+	additional.push(evidenceFile)
+	const checksum = appendChecksumManifest(
+		context.outDir,
+		[...artifacts, ...additional],
+		target.platform === "linux" ? `SHA256SUMS-${target.arch}` : undefined,
+	)
+	additional.push(checksum)
 	cleanupWindowsSignLedger()
 	return additional
 }
@@ -758,12 +806,14 @@ function verifyPackagedRuntimeLayout(
 		if (appVerification.temporaryRoot)
 			rmSync(appVerification.temporaryRoot, { recursive: true, force: true })
 	}
-	if (target.platform === "win32") {
-		verifyPackagedStartupAssets(appOutDir, {
-			...target,
-			nodeExecutableName: packagedNodeExecutableName(target.platform),
-		})
-	}
+	verifyPackagedStartupAssets(appOutDir, {
+		...target,
+		nodeExecutableName: packagedNodeExecutableName(target.platform),
+	})
+	verifyRuntime(path.join(resourcesRoot, "dsh-runtime"), {
+		platform: target.platform,
+		arch: target.arch,
+	})
 }
 
 function materializePackagedAppForVerification(resourcesRoot: string): {
@@ -921,6 +971,21 @@ function cleanupWindowsSignLedger(): void {
 	if (!target || target.platform !== "win32" || resolveWindowsSignMode() !== "service") return
 	const ledgerDir = resolveWindowsSignLedgerDir()
 	if (existsSync(ledgerDir)) rmSync(ledgerDir, { recursive: true, force: true })
+}
+
+export function resolveElectronBuilderPublishMode(
+	argv: readonly string[] = process.argv,
+): "always" | "never" | undefined {
+	for (let index = 0; index < argv.length; index += 1) {
+		const argument = argv[index]
+		if (argument === "--publish") {
+			const value = argv[index + 1]
+			if (value === "always" || value === "never") return value
+		}
+		if (argument === "--publish=always" || argument === "--publish=never")
+			return argument.slice("--publish=".length) as "always" | "never"
+	}
+	return undefined
 }
 
 function normalizeThumbprint(value: string | undefined): string {

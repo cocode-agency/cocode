@@ -15,6 +15,7 @@ import { createChildSupervisor } from "./lib/child-supervisor.mjs"
 import { forkClientWatcher } from "./lib/client-watcher.mjs"
 import { buildDevRuntime } from "./lib/dev-build.mjs"
 import { acquireDevLock } from "./lib/dev-lock.mjs"
+import { createDevHostEnvironment, resolveDevSupervisorEntry } from "./lib/dev-runtime-entry.mjs"
 import { stopProcessesMatching } from "./lib/process-control.mjs"
 import { cleanupRuntime, prepareRuntime, resolveRuntimeRoot } from "./lib/runtime-cache.mjs"
 import { reconcile as reconcileOwnedProcesses } from "./reconcile-owned-processes.mjs"
@@ -33,9 +34,6 @@ const corepackCommand = process.platform === "win32" ? "corepack.cmd" : "corepac
 const pinnedPnpmArgs = ["pnpm@10.34.5"]
 
 const workspace = path.resolve(process.cwd())
-const supervisorEntry = path.resolve(
-	"../cocode-host-supervisor/packages/host-supervisor/lib/bin.js",
-)
 const runtime = resolveRuntimeRoot("dsh-desktop-dev-")
 const devUserData = resolveDevUserData(workspace)
 let devBuildId = "dev"
@@ -66,6 +64,14 @@ async function run() {
 	prepareRuntime(runtime)
 	devBuildId = resolveDevBuildId(workspace, runtime.root)
 	devHostConfigFingerprint = resolveDevHostConfigFingerprint(devBuildId)
+	const supervisorEntry = resolveDevSupervisorEntry(runtime.root)
+	const devHostEnvironment = createDevHostEnvironment(
+		{
+			...process.env,
+			COCODE_HOST_CONFIG_FINGERPRINT: devHostConfigFingerprint,
+		},
+		supervisorEntry,
+	)
 	if (children.isStopping()) return 0
 
 	const watcher = forkClientWatcher(runtime.root)
@@ -84,25 +90,23 @@ async function run() {
 		void children.stopAll()
 	})
 
-	const runtimeUrl = await acquireHostEndpoint()
-	const exitCode = await waitForExit(startElectron(runtimeUrl))
+	const runtimeUrl = await acquireHostEndpoint(supervisorEntry, devHostEnvironment)
+	const exitCode = await waitForExit(startElectron(runtimeUrl, devHostEnvironment))
 	if (watcherFailure) throw watcherFailure
 	// A shutdown this runner initiated is what the developer asked for, so the
 	// signal-derived exit code of the child it killed is not a failure to report.
 	return children.isStopping() ? 0 : exitCode
 }
 
-async function acquireHostEndpoint() {
+async function acquireHostEndpoint(supervisorEntry, devHostEnvironment) {
 	const { createHostSupervisorClient, resolveCocodeHostScope, resolveHostRuntimeEnv } =
 		await import("@cocode-agency/host-supervisor")
 	const dshHome = resolveCocodeDshHome()
 	const hostEnv = {
-		...process.env,
+		...devHostEnvironment,
 		COCODE_DSH_HOME: dshHome,
 		DSH_HOME: dshHome,
 		DSH_PROFILE: "cocode",
-		COCODE_RUNTIME_CHANNEL: "dev",
-		COCODE_HOST_CONFIG_FINGERPRINT: devHostConfigFingerprint,
 	}
 	hostLease = await createHostSupervisorClient({
 		nodeExecutable: process.execPath,
@@ -125,7 +129,7 @@ async function acquireHostEndpoint() {
 	return endpoint
 }
 
-function startElectron(runtimeUrl) {
+function startElectron(runtimeUrl, devHostEnvironment) {
 	console.log(
 		`[gui-dev] source=${workspace} build=${devBuildId} userData=${devUserData} ` +
 			`runtime=${runtimeUrl}`,
@@ -138,16 +142,13 @@ function startElectron(runtimeUrl) {
 				stdio: ["inherit", "inherit", process.platform === "darwin" ? "pipe" : "inherit"],
 				cwd: workspace,
 				env: {
-					...process.env,
+					...devHostEnvironment,
 					COCODE_DEV_MODE: "1",
 					COCODE_DEV_USER_DATA_DIR: devUserData,
 					COCODE_BUILD_ID: devBuildId,
 					COCODE_DSH_RUNTIME_URL: runtimeUrl,
-					COCODE_RUNTIME_CHANNEL: "dev",
-					COCODE_HOST_CONFIG_FINGERPRINT: devHostConfigFingerprint,
 					COCODE_DSH_HOME: resolveCocodeDshHome(),
 					DSH_RUNTIME_ROOT: runtime.root,
-					COCODE_SUPERVISOR_SERVICE_ENTRY: supervisorEntry,
 					COCODE_NODE_EXECUTABLE: process.execPath,
 				},
 			}),

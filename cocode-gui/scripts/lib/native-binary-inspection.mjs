@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs"
 import { createRequire } from "node:module"
 import * as path from "pathe"
+import { getNativePackageOwnership, getNativePackageRole } from "./native-runtime-matrix.mjs"
 
 const PE_MACHINES = new Map([
 	[0x8664, "x86_64"],
@@ -82,7 +83,14 @@ export function collectRuntimeNativeInventory(root, { platform, arch }) {
 			file: path.relative(packageRecord.root, file),
 			format: inspected.format,
 			architectures: inspected.architectures,
-			role: nativeRole(packageRecord.name, path.basename(file)),
+			role: getNativePackageRole({
+				packageName: packageRecord.name,
+				file: path.relative(packageRecord.root, file),
+			}),
+			owners: getNativePackageOwnership({
+				packageName: packageRecord.name,
+				packagePath: packageRecord.relativePath,
+			}),
 		})
 	}
 	return inventory.sort((left, right) =>
@@ -183,19 +191,6 @@ function findOwningPackage(file, root, packages) {
 	return undefined
 }
 
-function nativeRole(packageName, basename) {
-	if (packageName === "node-pty") {
-		if (basename === "pty.node") return "node-pty-pty"
-		if (basename === "spawn-helper") return "node-pty-spawn-helper"
-		if (basename === "conpty_console_list.node") return "node-pty-conpty-console-list"
-		if (basename === "conpty.node") return "node-pty-conpty"
-		return "node-pty-native"
-	}
-	if (packageName.startsWith("@img/sharp-libvips-")) return "sharp-libvips"
-	if (packageName === "sharp" || packageName.startsWith("@img/sharp-")) return "sharp-addon"
-	return "native"
-}
-
 function validateSharpNativeClosure(root, platform, arch) {
 	const packages = collectPackageManifests(root)
 	const sharpPackages = packages.filter((entry) => entry.name === "sharp")
@@ -222,16 +217,22 @@ function validateSharpNativeClosure(root, platform, arch) {
 			throw new Error(
 				`sharp target native package is missing or incompatible for ${platform}/${arch}: ${sharp.root}`,
 			)
-		if (!libvips || !isCompatible(libvips.manifest, platform, arch))
-			throw new Error(
-				`sharp libvips native package is missing or incompatible for ${platform}/${arch}: ${sharp.root}`,
-			)
 		if (!collectNativeFiles(target.root).some((file) => file.endsWith(".node")))
 			throw new Error(`sharp native addon is missing for ${platform}/${arch}: ${target.root}`)
-		if (!collectNativeFiles(libvips.root).some((file) => /libvips/i.test(path.basename(file))))
-			throw new Error(
-				`sharp libvips library is missing for ${platform}/${arch}: ${libvips.root}`,
+		if (platform !== "win32") {
+			if (!libvips || !isCompatible(libvips.manifest, platform, arch))
+				throw new Error(
+					`sharp libvips native package is missing or incompatible for ${platform}/${arch}: ${sharp.root}`,
+				)
+			if (
+				!collectNativeFiles(libvips.root).some((file) =>
+					/libvips/i.test(path.basename(file)),
+				)
 			)
+				throw new Error(
+					`sharp libvips library is missing for ${platform}/${arch}: ${libvips.root}`,
+				)
+		}
 	}
 }
 

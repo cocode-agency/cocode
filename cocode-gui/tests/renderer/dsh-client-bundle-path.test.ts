@@ -18,6 +18,10 @@ test("resolves every browser roster alias to a local Electron bundle", () => {
 			resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-client-ui-permission-presets"),
 			"file:///Cocode/dsh-client/ui-permission-presets/client.js",
 		)
+		assert.equal(
+			resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-client-not-packaged"),
+			undefined,
+		)
 	} finally {
 		if (previousWindow === undefined)
 			delete (globalThis as typeof globalThis & { window?: unknown }).window

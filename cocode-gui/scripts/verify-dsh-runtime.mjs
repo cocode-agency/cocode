@@ -9,10 +9,11 @@ import {
 	verifyNodePtyNativesRecursively,
 } from "./lib/workspace-dependencies.mjs"
 import { collectRuntimeNativeInventory } from "./lib/native-binary-inspection.mjs"
+import { resolveNativeRuntimeMatrix } from "./lib/native-runtime-matrix.mjs"
 
 export function verifyRuntime(
 	runtimeRoot,
-	{ expectedInputFingerprint, platform = process.platform, arch = process.arch } = {},
+	{ expectedInputFingerprint = undefined, platform = process.platform, arch = process.arch } = {},
 ) {
 	const root = path.resolve(runtimeRoot)
 	const manifestPath = path.join(root, "runtime-manifest.json")
@@ -92,6 +93,7 @@ export function verifyRuntime(
 			)}`,
 		)
 	verifyRequiredWindowsNativePackages(root, { platform, arch })
+	verifyNativeRuntimeMatrix(root, { platform, arch })
 	verifyNodePtyNatives(root, platform, arch)
 	const nativeInventory = collectRuntimeNativeInventory(root, { platform, arch })
 	if (JSON.stringify(nativeInventory) !== JSON.stringify(manifest.nativeInventory))
@@ -154,6 +156,93 @@ export function verifyRequiredWindowsNativePackages(
 			}
 		}
 	}
+}
+
+/**
+ * Verify platform package selections described by the native runtime matrix.
+ *
+ * Platform packages are conditional dependencies. A missing target is only a
+ * failure when its portable/base package is present in the staged runtime;
+ * this keeps minimal fixtures and runtimes that do not use a capability
+ * valid, while still failing closed when a capability's target was pruned.
+ */
+export function verifyNativeRuntimeMatrix(
+	root,
+	{ platform = process.platform, arch = process.arch } = {},
+) {
+	const entries = resolveNativeRuntimeMatrix({ platform, arch })
+	for (const entry of entries) {
+		if (entry.scope !== "dsh-runtime") continue
+		if (entry.packageName === "node-pty") {
+			if (findPackageRoots(root, entry.packageName).length === 0)
+				throw new Error(
+					`Required native runtime package is missing for ${platform}/${arch}: ${entry.packageName}`,
+				)
+			continue
+		}
+		const trigger = matrixTriggerPackage(entry)
+		if (trigger && findPackageRoots(root, trigger).length === 0) continue
+		if (entry.packageName === "sharp" || entry.packageName === "koffi") continue
+		if (entry.packageName === "node-addon-require-builtin") continue
+		if (entry.packageName === "@vscode/ripgrep") continue
+		if (entry.packageName === "@deepseek-ai/node-addon-landlock-run") continue
+		const targetRoots = findPackageRoots(root, entry.packageName)
+		if (targetRoots.length === 0)
+			throw new Error(
+				`Required native runtime package is missing for ${platform}/${arch}: ${entry.packageName}`,
+			)
+		for (const targetRoot of targetRoots) {
+			const manifestPath = path.join(targetRoot, "package.json")
+			const packageManifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+			if (!isPackageCompatible(packageManifest, { platform, arch }))
+				throw new Error(
+					`Required native runtime package is incompatible with ${platform}/${arch}: ${entry.packageName}`,
+				)
+			const expectedFiles = matrixExpectedFiles(entry, targetRoot)
+			for (const relativeFile of expectedFiles) {
+				const file = path.join(targetRoot, relativeFile)
+				assertFile(file, `${entry.packageName}/${relativeFile}`)
+			}
+		}
+	}
+}
+
+function matrixTriggerPackage(entry) {
+	if (entry.packageName.startsWith("@img/sharp-")) return "sharp"
+	if (entry.packageName.startsWith("@koromix/koffi-")) return "koffi"
+	if (entry.packageName.startsWith("node-addon-require-builtin-"))
+		return "node-addon-require-builtin"
+	if (entry.packageName.startsWith("@vscode/ripgrep-")) return "@vscode/ripgrep"
+	if (entry.packageName.startsWith("@deepseek-ai/node-addon-landlock-run-linux-"))
+		return "@deepseek-ai/node-addon-landlock-run"
+	return undefined
+}
+
+function matrixExpectedFiles(entry, packageRoot) {
+	if (entry.role === "ripgrep-native")
+		return [path.join("bin", entry.platform === "win32" ? "rg.exe" : "rg")]
+	if (entry.role === "landlock-native") return [path.join("bin", "landlock-run")]
+	if (entry.role === "sharp-libvips") {
+		const nativeFiles = listPaths(packageRoot).filter(
+			(relative) =>
+				/libvips/i.test(path.basename(relative)) &&
+				/\.(?:so|dylib|dll)(?:\.\d+)*$/i.test(relative),
+		)
+		if (nativeFiles.length === 0)
+			throw new Error(`Native runtime package has no libvips binary: ${entry.packageName}`)
+		return nativeFiles
+	}
+	if (
+		entry.role === "sharp-addon" ||
+		entry.role === "koffi-native" ||
+		entry.role === "node-addon-require-builtin-native"
+	) {
+		const nativeFiles = listPaths(packageRoot).filter((relative) => /\.node$/i.test(relative))
+		if (nativeFiles.length === 0)
+			throw new Error(`Native runtime package has no .node binary: ${entry.packageName}`)
+		return nativeFiles
+	}
+	return []
 }
 
 function verifyNoSymlinks(root) {

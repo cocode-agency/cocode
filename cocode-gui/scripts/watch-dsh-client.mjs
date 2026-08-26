@@ -4,6 +4,7 @@ import process from "node:process"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { watch } from "chokidar"
 import { build } from "tsdown"
+import { assertDshClientPackageOwnership } from "./lib/dsh-client-ownership.mjs"
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const clientRoot = path.join(repositoryRoot, "packages", "client")
@@ -54,6 +55,7 @@ export function discoverDshClientPackages(root = clientRoot) {
 				manifest.dsh?.client?.platform === "web" &&
 				typeof manifest.name === "string"
 			) {
+				assertDshClientPackageOwnership(manifest.name)
 				packages.push({
 					directory: directory.name,
 					id: manifest.name,
@@ -91,7 +93,14 @@ export function resolveRuntimeClientBundlePath(runtimeRoot, packageId) {
 	if (
 		(scoped && segments.length !== 2) ||
 		(!scoped && segments.length !== 1) ||
-		segments.some((segment) => !segment || segment === "." || segment === "..")
+		segments.some(
+			(segment) =>
+				!segment ||
+				segment === "." ||
+				segment === ".." ||
+				segment.includes("\\") ||
+				segment.includes("/"),
+		)
 	) {
 		throw new Error(`Invalid DSH client package id: ${packageId}`)
 	}

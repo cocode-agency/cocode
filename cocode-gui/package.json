@@ -73,6 +73,7 @@
 		"verify:linux-packages": "node scripts/release/verify-linux-packages.mjs",
 		"verify:linux-repository": "node scripts/release/verify-linux-repository.mjs",
 		"verify:mac-pkg": "node scripts/release/verify-mac-pkg.mjs",
+		"verify:evidence": "node scripts/release/verify-release-evidence.mjs",
 		"verify:runtime": "node scripts/verify-dsh-runtime.mjs",
 		"windows-sign:clear": "node scripts/release/windows-sign-credentials.cjs clear",
 		"windows-sign:configure": "node scripts/release/windows-sign-credentials.cjs configure",

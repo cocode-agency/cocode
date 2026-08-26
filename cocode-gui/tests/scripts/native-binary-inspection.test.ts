@@ -147,6 +147,13 @@ test("collects recursive runtime native inventory including sharp and libvips", 
 			inventory.find((entry) => entry.role === "node-pty-pty")?.file,
 			"prebuilds/linux-x64/pty.node",
 		)
+		assert.deepEqual(inventory.find((entry) => entry.role === "node-pty-pty")?.owners, [
+			"Cocode Workbench",
+			"Host Supervisor",
+		])
+		assert.deepEqual(inventory.find((entry) => entry.role === "sharp-addon")?.owners, [
+			"DSH attachment",
+		])
 	} finally {
 		rmSync(root, { recursive: true, force: true })
 	}

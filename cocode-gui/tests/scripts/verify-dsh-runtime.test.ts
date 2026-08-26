@@ -5,6 +5,7 @@ import * as path from "pathe"
 import test from "node:test"
 import {
 	recomputeRuntimeDependencyRecords,
+	verifyNativeRuntimeMatrix,
 	verifyDependencyRecords,
 	verifyRequiredWindowsNativePackages,
 } from "../../scripts/verify-dsh-runtime.mjs"
@@ -101,6 +102,41 @@ test("rejects a Windows native package with the wrong PE architecture", () => {
 		assert.throws(
 			() => verifyRequiredWindowsNativePackages(root, { platform: "win32", arch: "x64" }),
 			/architecture mismatch for x64/,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("enforces the target native package selected by the runtime matrix", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-dsh-native-matrix-"))
+	try {
+		writePackage(root, "node-pty", {})
+		writePackage(root, "koffi", {})
+		assert.throws(
+			() => verifyNativeRuntimeMatrix(root, { platform: "linux", arch: "x64" }),
+			/@koromix\/koffi-linux-x64/,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("accepts the Windows sharp target without a separate libvips package", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-dsh-sharp-win-"))
+	try {
+		writePackage(root, "node-pty", {})
+		writePackage(root, "sharp", {
+			optionalDependencies: { "@img/sharp-win32-x64": "1.0.0" },
+		})
+		const target = writePackage(root, "@img/sharp-win32-x64", {
+			os: ["win32"],
+			cpu: ["x64"],
+		})
+		writeFileSync(path.join(target, "sharp-win32-x64.node"), createPeFixture())
+
+		assert.doesNotThrow(() =>
+			verifyNativeRuntimeMatrix(root, { platform: "win32", arch: "x64" }),
 		)
 	} finally {
 		rmSync(root, { recursive: true, force: true })

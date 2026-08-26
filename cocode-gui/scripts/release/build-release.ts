@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { mkdirSync, rmSync } from "node:fs"
+import { mkdirSync, readFileSync, rmSync } from "node:fs"
 import * as path from "pathe"
 import {
 	loadReleaseEnvironment,
@@ -13,6 +13,14 @@ import {
 	verifyNodePtyNativesRecursively,
 } from "../lib/workspace-dependencies.mjs"
 import { collectRuntimeNativeInventory } from "../lib/native-binary-inspection.mjs"
+import { resolveNativeRuntimeMatrix } from "../lib/native-runtime-matrix.mjs"
+import { hashJson } from "../runtime-build-helpers.mjs"
+import packageMetadata from "../../package.json"
+import {
+	createReleaseEvidence,
+	updateReleaseEvidenceStage,
+	writeReleaseEvidenceManifest,
+} from "./release-evidence.mjs"
 
 loadReleaseEnvironment()
 
@@ -47,6 +55,26 @@ assertNativeReleaseHost({
 	environment,
 })
 requireReleaseCredentials(target, environment)
+
+const nativeMatrix = resolveNativeRuntimeMatrix({
+	platform: target.platform,
+	arch: target.arch,
+}).filter((entry) => entry.scope === "dsh-runtime")
+const nativeOwners = [...new Set(nativeMatrix.flatMap((entry) => entry.owners))].sort()
+const nativeMatrixHash = hashJson(nativeMatrix)
+const hostSupervisorRoot = path.resolve(process.cwd(), "../cocode-host-supervisor")
+
+let releaseEvidence = createReleaseEvidence({
+	platform: target.platform,
+	arch: target.arch,
+	nativeHost: `${process.platform}/${process.arch}`,
+	version: packageMetadata.version,
+	ownership: {
+		guiMain: ["better-sqlite3"],
+		dshRuntime: nativeOwners,
+	},
+})
+writeReleaseEvidenceManifest({ outDir: environment.RELEASE_OUTPUT_DIR, manifest: releaseEvidence })
 
 if (target.platform === "linux") assertLinuxPackagingTools()
 
@@ -109,6 +137,65 @@ collectRuntimeNativeInventory(runtimeArtifactRoot, {
 	platform: target.platform,
 	arch: target.arch,
 })
+
+const runtimeManifest = JSON.parse(
+	readFileSync(path.join(runtimeArtifactRoot, "runtime-manifest.json"), "utf8"),
+)
+const nativeInventoryHash = hashJson(runtimeManifest.nativeInventory ?? [])
+const sourceEvidence = {
+	inputFingerprint: runtimeManifest.inputFingerprint,
+	sourceFiles: [
+		"package.json",
+		"pnpm-lock.yaml",
+		"../cocode-host-supervisor/pnpm-lock.yaml",
+	],
+	sourceHashes: {
+		guiPackage: hashJson(readFileSync(path.resolve(process.cwd(), "package.json"), "utf8")),
+		guiLockfile: hashJson(readFileSync(path.resolve(process.cwd(), "pnpm-lock.yaml"), "utf8")),
+		hostSupervisorLockfile: hashJson(
+			readFileSync(path.join(hostSupervisorRoot, "pnpm-lock.yaml"), "utf8"),
+		),
+	},
+}
+releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "source", {
+	status: "passed",
+	command: "pnpm@10.34.5 build:runtime",
+	summary: "Workspace inputs and lockfile were consumed on the native release host.",
+	details: sourceEvidence,
+})
+releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "staging", {
+	status: "passed",
+	details: {
+		runtimeRoot: path.relative(process.cwd(), runtimeArtifactRoot),
+		dependencyRecords: runtimeManifest.dependencyRecords?.length ?? 0,
+		dependencyRecordsHash: runtimeManifest.dependencyRecordsHash,
+		runtimeContentHash: runtimeManifest.runtimeContentHash,
+	},
+})
+releaseEvidence = updateReleaseEvidenceStage(releaseEvidence, "native", {
+	status: "passed",
+	details: {
+		inventoryEntries: runtimeManifest.nativeInventory?.length ?? 0,
+		platform: target.platform,
+		arch: target.arch,
+		packageNames: nativeMatrix.map((entry) => entry.packageName),
+		nativeMatrixHash,
+		nativeInventoryHash,
+	},
+})
+releaseEvidence = {
+	...releaseEvidence,
+	hashes: {
+		...releaseEvidence.hashes,
+		runtimeManifest: runtimeManifest.fingerprint,
+		dependencyRecords: runtimeManifest.dependencyRecordsHash,
+		runtimeContent: runtimeManifest.runtimeContentHash,
+		nativeMatrix: nativeMatrixHash,
+		nativeInventory: nativeInventoryHash,
+		sourceInput: runtimeManifest.inputFingerprint,
+	},
+}
+writeReleaseEvidenceManifest({ outDir: environment.RELEASE_OUTPUT_DIR, manifest: releaseEvidence })
 
 const tuiStatus = runPnpm(["run", "build:tui", "--", "--output", tuiArtifactRoot])
 if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiStatus)}.`)

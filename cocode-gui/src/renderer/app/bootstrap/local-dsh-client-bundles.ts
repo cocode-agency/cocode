@@ -1,3 +1,5 @@
+import { assertDshClientPackageOwnership } from "../../../../scripts/lib/dsh-client-ownership.mjs"
+
 const CLIENT_PACKAGE_PREFIX = "@deepseek-ai/dsh-client-"
 
 const LOCAL_CLIENT_BUNDLES = new Map<string, string>([
@@ -45,14 +47,9 @@ const LOCAL_CLIENT_BUNDLES = new Map<string, string>([
 	["cocode-shortcuts", "cocode/cocode-shortcuts"],
 ])
 
-const DSH_CLIENT_PACKAGE_PREFIX = "@deepseek-ai/dsh-client-"
-
 export function resolveLocalDshClientBundleUrl(packageId: string): string | undefined {
-	const directory =
-		LOCAL_CLIENT_BUNDLES.get(packageId) ??
-		(packageId.startsWith(DSH_CLIENT_PACKAGE_PREFIX)
-			? packageId.slice(DSH_CLIENT_PACKAGE_PREFIX.length)
-			: undefined)
+	assertDshClientPackageOwnership(packageId)
+	const directory = LOCAL_CLIENT_BUNDLES.get(packageId)
 	if (directory === undefined) return undefined
 	return new URL(`./dsh-client/${directory}/client.js`, window.location.href).href
 }

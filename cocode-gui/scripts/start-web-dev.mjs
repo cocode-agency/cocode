@@ -13,6 +13,7 @@ import { createChildSupervisor } from "./lib/child-supervisor.mjs"
 import { forkClientWatcher } from "./lib/client-watcher.mjs"
 import { buildDevRuntime } from "./lib/dev-build.mjs"
 import { acquireDevLock } from "./lib/dev-lock.mjs"
+import { createDevHostEnvironment, resolveDevSupervisorEntry } from "./lib/dev-runtime-entry.mjs"
 import { cleanupRuntime, prepareRuntime, resolveRuntimeRoot } from "./lib/runtime-cache.mjs"
 
 const ENTRY_SCRIPT = "start-web-dev.mjs"
@@ -24,9 +25,6 @@ const corepackCommand = process.platform === "win32" ? "corepack.cmd" : "corepac
 const pinnedPnpmArgs = ["pnpm@10.34.5"]
 
 const workspace = path.resolve(process.cwd())
-const supervisorEntry = path.resolve(
-	"../cocode-host-supervisor/packages/host-supervisor/lib/bin.js",
-)
 const runtime = resolveRuntimeRoot("dsh-web-dev-")
 const children = createChildSupervisor()
 const devLock = await acquireDevLock({ name: "cocode-gui-web", entryScript: ENTRY_SCRIPT })
@@ -45,6 +43,8 @@ try {
 async function run() {
 	buildDevRuntime()
 	prepareRuntime(runtime)
+	const supervisorEntry = resolveDevSupervisorEntry(runtime.root)
+	const devHostEnvironment = createDevHostEnvironment(process.env, supervisorEntry)
 	if (children.isStopping()) return 0
 
 	const watcher = forkClientWatcher(runtime.root)
@@ -52,7 +52,7 @@ async function run() {
 	await watcher.ready
 	if (children.isStopping()) return 0
 
-	const runtimeUrl = await acquireHostEndpoint()
+	const runtimeUrl = await acquireHostEndpoint(supervisorEntry, devHostEnvironment)
 
 	let watcherFailure
 	watcher.child.once("exit", (code, signal) => {
@@ -65,19 +65,19 @@ async function run() {
 		void children.stopAll()
 	})
 
-	const exitCode = await waitForExit(startVite(runtimeUrl))
+	const exitCode = await waitForExit(startVite(runtimeUrl, devHostEnvironment))
 	if (watcherFailure) throw watcherFailure
 	// A shutdown this runner initiated is what the developer asked for, so the
 	// signal-derived exit code of the child it killed is not a failure to report.
 	return children.isStopping() ? 0 : exitCode
 }
 
-async function acquireHostEndpoint() {
+async function acquireHostEndpoint(supervisorEntry, devHostEnvironment) {
 	const { createHostSupervisorClient, resolveCocodeHostScope, resolveHostRuntimeEnv } =
 		await import("@cocode-agency/host-supervisor")
 	const dshHome = resolveCocodeDshHome()
 	const hostEnv = {
-		...process.env,
+		...devHostEnvironment,
 		COCODE_DSH_HOME: dshHome,
 		DSH_HOME: dshHome,
 		DSH_PROFILE: "cocode",
@@ -99,7 +99,7 @@ async function acquireHostEndpoint() {
 	return web.endpoint.replace(/\/$/, "")
 }
 
-function startVite(runtimeUrl) {
+function startVite(runtimeUrl, devHostEnvironment) {
 	return children.track(
 		spawn(
 			corepackCommand,
@@ -116,10 +116,9 @@ function startVite(runtimeUrl) {
 				stdio: "inherit",
 				cwd: workspace,
 				env: {
-					...process.env,
+					...devHostEnvironment,
 					DSH_RUNTIME_ROOT: runtime.root,
 					COCODE_DSH_RUNTIME_URL: runtimeUrl,
-					COCODE_SUPERVISOR_SERVICE_ENTRY: supervisorEntry,
 					COCODE_NODE_EXECUTABLE: process.execPath,
 				},
 			}),

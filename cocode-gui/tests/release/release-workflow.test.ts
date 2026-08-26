@@ -324,6 +324,40 @@ test("keeps local and release builds from implicitly publishing to GitHub", () =
 	assert.doesNotMatch(buildRelease, /RELEASE_PUBLISH/)
 })
 
+test("records layered release evidence without promoting package success to install smoke", () => {
+	const packageJson = JSON.parse(readFileSync(guiPackagePath, "utf8")) as {
+		scripts?: Record<string, string>
+	}
+	const scripts = packageJson.scripts ?? {}
+	assert.equal(scripts["verify:evidence"], "node scripts/release/verify-release-evidence.mjs")
+
+	const buildRelease = readFileSync(
+		path.join(repoRoot, "cocode-gui/scripts/release/build-release.ts"),
+		"utf8",
+	)
+	const releaseHooks = readFileSync(
+		path.join(repoRoot, "cocode-gui/scripts/release/release-hooks.ts"),
+		"utf8",
+	)
+	assert.match(buildRelease, /release-evidence/)
+	assert.match(buildRelease, /resolveNativeRuntimeMatrix/)
+	assert.match(buildRelease, /nativeMatrixHash/)
+	assert.match(buildRelease, /inputFingerprint/)
+	assert.match(buildRelease, /pnpm-lock\.yaml/)
+	assert.match(buildRelease, /source/)
+	assert.match(buildRelease, /staging/)
+	assert.match(buildRelease, /native/)
+	assert.match(releaseHooks, /electronPackage/)
+	assert.match(releaseHooks, /updateReleaseEvidenceStage\(releaseEvidence, "installSmoke"/)
+	assert.match(releaseHooks, /updater/)
+	assert.match(releaseHooks, /publication/)
+	assert.match(releaseHooks, /resolveElectronBuilderPublishMode/)
+	assert.match(releaseHooks, /publishMode === "never"/)
+	assert.match(releaseHooks, /verifyPackagedStartupAssets\(appOutDir/)
+	assert.match(releaseHooks, /verifyRuntime\(path\.join\(resourcesRoot, "dsh-runtime"\)/)
+	assert.doesNotMatch(releaseHooks, /if \(target\.platform === "win32"\) \{\s*\n\s*verifyPackagedStartupAssets/s)
+})
+
 test("prepares target-native dependencies before building release assets", () => {
 	const buildRelease = readFileSync(
 		path.join(repoRoot, "cocode-gui/scripts/release/build-release.ts"),

@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import * as path from "pathe"
-import { verifyRequiredWindowsNativePackages } from "../verify-dsh-runtime.mjs"
+import {
+	verifyNativeRuntimeMatrix,
+	verifyRequiredWindowsNativePackages,
+} from "../verify-dsh-runtime.mjs"
 import {
 	assertNativeBinaryArchitecture,
 	collectRuntimeNativeInventory,
@@ -82,9 +85,17 @@ export function verifyPackagedStartupAssets(
 
 	assertNativeBinaryArchitecture(path.join(root, "resources", nodeExecutableName), { platform, arch })
 	verifyRequiredWindowsNativePackages(runtimeRoot, { platform, arch })
+	verifyNativeRuntimeMatrix(runtimeRoot, { platform, arch })
 	const nodePtyInventory = verifyNodePtyNativesRecursively({ root: runtimeRoot, platform, arch })
 	const nativeInventory = collectRuntimeNativeInventory(runtimeRoot, { platform, arch })
-	return { appRoot, runtimeRoot, betterSqliteNative, nodePtyInventory, nativeInventory }
+	return {
+		appRoot,
+		runtimeRoot,
+		betterSqliteNative,
+		nodePtyInventory,
+		nativeInventory,
+		nativeMatrix: true,
+	}
 }
 
 function resolvePackagedAppRoot(root) {

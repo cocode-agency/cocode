@@ -5,6 +5,14 @@ import {
 	extractDshBootManifest,
 	extractDshThemePreference,
 } from "./src/shared/dsh-runtime/bootstrap-html"
+import {
+	assertDshClientPackageOwnership,
+	DSH_CLIENT_OWNERSHIP,
+} from "./scripts/lib/dsh-client-ownership.mjs"
+
+assertDshClientPackageOwnership(DSH_CLIENT_OWNERSHIP.webBoot, "web-boot")
+assertDshClientPackageOwnership(DSH_CLIENT_OWNERSHIP.reactRenderer, "react-renderer")
+assertDshClientPackageOwnership(DSH_CLIENT_OWNERSHIP.webBundle, "web-app")
 
 // electron-vite resolves this config from the GUI package root. Keep paths
 // independent of CommonJS-only __dirname so the config is also importable as ESM.
@@ -152,16 +160,18 @@ function dshWebDevPlugin(): Plugin {
 	}
 }
 
-export function findDshClientBundles(): {
+export function findDshClientBundles(
+	sources: readonly { readonly root: string; readonly prefix: string }[] = [
+		{ root: dshClientRoot, prefix: "" },
+		{ root: cocodeClientRoot, prefix: "cocode" },
+	],
+): {
 	readonly bundles: ReadonlyMap<string, string>
 	readonly missing: readonly string[]
 } {
 	const bundles = new Map<string, string>()
 	const missing: string[] = []
-	for (const source of [
-		{ root: dshClientRoot, prefix: "" },
-		{ root: cocodeClientRoot, prefix: "cocode" },
-	]) {
+	for (const source of sources) {
 		if (!existsSync(source.root)) continue
 		visitDshClientPackages(source.root, source, source.root, bundles, missing)
 	}
@@ -187,7 +197,11 @@ function visitDshClientPackages(
 			name?: string
 			dsh?: { client?: { platform?: string } }
 		}
-		if (manifest.dsh?.client?.platform !== "web" || typeof manifest.name !== "string") continue
+		if (manifest.dsh?.client?.platform !== "web" || typeof manifest.name !== "string") {
+			visitDshClientPackages(packageRoot, source, root, bundles, missing)
+			continue
+		}
+		assertDshClientPackageOwnership(manifest.name)
 		const relativeDirectory = path.relative(root, packageRoot).split(path.sep).join("/")
 		const bundleDirectory = source.prefix
 			? path.posix.join(source.prefix, relativeDirectory)

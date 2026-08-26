@@ -10,6 +10,7 @@ test("accepts a native Linux x64 host", () => {
 			platform: "linux",
 			arch: "x64",
 			machine: "x86_64",
+			libc: "glibc",
 			environment: {},
 		}),
 	)
@@ -23,6 +24,7 @@ test("accepts a native Linux arm64 host", () => {
 			platform: "linux",
 			arch: "arm64",
 			machine: "aarch64",
+			libc: "glibc",
 			environment: {},
 		}),
 	)
@@ -49,6 +51,7 @@ test("rejects a Linux process architecture mismatch", () => {
 				platform: "linux",
 				arch: "x64",
 				machine: "aarch64",
+				libc: "glibc",
 				environment: {},
 			}),
 		/native arm64.*process is x64/i,
@@ -64,6 +67,7 @@ test("rejects a Linux uname architecture mismatch", () => {
 				platform: "linux",
 				arch: "arm64",
 				machine: "x86_64",
+				libc: "glibc",
 				environment: {},
 			}),
 		/uname -m.*x86_64.*arm64/i,
@@ -79,8 +83,25 @@ test("rejects cross-compilation environment overrides", () => {
 				platform: "linux",
 				arch: "x64",
 				machine: "x86_64",
+				libc: "glibc",
 				environment: { npm_config_arch: "arm64" },
 			}),
 		/cross-compilation override.*npm_config_arch/i,
+	)
+})
+
+test("rejects musl hosts while the Linux matrix targets glibc packages", () => {
+	assert.throws(
+		() =>
+			assertNativeReleaseHost({
+				targetPlatform: "linux",
+				targetArch: "x64",
+				platform: "linux",
+				arch: "x64",
+				machine: "x86_64",
+				libc: "musl",
+				environment: {},
+			}),
+		/glibc/i,
 	)
 })

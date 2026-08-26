@@ -21,6 +21,7 @@ export function assertNativeReleaseHost({
 	platform = process.platform,
 	arch = process.arch,
 	machine = platform === "linux" ? readMachine() : "",
+	libc = platform === "linux" ? readLinuxLibc() : "",
 	environment = process.env,
 } = {}) {
 	if (targetPlatform !== platform) {
@@ -42,6 +43,11 @@ export function assertNativeReleaseHost({
 		}
 	}
 	if (platform === "linux") {
+		if (libc !== "glibc") {
+			throw new Error(
+				`Linux native release builds require glibc for the -gnu runtime packages; detected ${libc || "unknown"}.`,
+			)
+		}
 		const normalizedMachine = String(machine).trim().toLowerCase()
 		const accepted = LINUX_MACHINE_ARCHITECTURES[targetArch]
 		if (!accepted?.has(normalizedMachine)) {
@@ -50,11 +56,16 @@ export function assertNativeReleaseHost({
 			)
 		}
 	}
-	return { platform, arch, machine: String(machine).trim() }
+	return { platform, arch, machine: String(machine).trim(), libc: String(libc).trim() }
 }
 
 export function readMachine() {
 	return execFileSync("uname", ["-m"], { encoding: "utf8" }).trim()
+}
+
+export function readLinuxLibc() {
+	const glibcVersion = process.report?.getReport?.().header?.glibcVersionRuntime
+	return glibcVersion ? "glibc" : "musl-or-unknown"
 }
 
 const invokedPath = process.argv[1]
