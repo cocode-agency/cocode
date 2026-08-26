@@ -120,6 +120,7 @@ export type UiTextKey =
   | 'modelCatalogEmpty'
   | 'modelCatalogLoading'
   | 'modelCatalogUnavailable'
+  | 'modelRouteUnavailable'
   | 'modelCatalogFailed'
   | 'modelCatalogPartial'
   | 'effortTitle'
@@ -445,6 +446,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     modelCatalogEmpty: 'No model catalog is available; enter a model id manually.',
     modelCatalogLoading: 'Loading model catalog…',
     modelCatalogUnavailable: 'This runtime has no model catalog; enter a model id manually.',
+    modelRouteUnavailable: 'The current provider is unavailable. Select another model before sending a prompt.',
     modelCatalogFailed: 'Could not load model catalog',
     modelCatalogPartial: 'Some providers could not be listed.',
     effortTitle: 'Reasoning effort',
@@ -769,6 +771,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     modelCatalogEmpty: '没有可用的模型目录，请手动输入模型名称。',
     modelCatalogLoading: '正在加载模型目录…',
     modelCatalogUnavailable: '当前 runtime 不提供模型目录，请手动输入模型名称。',
+    modelRouteUnavailable: '当前 provider 不可用，请先选择其他模型再发送消息。',
     modelCatalogFailed: '模型目录加载失败',
     modelCatalogPartial: '部分 provider 无法列出模型。',
     effortTitle: '推理强度',

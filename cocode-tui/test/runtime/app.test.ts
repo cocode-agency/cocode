@@ -1380,6 +1380,40 @@ describe('TuiApp', () => {
     expect(app.snapshot().notice?.message).toBe('Could not load model catalog')
   })
 
+  it('blocks prompt submission when the current provider is not routable', async () => {
+    const runtime = fakeRuntime()
+    runtime.sessionModels = async () => ({
+      current: { provider: 'missing-provider', model: 'missing-model' },
+      routable: false,
+      groups: [{
+        id: 'available-provider',
+        name: 'Available Provider',
+        models: [{ id: 'available-model', name: 'Available Model' }],
+      }],
+      failures: [],
+    })
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'missing-provider',
+      model: 'missing-model',
+      sessionId: 's1',
+      locale: 'zh',
+      capabilities: { ...P0_CAPABILITIES, sessionModels: true },
+    })
+
+    await app.start()
+    expect(app.snapshot().composer.disabled).toBe(true)
+    expect(app.snapshot().header.routable).toBe(false)
+    app.dispatch({ type: 'model.open' })
+    await expect.poll(() => app.snapshot().modelPicker?.open).toBe(true)
+    app.dispatch({ type: 'submit', text: 'hello' })
+    expect(runtime.prompts).toHaveLength(0)
+    expect(app.snapshot().notice?.message).toBe(
+      '当前 provider 不可用，请先选择其他模型再发送消息。',
+    )
+  })
+
   it('opens an effort picker from /effort when the model advertises levels', async () => {
     const runtime = fakeRuntime()
     runtime.modelCatalog = reasoningCatalog()

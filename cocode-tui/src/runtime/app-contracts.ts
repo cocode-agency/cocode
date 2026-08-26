@@ -154,6 +154,7 @@ export type TuiSnapshot = {
     concurrency: 'single-writer' | 'no-concurrent-writes'
     model: string
     provider: string
+    routable: boolean | null
     reasoningEffort?: string
     cwd: string
     branch?: string

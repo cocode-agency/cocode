@@ -788,7 +788,7 @@ export function Chat(props: {
   }
 
   const openModelSwitch = (): void => {
-    if (snap.composer.disabled) return
+    if (snap.composer.disabled && snap.header.routable !== false) return
     app.dispatch({ type: 'model.open' })
     setCommandPaletteOpen(false)
     setMessageActionMenuOpen(false)

@@ -329,6 +329,7 @@ class TuiAppImpl implements TuiApp {
   private modelPicker: ModelPickerState | undefined
   private effortPicker: EffortPickerState | undefined
   private modelCatalog: TuiModelCatalog | undefined
+  private modelRoutable: boolean | undefined
   private reasoningEffort: string | undefined
   private permissionPicker: PermissionPickerState | undefined
   private modelInputOpen = false
@@ -555,7 +556,11 @@ class TuiAppImpl implements TuiApp {
   }
 
   snapshot(): TuiSnapshot {
-    const disabled = this.agent === 'dead' || this.exiting || this.externalSession?.canMutate === false
+    const disabled =
+      this.agent === 'dead'
+      || this.exiting
+      || this.externalSession?.canMutate === false
+      || this.modelRoutable === false
     const telemetry = this.telemetry.snapshot()
     const sessionState = this.sessionState.snapshot()
     const assemblerStats = this.assembler.stats()
@@ -570,6 +575,7 @@ class TuiAppImpl implements TuiApp {
         concurrency: this.externalSession?.concurrency ?? 'single-writer',
         model: this.model,
         provider: this.provider,
+        routable: this.modelRoutable ?? null,
         ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
         cwd: this.externalSession?.cwd ?? this.cwd,
         branch: this.workspaceBranch,
@@ -2637,9 +2643,13 @@ class TuiAppImpl implements TuiApp {
     try {
       const result = await sessionModels.call(this.runtime, this.sessionId)
       this.modelCatalog = { groups: result.groups, failures: result.failures }
+      this.modelRoutable = result.routable
       this.provider = result.current.provider
       this.model = result.current.model
       this.reasoningEffort = result.current.reasoningEffort
+      if (!result.routable) {
+        this.notice = { tone: 'info', message: text(this.locale, 'modelRouteUnavailable') }
+      }
     } catch {
       // Legacy runtimes and sessions that have not been materialized yet keep
       // the launch selection until the ordinary model catalog is opened.
@@ -2719,30 +2729,37 @@ class TuiAppImpl implements TuiApp {
         try {
           const sessionModels = await sessionModelsReader.call(this.runtime, this.sessionId)
           catalog = { groups: sessionModels.groups, failures: sessionModels.failures }
+          this.modelRoutable = sessionModels.routable
           this.provider = sessionModels.current.provider
           this.model = sessionModels.current.model
           this.reasoningEffort = sessionModels.current.reasoningEffort
-          if (!sessionModels.routable) {
-            this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
-          }
         } catch (sessionError) {
           if (!canListModels) throw sessionError
           catalog = await listModels.call(this.runtime)
+          this.modelRoutable = undefined
         }
       } else if (canListModels) {
         catalog = await listModels.call(this.runtime)
+        this.modelRoutable = undefined
       } else {
         throw new Error('model catalog is unavailable')
       }
       if (catalog.groups.every((group) => group.models.length === 0)) {
         this.modelInputOpen = true
-        this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogEmpty') }
+        this.notice = {
+          tone: 'info',
+          message: text(
+            this.locale,
+            this.modelRoutable === false ? 'modelRouteUnavailable' : 'modelCatalogEmpty',
+          ),
+        }
       } else {
         this.modelInputOpen = false
         this.modelPicker = createModelPicker(catalog, this.provider, this.model)
         this.modelCatalog = catalog
-        this.notice =
-          catalog.failures.length === 0
+        this.notice = this.modelRoutable === false
+          ? { tone: 'info', message: text(this.locale, 'modelRouteUnavailable') }
+          : catalog.failures.length === 0
             ? undefined
             : { tone: 'info', message: text(this.locale, 'modelCatalogPartial') }
       }
@@ -2788,6 +2805,7 @@ class TuiAppImpl implements TuiApp {
         // selection as the deployment default. Do not write settings again here.
         this.provider = selected.provider
         this.model = selected.model
+        this.modelRoutable = true
         this.reasoningEffort = selected.reasoningEffort
           ?? this.catalogModel(selected.provider, selected.model)?.reasoning?.defaultEffort
         await this.refreshSessionControls()
@@ -2806,6 +2824,7 @@ class TuiAppImpl implements TuiApp {
       await this.persistModelBestEffort(provider, model)
       this.provider = provider
       this.model = model
+      this.modelRoutable = undefined
       this.reasoningEffort = reasoningEffort
         ?? this.catalogModel(provider, model)?.reasoning?.defaultEffort
       this.runtimeName = info.name
@@ -2836,6 +2855,7 @@ class TuiAppImpl implements TuiApp {
         })
         this.provider = previousProvider
         this.model = previous
+        this.modelRoutable = undefined
         this.reasoningEffort = previousEffort
         this.runtimeName = info.name
         this.refreshRuntimeCapabilities()
@@ -3018,6 +3038,7 @@ class TuiAppImpl implements TuiApp {
 
   private resetToFreshSession(): void {
     this.sessionId = createSessionId()
+    this.modelRoutable = undefined
     this.assembler.reset()
     this.telemetry.reset()
     this.sessionState.reset()
@@ -3131,6 +3152,11 @@ class TuiAppImpl implements TuiApp {
     }
     if (this.externalSession?.canMutate === false && !trimmed.startsWith('/')) {
       this.rejectExternalWrite()
+      return
+    }
+    if (this.modelRoutable === false && !trimmed.startsWith('/')) {
+      this.notice = { tone: 'info', message: text(this.locale, 'modelRouteUnavailable') }
+      this.emit()
       return
     }
     const pendingSkill = this.pendingSkillInvocation
@@ -3891,6 +3917,7 @@ class TuiAppImpl implements TuiApp {
   }
 
   private resetSessionControls(): void {
+    this.modelRoutable = undefined
     this.permissionMode = 'manual'
     this.supportedPermissionModes = ['manual']
     this.permissionPicker = undefined
