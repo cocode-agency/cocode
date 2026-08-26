@@ -66,9 +66,7 @@ describe('resolveAuth', () => {
     await patchCloudRoute(home, 'https://cocode.agency', [{
       id: 'cloud-1',
       name: 'Cloud',
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
-      reasoningEfforts: { off: 'none', high: 'high' },
+      reasoningEfforts: { high: 'high' },
     }])
     await expect(readFile(join(home, 'settings.yaml'), 'utf8')).resolves.toContain(
       'api: openai-responses',
@@ -82,13 +80,7 @@ describe('resolveAuth', () => {
       cwd: '/work',
       accountHome: home,
       cloudAccount: true,
-      cloudModels: [{
-        id: 'cloud-1',
-        name: 'Cloud',
-        contextWindow: 1_000_000,
-        maxTokens: 384_000,
-        reasoningEfforts: { off: 'none', high: 'high' },
-      }],
+      cloudModels: [{ id: 'cloud-1', name: 'Cloud', reasoningEfforts: { high: 'high' } }],
     })
     expect(result.status).toBe('ready')
     if (result.status !== 'ready') return
@@ -96,13 +88,9 @@ describe('resolveAuth', () => {
     expect(result.auth.provider).toBe('cocode-nut')
     const providers = JSON.parse(result.auth.env.COCODE_LLM_PROVIDERS ?? '{}')
     expect(providers['cocode-nut'].retryPolicy).toEqual({ mode: 'normal', maxRetries: 5 })
-    expect(providers['cocode-nut'].models).toEqual([{
-      id: 'cloud-1',
-      name: 'Cloud',
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
-      reasoningEfforts: { off: 'none', high: 'high' },
-    }])
+    expect(providers['cocode-nut'].models).toEqual([
+      { id: 'cloud-1', name: 'Cloud', reasoningEfforts: { high: 'high' } },
+    ])
   })
 
   it('opens the gate when nothing is configured', async () => {

@@ -201,13 +201,7 @@ export async function listHostedModels(
   signal?: AbortSignal,
 ): Promise<CloudModel[]> {
   const listed = await jsonRequest<{
-    data?: {
-      id?: string
-      name?: string
-      context_window?: number
-      max_output_tokens?: number
-      reasoning_efforts?: Record<string, string | null>
-    }[]
+    data?: { id?: string; name?: string }[]
   }>(`${normalizeAgencyOrigin(origin)}/v1/me/models`, {
     method: 'GET',
     token: apiKey,
@@ -229,41 +223,14 @@ export async function listHostedModels(
   }
   return listed.value.data
     .filter(
-      (row): row is {
-        id: string
-        name?: string
-        context_window?: number
-        max_output_tokens?: number
-        reasoning_efforts?: Record<string, string | null>
-      } => isRecord(row) && typeof row.id === 'string' && row.id.trim() !== '',
+      (row): row is { id: string; name?: string } =>
+        isRecord(row) && typeof row.id === 'string' && row.id.trim() !== '',
     )
-    .map((row) => {
-      const contextWindow = positiveInteger(row.context_window)
-      const maxTokens = positiveInteger(row.max_output_tokens)
-      const reasoningEfforts = parseReasoningEfforts(row.reasoning_efforts)
-      return {
-        id: row.id.trim(),
-        name:
-          typeof row.name !== 'string' || row.name.trim() === '' ? row.id.trim() : row.name.trim(),
-        ...(contextWindow === undefined ? {} : { contextWindow }),
-        ...(maxTokens === undefined ? {} : { maxTokens }),
-        ...(reasoningEfforts === undefined ? {} : { reasoningEfforts }),
-      }
-    })
-}
-
-function positiveInteger(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
-}
-
-function parseReasoningEfforts(
-  value: unknown,
-): Readonly<Record<string, string | null>> | undefined {
-  if (!isRecord(value)) return undefined
-  const entries = Object.entries(value)
-  if (entries.length === 0) return undefined
-  if (entries.some(([, effort]) => effort !== null && typeof effort !== 'string')) return undefined
-  return Object.fromEntries(entries) as Readonly<Record<string, string | null>>
+    .map((row) => ({
+      id: row.id.trim(),
+      name:
+        typeof row.name !== 'string' || row.name.trim() === '' ? row.id.trim() : row.name.trim(),
+    }))
 }
 
 

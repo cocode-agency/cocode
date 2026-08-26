@@ -40,9 +40,7 @@ export type MeProfile = {
 export type CloudModel = {
   id: string
   name: string
-  contextWindow?: number
-  maxTokens?: number
-  reasoningEfforts?: Readonly<Record<string, string | null>>
+  reasoningEfforts?: Readonly<Record<string, string>>
 }
 
 export const CLOUD_API = 'openai-responses'

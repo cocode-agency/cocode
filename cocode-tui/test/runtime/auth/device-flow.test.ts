@@ -165,47 +165,6 @@ describe('device-flow', () => {
     expect(requestBody?.name).toBe(KEY_NAME)
   })
 
-  it('preserves hosted model capability metadata', async () => {
-    const models = await listHostedModels('https://cocode.agency', 'ck_test', {
-      fetch: async () => json(200, {
-        data: [{
-          id: 'deepseek-v4-flash',
-          name: 'DeepSeek V4 Flash',
-          context_window: 1_000_000,
-          max_output_tokens: 384_000,
-          reasoning_efforts: { off: 'none', high: 'high', max: 'max' },
-        }],
-      }),
-    })
-    expect(models).toEqual([{
-      id: 'deepseek-v4-flash',
-      name: 'DeepSeek V4 Flash',
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
-      reasoningEfforts: { off: 'none', high: 'high', max: 'max' },
-    }])
-  })
-
-  it('drops malformed hosted reasoning metadata', async () => {
-    const models = await listHostedModels('https://cocode.agency', 'ck_test', {
-      fetch: async () => json(200, {
-        data: [
-          { id: 'empty', reasoning_efforts: {} },
-          { id: 'array', reasoning_efforts: [] },
-          { id: 'invalid-value', reasoning_efforts: { high: 1 } },
-          { id: 'valid', reasoning_efforts: { off: null, high: 'high' } },
-        ],
-      }),
-    })
-
-    expect(models).toEqual([
-      { id: 'empty', name: 'empty' },
-      { id: 'array', name: 'array' },
-      { id: 'invalid-value', name: 'invalid-value' },
-      { id: 'valid', name: 'valid', reasoningEfforts: { off: null, high: 'high' } },
-    ])
-  })
-
   it('rejects unsafe verification URLs', async () => {
     await expect(
       startDeviceAuthorization('https://cocode.agency', {
