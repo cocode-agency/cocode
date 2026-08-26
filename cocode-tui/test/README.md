@@ -56,6 +56,10 @@ Host E2E 必须同时满足以下条件：
 3. 错误回合不能在 `turn/end(error)` 之前进入 `idle`，CLI 不能把 `idle` 当作成功判据。
 4. 失败记录仍然进入 session 持久化。
 
+timeout 和 SIGINT 属于取消场景。如果上游在取消后只发送 `step/end` 和 `idle`，没有发送
+`turn/end`，测试应验证非零退出码、没有 assistant 成功内容、`step/end → idle` 顺序和
+session 持久化，不能把 `idle` 单独当作成功。
+
 工具场景应优先验证真实副作用，例如文件内容或命令结果，不能只断言界面显示了工具完成。
 
 ## 稳定性要求
