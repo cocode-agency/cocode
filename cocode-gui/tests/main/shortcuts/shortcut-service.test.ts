@@ -110,7 +110,9 @@ test("forwards global triggers to the active window and rejects foreign senders"
 		webContents: {
 			id: 7,
 			isDestroyed: () => false,
-			send: (_channel: string, commandId: unknown) => { sent.push(commandId) },
+			send: (_channel: string, commandId: unknown) => {
+				sent.push(commandId)
+			},
 		},
 		isDestroyed: () => false,
 		isMinimized: () => true,
@@ -122,17 +124,15 @@ test("forwards global triggers to the active window and rejects foreign senders"
 	const service = new ShortcutService(() => window as never, host)
 
 	assert.equal(
-		service.sync(
-			[{ commandId: "cocode.newSession", accelerator: "CommandOrControl+N" }],
-			{ id: 8 } as never,
-		).ok,
+		service.sync([{ commandId: "cocode.newSession", accelerator: "CommandOrControl+N" }], {
+			id: 8,
+		} as never).ok,
 		false,
 	)
 	assert.equal(
-		service.sync(
-			[{ commandId: "cocode.newSession", accelerator: "CommandOrControl+N" }],
-			{ id: 7 } as never,
-		).ok,
+		service.sync([{ commandId: "cocode.newSession", accelerator: "CommandOrControl+N" }], {
+			id: 7,
+		} as never).ok,
 		true,
 	)
 	host.callbacks.get("CommandOrControl+N")?.()

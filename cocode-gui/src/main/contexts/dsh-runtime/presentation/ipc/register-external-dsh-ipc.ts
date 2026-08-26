@@ -27,7 +27,11 @@ export function registerSharedDshIpc(catalog: SharedDshCatalog): void {
 		})
 	})
 	ipcMain.handle(sharedDshChannels.conflictStatus, (_event, request: unknown) => {
-		if (!isRecord(request) || (request.kind !== "session" && request.kind !== "workspace") || typeof request.expectedRevision !== "string")
+		if (
+			!isRecord(request) ||
+			(request.kind !== "session" && request.kind !== "workspace") ||
+			typeof request.expectedRevision !== "string"
+		)
 			throw new Error("invalid shared DSH conflict request")
 		return catalog.conflictStatus({
 			kind: request.kind,

@@ -14,9 +14,7 @@ export function prepareDshBootManifest(
 		rev: bootstrap.boot.rev,
 		entries: bootEntries.map((entry) => ({
 			...entry,
-			url:
-				resolveLocalDshClientBundleUrl(entry.id) ??
-				new URL(entry.url, runtimeOrigin).href,
+			url: resolveLocalDshClientBundleUrl(entry.id) ?? new URL(entry.url, runtimeOrigin).href,
 		})),
 	}
 }

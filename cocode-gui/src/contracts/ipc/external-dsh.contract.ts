@@ -139,7 +139,11 @@ export type ExternalDshApi = {
 		request: ExternalAttachmentRequestDto,
 	) => Promise<ExternalAttachmentDto | undefined>
 	readonly subscribe: (listener: (change: ExternalDshChangeDto) => void) => () => void
-	readonly conflictStatus?: (request: { readonly kind: "session" | "workspace"; readonly id?: string; readonly expectedRevision: string }) => Promise<ExternalDshConflictStatusDto>
+	readonly conflictStatus?: (request: {
+		readonly kind: "session" | "workspace"
+		readonly id?: string
+		readonly expectedRevision: string
+	}) => Promise<ExternalDshConflictStatusDto>
 }
 
 export type SharedDshStatusDto = ExternalDshStatusDto

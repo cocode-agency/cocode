@@ -123,9 +123,7 @@ export function hasUnsupportedClientRuntimeGlobal(bundlePath) {
 
 export function assertBrowserSafeClientBundle(bundlePath) {
 	if (!hasUnsupportedClientRuntimeGlobal(bundlePath)) return
-	throw new Error(
-		`DSH client bundle still references a Node process global: ${bundlePath}`,
-	)
+	throw new Error(`DSH client bundle still references a Node process global: ${bundlePath}`)
 }
 
 export function hasUnregisteredClientExternal(bundlePath) {
