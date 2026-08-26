@@ -4,6 +4,7 @@
 
 import {
   CLOUD_API,
+  CLOUD_DEFAULT_REASONING,
   CLOUD_KEY_REF,
   CLOUD_MAX_RETRIES,
   CLOUD_PROVIDER,
@@ -136,6 +137,7 @@ async function writeCloudRoute(
     api: CLOUD_API,
     baseURL: `${origin.replace(/\/$/, '')}/v1`,
     apiKeyEnv: CLOUD_KEY_REF,
+    reasoning: CLOUD_DEFAULT_REASONING,
     retryPolicy: { mode: 'normal', maxRetries: CLOUD_MAX_RETRIES },
     models: models.map((model) => ({
       id: model.id,

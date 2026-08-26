@@ -10,6 +10,7 @@ import { readSettings, type ProductSettings } from './settings.ts'
 import { harnessClientIdentity, tuiClientIdentity, type CocodeClientIdentity } from './client-identity.ts'
 import {
   CLOUD_API,
+  CLOUD_DEFAULT_REASONING,
   CLOUD_KEY_REF,
   CLOUD_MAX_RETRIES,
   CLOUD_PROVIDER,
@@ -273,6 +274,7 @@ function createCloudProvider(
     api: CLOUD_API,
     baseURL: `${origin.replace(/\/$/, '')}/v1`,
     apiKeyEnv: CLOUD_KEY_REF,
+    reasoning: CLOUD_DEFAULT_REASONING,
     retryPolicy: { mode: 'normal', maxRetries: CLOUD_MAX_RETRIES },
     cocodeClient: harnessClientIdentity(clientIdentity),
     models: cloudModels?.length === 0 || cloudModels === undefined

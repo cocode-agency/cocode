@@ -304,6 +304,7 @@ test("reconciles a pre-existing reserved cloud credential", async () => {
 		name: "Cloud Model",
 		reasoningEfforts: { high: "high", max: "max" },
 	})
+	assert.equal(route?.reasoning, "high")
 })
 
 test("reuses a ready device cloud route without minting another API key", async () => {
@@ -323,6 +324,7 @@ test("reuses a ready device cloud route without minting another API key", async 
 		apiKeyEnv: "COCODE_NUT_API_KEY",
 		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
+		reasoning: "high",
 		models: [{ id: "cloud-model", name: "Cloud Model" }],
 	}
 	const dsh = {
@@ -445,6 +447,7 @@ test("refreshes hosted reasoning metadata on an existing managed route", async (
 		name: "Cloud Model",
 		reasoningEfforts: { high: "high", max: "max" },
 	})
+	assert.equal(route.reasoning, "high")
 })
 
 test("paid sign-in switches a custom default and the open session onto Nut Flash", async () => {
@@ -466,6 +469,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 		apiKeyEnv: "COCODE_NUT_API_KEY",
 		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
+		reasoning: "high",
 		models: [
 			{ id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro" },
 			{ id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },

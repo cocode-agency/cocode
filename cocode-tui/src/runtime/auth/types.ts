@@ -45,12 +45,14 @@ export type CloudModel = {
 
 export const CLOUD_API = 'openai-responses'
 export const CLOUD_MAX_RETRIES = 5
+export const CLOUD_DEFAULT_REASONING = 'high'
 
 export type CloudProviderProfile = {
   displayName: string
   api: typeof CLOUD_API
   baseURL: string
   apiKeyEnv: typeof CLOUD_KEY_REF
+  reasoning: typeof CLOUD_DEFAULT_REASONING
   retryPolicy: { mode: 'normal'; maxRetries: typeof CLOUD_MAX_RETRIES }
   models: CloudModel[]
   cocodeClient: {

@@ -47,6 +47,7 @@ const CLOUD_KEY_PATTERN = /^ck_[A-Za-z0-9_-]+$/
 const CLOUD_READY_ATTEMPTS = 6
 const CLOUD_READY_RETRY_MS = 100
 const PREFERRED_NUT_MODEL_ID = "deepseek-v4-flash"
+const CLOUD_DEFAULT_REASONING = "high"
 
 type AccountStage =
 	| "cleanup"
@@ -252,6 +253,7 @@ function cloudRouteValue(
 		api: CLOUD_API,
 		baseURL,
 		apiKeyEnv: CLOUD_CREDENTIAL,
+		reasoning: CLOUD_DEFAULT_REASONING,
 		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: CLOUD_MAX_RETRIES },
 		models: models.map((model) => ({
@@ -265,6 +267,7 @@ function cloudRouteValue(
 }
 
 function routeModelsMatch(route: Record<string, unknown>, models: readonly AgencyModel[]): boolean {
+	if (route.reasoning !== CLOUD_DEFAULT_REASONING) return false
 	const configured = Array.isArray(route.models) ? route.models : []
 	const expected = models.map((model) => ({
 		id: model.id,
