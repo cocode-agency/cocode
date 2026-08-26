@@ -788,7 +788,13 @@ export function Chat(props: {
   }
 
   const openModelSwitch = (): void => {
-    if (snap.composer.disabled && snap.header.routable !== false) return
+    const canRecoverUnavailableModel =
+      snap.header.routable === false
+      && !snap.header.readOnly
+      && snap.composer.mask !== true
+      && snap.agent !== 'dead'
+      && !snap.exiting
+    if (snap.composer.disabled && !canRecoverUnavailableModel) return
     app.dispatch({ type: 'model.open' })
     setCommandPaletteOpen(false)
     setMessageActionMenuOpen(false)

@@ -1407,6 +1407,10 @@ describe('TuiApp', () => {
     expect(app.snapshot().header.routable).toBe(false)
     app.dispatch({ type: 'model.open' })
     await expect.poll(() => app.snapshot().modelPicker?.open).toBe(true)
+    expect(app.snapshot().notice?.message).toBe(
+      '当前 provider 不可用，请先选择其他模型再发送消息。',
+    )
+    app.dispatch({ type: 'model.close' })
     app.dispatch({ type: 'submit', text: 'hello' })
     expect(runtime.prompts).toHaveLength(0)
     expect(app.snapshot().notice?.message).toBe(
