@@ -42,6 +42,7 @@ type TuiDisplayedCapabilityName = TuiRuntimeCapabilityName
 
 export type TuiAction =
   | { type: 'submit'; text: string }
+  | { type: 'steer'; text: string }
   | { type: 'compact' }
   | { type: 'command'; line: string }
   | { type: 'command.select'; line: string }

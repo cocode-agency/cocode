@@ -3,6 +3,8 @@ import { DEFAULT_BINDINGS, type CommandId, type KeyBinding, type Keymap } from '
 const COMMAND_ALIASES: Readonly<Record<string, CommandId>> = {
   'input.submit': 'input.submit',
   inputSubmit: 'input.submit',
+  'input.steer': 'input.steer',
+  inputSteer: 'input.steer',
   'input.newline': 'input.newline',
   inputNewline: 'input.newline',
   'session.interruptOrQuit': 'session.interruptOrQuit',

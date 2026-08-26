@@ -64,6 +64,8 @@ export type UiTextKey =
   | 'footerReadOnlyBack'
   | 'footerRunning'
   | 'footerQueueDraft'
+  | 'footerQueueDraftLabel'
+  | 'footerSteerDraftLabel'
   | 'footerRedraw'
   | 'footerModel'
   | 'quitTitle'
@@ -393,7 +395,9 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     footerReadOnlyQuit: 'Ctrl+C quit',
     footerReadOnlyBack: 'Esc back',
     footerRunning: 'esc interrupt',
-    footerQueueDraft: 'tab queue draft',
+    footerQueueDraft: 'enter queue draft',
+    footerQueueDraftLabel: 'queue draft',
+    footerSteerDraftLabel: 'steer',
     footerRedraw: 'redraw: /redraw',
     footerModel: 'ctrl+l model',
     quitTitle: 'Are you sure you want to quit?',
@@ -532,7 +536,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     checklistEmpty: 'No tasks in the current turn.',
     checklistMore: '… {count} more',
     turnComplete: 'Turn complete',
-    turnBusy: 'Turn in progress. Press Tab to queue this prompt.',
+    turnBusy: 'Turn in progress. Wait until it finishes.',
     sessionChanging: 'Session is changing. Wait for it to finish.',
     cancelRequested: 'Cancel requested; waiting for the runtime to become idle.',
     cancelNotRunning: 'No active turn to cancel.',
@@ -722,7 +726,9 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     footerReadOnlyQuit: 'Ctrl+C 退出',
     footerReadOnlyBack: 'Esc 返回',
     footerRunning: '按 Esc 终止',
-    footerQueueDraft: '按 Tab 加入队列',
+    footerQueueDraft: '按回车加入队列',
+    footerQueueDraftLabel: '加入队列',
+    footerSteerDraftLabel: '直接插入当前步骤',
     footerRedraw: '重绘：/redraw',
     footerModel: 'Ctrl+L 模型',
     quitTitle: '确定要退出吗？',
@@ -861,7 +867,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     checklistEmpty: '当前回合没有任务。',
     checklistMore: '… 还有 {count} 项',
     turnComplete: '本轮任务已完成',
-    turnBusy: '当前任务仍在运行，按 Tab 可将输入加入队列。',
+    turnBusy: '当前任务仍在运行，请等待任务结束。',
     sessionChanging: '正在切换会话，请等待当前操作完成。',
     cancelRequested: '已请求取消，等待运行时进入空闲状态。',
     cancelNotRunning: '当前没有可取消的任务。',

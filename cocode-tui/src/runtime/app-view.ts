@@ -9,12 +9,12 @@ import { displayError, formatError } from './errors/index.ts'
 export function composerPlaceholder(agent: TuiSnapshot['agent'], locale: UiLocale = 'en'): string {
   if (locale === 'zh') {
     if (agent === 'starting') return '正在连接…'
-    if (agent === 'running') return '正在工作 — Tab 排队，Esc 取消'
+    if (agent === 'running') return '正在工作 — 回车排队，Esc 取消'
     if (agent === 'dead') return '运行时已停止 — /exit'
     return '输入消息  / 查看命令'
   }
   if (agent === 'starting') return 'Connecting…'
-  if (agent === 'running') return 'Working — Tab queues, Esc cancels'
+  if (agent === 'running') return 'Working — Enter queues, Esc cancels'
   if (agent === 'dead') return 'Runtime stopped — /exit'
   return 'Type a message  / for commands'
 }

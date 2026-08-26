@@ -779,6 +779,9 @@ class TuiAppImpl implements TuiApp {
       case 'submit':
         this.submit(action.text)
         return
+      case 'steer':
+        this.submit(action.text, 'steer')
+        return
       case 'compact':
         this.requestCompact()
         return
@@ -3168,7 +3171,7 @@ class TuiAppImpl implements TuiApp {
     this.emit()
   }
 
-  private submit(inputText: string): void {
+  private submit(inputText: string, busyMode: 'queue' | 'steer' = 'queue'): void {
     const trimmed = inputText.trim()
     if (trimmed === '') return
     if (this.capturingByok) {
@@ -3198,7 +3201,7 @@ class TuiAppImpl implements TuiApp {
       this.runCommand(trimmed)
       return
     }
-    if (this.agent === 'running' && this.capabilities.promptMode) {
+    if (this.agent === 'running' && busyMode === 'steer' && this.capabilities.promptMode) {
       const attachments = this.attachments.slice()
       const images = this.images.slice()
       this.history.push(trimmed)
@@ -3212,6 +3215,10 @@ class TuiAppImpl implements TuiApp {
         this.emit()
       })
       this.emit()
+      return
+    }
+    if (this.agent === 'running') {
+      this.queueCurrentPrompt(inputText)
       return
     }
     if (this.agent !== 'idle') {
@@ -3425,8 +3432,8 @@ class TuiAppImpl implements TuiApp {
     if (this.history.at(-1) === promptText) this.history.pop()
   }
 
-  private queueCurrentPrompt(): void {
-    const trimmed = this.draft.text.trim()
+  private queueCurrentPrompt(inputText = this.draft.text): void {
+    const trimmed = inputText.trim()
     if (trimmed === '' || this.agent !== 'running') return
     if (!this.promptQueue.add(trimmed, this.attachments.slice(), this.images.slice())) {
       this.notice = { tone: 'info', message: text(this.locale, 'queueFull') }

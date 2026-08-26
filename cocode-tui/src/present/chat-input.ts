@@ -13,6 +13,9 @@ export function dispatchKeyCommand(app: TuiApp, id: string, draft: string): void
     case 'input.submit':
       app.dispatch({ type: 'submit', text: draft })
       return
+    case 'input.steer':
+      app.dispatch({ type: 'steer', text: draft })
+      return
     case 'input.newline':
       app.dispatch({ type: 'insertDraft', text: '\n' })
       return

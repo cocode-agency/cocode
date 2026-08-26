@@ -48,6 +48,7 @@ export type FooterProjectionContext = {
   detailsAvailable?: boolean
   messageDetailsAvailable?: boolean
   messageDetailsExpanded?: boolean
+  steeringAvailable?: boolean
 }
 
 const SEPARATOR = ' · '
@@ -134,7 +135,6 @@ function fixedShortcut(id: string): string | undefined {
     'read-only-back': 'Esc',
     'read-only-quit': 'Ctrl+C',
     'message-details': 'Ctrl+O',
-    'queue-draft': 'Tab',
     'pane-scroll': 'PageUp / PageDown',
     'message-scroll': 'pgup / pgdn',
     'message-select': 'Shift+↑',
@@ -193,7 +193,12 @@ function footerCandidates(context: FooterProjectionContext): readonly FooterHint
       command('interrupt', 'session.interruptOrQuit', 'footerRunningLabel', 100, 'primary'),
       ...(context.draft.trim() === ''
         ? []
-        : [fixed('queue-draft', 'footerQueueDraft', 90, 'secondary')]),
+        : [
+            command('queue-draft', 'input.submit', 'footerQueueDraftLabel', 90, 'secondary'),
+            ...(context.steeringAvailable === true
+              ? [command('steer-draft', 'input.steer', 'footerSteerDraftLabel', 80, 'secondary')]
+              : []),
+          ]),
     ]
   }
 

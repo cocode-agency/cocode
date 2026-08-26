@@ -24,7 +24,7 @@ todos 1/3                                                                       
 │ · Deny d / n                                                                         │ │ pgup / pgdn scroll
 │ Please wait…                                                                         │ │ shift+↑ messages
 └──────────────────────────────────────────────────────────────────────────────────────┘ │ ctrl+p menu
-Build · fixture-provider / fixture-model                                 tab queue draft │ ctrl+o details
+Build · fixture-provider / fixture-model                               enter queue draft │ ctrl+o details
 > [composer] pending approval                                                            │
                                                                                          │
 ↑↓ move · enter confirm · esc cancel                                                     │

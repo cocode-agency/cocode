@@ -5,6 +5,7 @@
 
 export type CommandId =
   | 'input.submit'
+  | 'input.steer'
   | 'input.newline'
   | 'session.interruptOrQuit'
   | 'session.new'
@@ -83,6 +84,7 @@ type KeymapInput = {
 
 export const DEFAULT_BINDINGS: Readonly<Record<CommandId, readonly KeyBinding[]>> = {
   'input.submit': [binding('enter')],
+  'input.steer': [binding('enter', { ctrl: true })],
   'input.newline': [binding('enter', { shift: true }), binding('j', { ctrl: true })],
   'session.interruptOrQuit': [binding('escape'), binding('c', { ctrl: true })],
   'session.new': [binding('n', { ctrl: true })],
@@ -124,6 +126,7 @@ export function matchKey(
   const order: CommandId[] = [
     'input.newline',
     'input.submit',
+    'input.steer',
     'session.interruptOrQuit',
     'session.new',
     'session.open',

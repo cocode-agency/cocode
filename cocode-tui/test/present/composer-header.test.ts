@@ -81,7 +81,7 @@ describe('composer header layout', () => {
   it('uses textual signals for running and plan modes', () => {
     expect(composerHeaderLayout({ ...base, agent: 'running', columns: 120 })).toMatchObject({
       title: 'Build',
-      hint: 'tab queue draft',
+      hint: 'enter queue draft',
     })
     expect(composerHeaderLayout({ ...base, planMode: true, columns: 120 })).toMatchObject({
       title: 'Plan',

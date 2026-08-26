@@ -39,7 +39,7 @@ describe('borderless composer rendering', () => {
 
   it('keeps disabled, running, plan, and masked states readable without color', async () => {
     expect(await renderComposer(80, { disabled: true })).toContain('locked')
-    expect(await renderComposer(80, {}, { agent: 'running' })).toContain('tab queue draft')
+    expect(await renderComposer(80, {}, { agent: 'running' })).toContain('enter queue draft')
     expect(await renderComposer(80, {}, { planMode: true })).toContain('Plan')
     const masked = await renderComposer(80, {
       text: '********',

@@ -474,6 +474,11 @@ export function helpText(
       : locale === 'zh'
         ? `${displayShortcut('session.interruptOrQuit')} 中断或退出`
         : `${displayShortcut('session.interruptOrQuit')} interrupt-or-quit`,
+    caps.promptMode && displayShortcut('input.steer') !== undefined
+      ? locale === 'zh'
+        ? `${displayShortcut('input.steer')} 运行中插入`
+        : `${displayShortcut('input.steer')} steer while running`
+      : undefined,
     displayShortcut('help.toggle') === undefined
       ? undefined
       : locale === 'zh'

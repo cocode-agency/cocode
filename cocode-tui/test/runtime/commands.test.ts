@@ -113,6 +113,12 @@ describe('commands', () => {
     )
   })
 
+  it('shows explicit steering in help when the runtime supports it', () => {
+    expect(
+      helpText({ ...P0_CAPABILITIES, promptMode: true }, createBuiltinCommands(), 'en'),
+    ).toContain('ctrl+enter steer while running')
+  })
+
   it('/exit dispatches quit', () => {
     const actions: TuiAction[] = []
     const command = createBuiltinCommands().find('exit', P0_CAPABILITIES)

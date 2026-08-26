@@ -88,6 +88,18 @@ describe('resolveFooterHints', () => {
     const keymap = resolveKeymap({})
     expect(resolveFooterHints({ agent: 'running', draft: '', messageSelection: false }, keymap, 'en', 160).hints.map((hint) => hint.id)).toEqual(['interrupt'])
     expect(resolveFooterHints({ agent: 'running', draft: 'queued', messageSelection: false }, keymap, 'en', 160).hints.map((hint) => hint.id)).toEqual(['interrupt', 'queue-draft'])
+    expect(resolveFooterHints({ agent: 'running', draft: 'queued', messageSelection: false, steeringAvailable: true }, keymap, 'en', 160).hints.map((hint) => hint.id)).toEqual(['interrupt', 'queue-draft', 'steer-draft'])
+    const customKeymap = resolveKeymap({
+      COCODE_TUI_KEYMAP: '{"input.submit":"alt+enter","input.steer":"ctrl+shift+enter"}',
+    })
+    const custom = resolveFooterHints(
+      { agent: 'running', draft: 'queued', messageSelection: false, steeringAvailable: true },
+      customKeymap,
+      'en',
+      160,
+    )
+    expect(renderFooter(custom)).toContain('Alt+Enter queue draft')
+    expect(renderFooter(custom)).toContain('Ctrl+Shift+Enter steer')
     expect(resolveFooterHints({ agent: 'idle', draft: '', messageSelection: true }, keymap, 'en', 160).hints.map((hint) => hint.id)).toEqual(['message-move', 'message-copy', 'message-actions', 'message-close'])
     expect(resolveFooterHints({ agent: 'idle', draft: '', messageSelection: true, messageDetailsAvailable: true }, keymap, 'en', 160).hints.map((hint) => hint.id)).toContain('message-details')
     expect(resolveFooterHints({ agent: 'idle', draft: '', messageSelection: false, paneFocus: 'inspector' }, keymap, 'en', 160).hints.map((hint) => hint.id)).toContain('pane-scroll')

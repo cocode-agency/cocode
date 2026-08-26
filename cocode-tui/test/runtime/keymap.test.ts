@@ -7,6 +7,12 @@ describe('keymap', () => {
     expect(matchKey({ raw: 'g', ctrl: true, empty: false })).toEqual({ id: 'editor.open' })
   })
 
+  it('matches Ctrl+Enter as explicit steering', () => {
+    expect(matchKey({ raw: '', return: true, ctrl: true, empty: false })).toEqual({
+      id: 'input.steer',
+    })
+  })
+
   it('keeps Ctrl+G available for an empty draft', () => {
     expect(matchKey({ raw: 'g', ctrl: true, empty: true })).toEqual({ id: 'editor.open' })
   })

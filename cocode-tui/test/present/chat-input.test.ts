@@ -20,6 +20,7 @@ describe('chat input helpers', () => {
     const dispatch = vi.fn()
     const app = { dispatch } as unknown as TuiApp
     dispatchKeyCommand(app, 'input.submit', 'hello')
+    dispatchKeyCommand(app, 'input.steer', 'steer this')
     dispatchKeyCommand(app, 'input.newline', '')
     dispatchKeyCommand(app, 'session.new', '')
     dispatchKeyCommand(app, 'session.open', '')
@@ -28,6 +29,7 @@ describe('chat input helpers', () => {
     dispatchKeyCommand(app, 'history.next', '')
     expect(dispatch.mock.calls).toEqual([
       [{ type: 'submit', text: 'hello' }],
+      [{ type: 'steer', text: 'steer this' }],
       [{ type: 'insertDraft', text: '\n' }],
       [{ type: 'session.new' }],
       [{ type: 'session.open' }],

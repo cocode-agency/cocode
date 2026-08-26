@@ -1999,6 +1999,7 @@ describe('TuiApp', () => {
       provider: 'deepseek-official',
       model: 'deepseek-v4-flash',
       sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, promptMode: true },
     })
     await app.start()
     app.dispatch({ type: 'submit', text: 'hello' })
@@ -2011,6 +2012,9 @@ describe('TuiApp', () => {
     expect(runtime.prompts).toHaveLength(1)
     expect(app.snapshot().status.queueCount).toBe(1)
     expect(app.snapshot().notice?.message).toMatch(/Queued prompt/)
+    app.dispatch({ type: 'submit', text: 'finally' })
+    expect(runtime.prompts).toHaveLength(1)
+    expect(app.snapshot().status.queueCount).toBe(2)
 
     runtime.emit({
       method: 'session.status',
@@ -2022,6 +2026,43 @@ describe('TuiApp', () => {
         { sessionId: 's1', text: 'hello' },
         { sessionId: 's1', text: 'again' },
       ])
+    expect(app.snapshot().status.queueCount).toBe(1)
+
+    runtime.emit({
+      method: 'session.status',
+      params: { sessionId: 's1', status: 'idle' },
+    })
+    await expect
+      .poll(() => runtime.prompts)
+      .toEqual([
+        { sessionId: 's1', text: 'hello' },
+        { sessionId: 's1', text: 'again' },
+        { sessionId: 's1', text: 'finally' },
+      ])
+  })
+
+  it('keeps explicit steering available through Ctrl+Enter while running', async () => {
+    const runtime = fakeRuntime()
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, promptMode: true },
+    })
+    await app.start()
+    runtime.emit({
+      method: 'session.status',
+      params: { sessionId: 's1', status: 'running' },
+    })
+
+    app.dispatch({ type: 'steer', text: 'interrupt this step' })
+
+    await expect.poll(() => runtime.prompts).toEqual([
+      { sessionId: 's1', text: 'interrupt this step', mode: 'steer' },
+    ])
+    expect(app.snapshot().status.queueCount).toBe(0)
   })
 
   it('shows thinking while a turn is running before the first response chunk', async () => {

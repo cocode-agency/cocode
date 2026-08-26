@@ -24,7 +24,7 @@
 ◐ [status] running                                                            · queued 1 │ MCP / companion: not repor…
 todos 1/3                                                                                │ Capability source: unknown
                                                                                          │
-Build · fixture-provider / fixture-model                                 tab queue draft │ Shortcuts
+Build · fixture-provider / fixture-model                               enter queue draft │ Shortcuts
 > [composer] queue this next                                                             │ pgup / pgdn scroll
                                                                                          │ ↓ wheel / Alt+↓ · 3
-Esc interrupt · tab queue draft                                                          │
+Esc interrupt · Enter queue draft                                                        │
