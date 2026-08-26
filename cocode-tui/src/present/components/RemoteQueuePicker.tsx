@@ -26,7 +26,7 @@ export function RemoteQueuePicker(props: {
   return (
     <Box flexDirection="column" marginTop={1} borderStyle={PANEL_BORDER} borderColor={theme.border} paddingX={1}>
       <Text color={theme.text} bold wrap="truncate-end">
-        {props.locale === 'zh' ? 'Host 队列' : 'Host queue'}{' '}
+        {props.locale === 'zh' ? 'Host 队列' : 'Host queue'} · {text(props.locale, 'queueCount', { count: String(items.length) })}{' '}
         <Text color={theme.mute}>· {props.locale === 'zh' ? '上下移动，Ctrl+D 删除，Ctrl+R steer；编辑用 /queue-edit' : 'arrows move, Ctrl+D delete, Ctrl+R steer; edit with /queue-edit'}</Text>
       </Text>
       <Text color={theme.dim} wrap="truncate-end">

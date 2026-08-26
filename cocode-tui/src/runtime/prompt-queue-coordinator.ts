@@ -30,6 +30,10 @@ export class PromptQueueCoordinator {
     return this.pickerState
   }
 
+  get items(): readonly QueuedPrompt[] {
+    return this.queue.items
+  }
+
   add(
     text: string,
     attachments: QueuedPrompt['attachments'],

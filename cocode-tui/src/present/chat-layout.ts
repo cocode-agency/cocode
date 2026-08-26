@@ -70,6 +70,7 @@ export type ChatLayoutInput = {
   hasStatusDetails?: boolean
   checklistStripRows?: number
   editorFeedbackRows?: number
+  queueDockRows?: number
   helpLines?: number
   slashItems?: number
   commandArgumentItems?: number
@@ -113,6 +114,7 @@ export type ChatLayout = {
     checklist: number
     status: number
     editorFeedback: number
+    queueDock: number
     overlay: number
     composer: number
     footer: number
@@ -154,6 +156,7 @@ export function calculateChatLayout(input: ChatLayoutInput): ChatLayout {
     STATUS_ROWS + nonNegativeInteger(input.noticeRows) + optionalRow(input.hasStatusDetails)
   const checklistRows = nonNegativeInteger(input.checklistStripRows)
   const editorFeedbackRows = nonNegativeInteger(input.editorFeedbackRows)
+  const queueDockRows = nonNegativeInteger(input.queueDockRows)
   const composerRegionRows = composerRows
   const baseRows =
     CHAT_HEADER_ROWS +
@@ -161,7 +164,8 @@ export function calculateChatLayout(input: ChatLayoutInput): ChatLayout {
     composerRegionRows +
     FOOTER_ROWS +
     checklistRows +
-    editorFeedbackRows
+    editorFeedbackRows +
+    queueDockRows
   const overlayInputs = input.activeOverlays ?? legacyOverlays(input)
   const activeOverlay = selectActiveOverlay(overlayInputs)
   const requestedOverlayRows = nonNegativeInteger(activeOverlay?.rows)
@@ -195,6 +199,7 @@ export function calculateChatLayout(input: ChatLayoutInput): ChatLayout {
       checklist: checklistRows,
       status: statusRows,
       editorFeedback: editorFeedbackRows,
+      queueDock: queueDockRows,
       overlay: overlayRows,
       composer: composerRegionRows,
       footer: FOOTER_ROWS,

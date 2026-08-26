@@ -87,6 +87,15 @@ const CASES: ChatRenderCase[] = [
       telemetry: { contextPercent: 33, tps: 18.75, reasoningEffort: 'high' },
     },
   }),
+  renderCase('80x30 queue dock above composer', 80, 30, {
+    agent: 'running',
+    queuedPrompts: [
+      { id: 'local-1', text: 'local follow-up', attachments: [], images: [] },
+    ],
+    remoteQueue: [
+      { id: 'host-1', placement: 'queued', content: [{ type: 'text', text: 'Host follow-up' }] },
+    ],
+  }),
   renderCase('160x35 zh help overlay', 160, 35, {
     locale: 'zh',
     theme: 'light',
@@ -178,6 +187,23 @@ describe.sequential('Chat multi-viewport render contract', () => {
       expect(vi.getTimerCount(), `${testCase.name} leaked timers`).toBe(0)
       errors.mockRestore()
       warnings.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders local and Host queue previews directly above the composer', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] })
+    const testCase = CASES.find((item) => item.name === '80x30 queue dock above composer')
+    expect(testCase).toBeDefined()
+    const chat = await renderChatContract(testCase!)
+    try {
+      expect(chat.frame).toContain('Prompt queue')
+      expect(chat.frame).toContain('local follow-up')
+      expect(chat.frame).toContain('Host follow-up')
+      expect(chat.frame).toContain('manage with /queue')
+    } finally {
+      await chat.close()
+      expect(vi.getTimerCount()).toBe(0)
       vi.useRealTimers()
     }
   })

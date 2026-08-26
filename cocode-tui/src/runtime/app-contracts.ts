@@ -7,6 +7,7 @@ import type {
   TuiImageInput,
   TuiRuntime,
   TuiRuntimeCapabilityName,
+  TuiRemoteQueueItem,
 } from '@cocode/tui-connection'
 import type { ExternalDshReadSource } from '@cocode-agency/host-supervisor'
 import type { SelectModeResult } from './auth/store.ts'
@@ -23,6 +24,7 @@ import type { ModelPickerState } from './model-picker.ts'
 import type { PermissionPickerState } from './permission-picker.ts'
 import type { PluginPickerState } from './plugin-picker.ts'
 import type { PromptQueuePickerState } from './prompt-queue-picker.ts'
+import type { QueuedPrompt } from './prompt-queue.ts'
 import type { RemoteQueuePickerState } from './remote-queue-picker.ts'
 import type { ResumePickerState } from './resume-picker.ts'
 import type { ReviewPickerState } from './review-picker.ts'
@@ -189,6 +191,8 @@ export type TuiSnapshot = {
     permissionMode: string
     planMode: boolean
   }
+  queuedPrompts: readonly QueuedPrompt[]
+  remoteQueue: readonly TuiRemoteQueueItem[]
   queuePicker?: PromptQueuePickerState
   remoteQueuePicker?: RemoteQueuePickerState
   checklist?: ChecklistState

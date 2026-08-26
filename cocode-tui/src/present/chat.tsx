@@ -80,6 +80,8 @@ import {
   PROMPT_QUEUE_WINDOW_SIZE,
   visiblePromptQueueItems,
 } from '../runtime/prompt-queue-picker.ts'
+import { visibleRemoteQueueItems } from '../runtime/remote-queue-picker.ts'
+import { visibleRemoteQueueItems as filterVisibleRemoteQueueItems } from '../runtime/queue-view.ts'
 import {
   SESSION_TREE_WINDOW_SIZE,
   visibleSessionTreeItems,
@@ -115,6 +117,7 @@ import { terminalViewport } from './terminal-output.ts'
 import { ReviewPicker } from './components/ReviewPicker.tsx'
 import { ApprovalPanel } from './components/ApprovalPanel.tsx'
 import { QueuePicker } from './components/QueuePicker.tsx'
+import { QueueDock, queueDockRows } from './components/QueueDock.tsx'
 import { RemoteQueuePicker } from './components/RemoteQueuePicker.tsx'
 import { SubagentPicker } from './components/SubagentPicker.tsx'
 import { ChecklistPanel } from './components/ChecklistPanel.tsx'
@@ -271,6 +274,8 @@ export function Chat(props: {
   const sessionTreeOpen = snap.sessionTreePicker?.open === true
   const subagentOpen = snap.subagentPicker?.open === true
   const queueOpen = snap.queuePicker?.open === true
+  const remoteQueueOpen = snap.remoteQueuePicker?.open === true
+  const queueOverlayOpen = queueOpen || remoteQueueOpen
   const checklistOpen = snap.checklist?.open === true
   const queueItems =
     snap.queuePicker === undefined
@@ -308,7 +313,7 @@ export function Chat(props: {
     !resumeOpen &&
     !sessionTreeOpen &&
     !subagentOpen &&
-    !queueOpen &&
+    !queueOverlayOpen &&
     !checklistOpen &&
     !historySearchOpen &&
     !commandPaletteOpen &&
@@ -331,7 +336,7 @@ export function Chat(props: {
     !resumeOpen &&
     !sessionTreeOpen &&
     !subagentOpen &&
-    !queueOpen &&
+    !queueOverlayOpen &&
     !checklistOpen &&
     !historySearchOpen &&
     !commandPaletteOpen &&
@@ -358,7 +363,7 @@ export function Chat(props: {
     !effortOpen &&
     !resumeOpen &&
     !sessionTreeOpen &&
-    !queueOpen &&
+    !queueOverlayOpen &&
     !checklistOpen &&
     !historySearchOpen &&
     !commandPaletteOpen &&
@@ -389,7 +394,7 @@ export function Chat(props: {
                   ? 'resume'
                   : sessionTreeOpen
                     ? 'sessionTree'
-                    : queueOpen
+                    : queueOverlayOpen
                       ? 'queue'
                       : checklistOpen
                         ? 'checklist'
@@ -546,6 +551,9 @@ export function Chat(props: {
     hasAttachments: composerAttachmentRows === 1,
     hasImages: composerImageRows === 1,
   })
+  const visibleQueueDockRows = queueOverlayOpen
+    ? 0
+    : queueDockRows(snap.queuedPrompts, snap.remoteQueue)
   const layout = calculateChatLayout({
     viewport: { columns: terminalColumns, rows: viewportRows },
     viewportRows,
@@ -557,6 +565,7 @@ export function Chat(props: {
     hasStatusDetails: hasStatusDetails(snap.status),
     checklistStripRows: mainChecklistRows,
     editorFeedbackRows: Number(editorBusy) + Number(editorError !== undefined),
+    queueDockRows: visibleQueueDockRows,
     helpLines: snap.helpOpen ? snap.helpText.split('\n').length : undefined,
     slashItems: slashOpen ? slashItems.length : undefined,
     commandArgumentItems: commandArgumentOpen
@@ -567,6 +576,8 @@ export function Chat(props: {
     historyMatches: historySearchOpen ? historyItems.length : undefined,
     resumeItems: queueOpen
       ? queueItems.length
+      : remoteQueueOpen
+        ? filterVisibleRemoteQueueItems(snap.remoteQueue).length
       : sessionTreeOpen
         ? snap.sessionTreePicker === undefined
           ? 0
@@ -580,6 +591,8 @@ export function Chat(props: {
           : undefined,
     resumeSelected: queueOpen
       ? snap.queuePicker?.selected
+      : remoteQueueOpen
+        ? snap.remoteQueuePicker?.selected
       : sessionTreeOpen
         ? snap.sessionTreePicker?.selected
         : subagentOpen
@@ -678,7 +691,8 @@ export function Chat(props: {
     reasoningEffort: snap.header.reasoningEffort,
     columns: mainColumns,
   })
-  const composerMetadataRow = contentOverlayStartRow + layout.rows.overlay
+  const composerMetadataRow =
+    contentOverlayStartRow + layout.rows.overlay + layout.rows.queueDock
   const popupBounds = {
     startRow: contentOverlayStartRow,
     startColumn: 1,
@@ -894,7 +908,7 @@ export function Chat(props: {
           commandArgumentOpen ||
           resumeOpen ||
           sessionTreeOpen ||
-          queueOpen ||
+          queueOverlayOpen ||
           checklistOpen ||
           historySearchOpen ||
           modelOverlayOpen ||
@@ -1247,6 +1261,29 @@ export function Chat(props: {
             delta: index - snap.queuePicker.selected,
           })
           if (isPress) app.dispatch({ type: 'queue.restore' })
+        }
+        return
+      }
+      if (remoteQueueOpen && snap.remoteQueuePicker !== undefined) {
+        const items = visibleRemoteQueueItems(snap.remoteQueuePicker)
+        const windowSize = pickerWindowSize(layout.rows.overlay, 8)
+        const start = listWindowStart(
+          snap.remoteQueuePicker.selected,
+          items.length,
+          windowSize,
+        )
+        const index = listItemIndexAtRow({
+          row: hitRow,
+          itemStartRow: popupStartRow + 4 + Number(start > 0),
+          itemCount: items.length,
+          selectedIndex: snap.remoteQueuePicker.selected,
+          windowSize,
+        })
+        if (index !== undefined) {
+          app.dispatch({
+            type: 'remoteQueue.move',
+            delta: index - snap.remoteQueuePicker.selected,
+          })
         }
         return
       }
@@ -1782,7 +1819,7 @@ export function Chat(props: {
       !effortOpen &&
       !resumeOpen &&
       !sessionTreeOpen &&
-      !queueOpen &&
+      !queueOverlayOpen &&
       !checklistOpen &&
       !historySearchOpen &&
       !messageSelectionActive &&
@@ -2747,6 +2784,14 @@ export function Chat(props: {
           >
             {overlays}
           </Box>
+        ) : null}
+        {layout.rows.queueDock > 0 ? (
+          <QueueDock
+            localItems={snap.queuedPrompts}
+            remoteItems={snap.remoteQueue}
+            locale={snap.locale}
+            maxRows={layout.rows.queueDock}
+          />
         ) : null}
         <Composer
           composer={snap.composer}

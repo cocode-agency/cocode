@@ -10,6 +10,7 @@ import {
 import { PANEL_BORDER, PANEL_PADDING_X } from '../layout.ts'
 import { theme } from '../theme.ts'
 import { ScrollablePanel } from './ScrollablePanel.tsx'
+import { totalQueueCount } from '../../runtime/queue-view.ts'
 
 const INSPECTOR_WIDTH = 30
 
@@ -32,12 +33,16 @@ export function Inspector(props: {
     mouseInput,
   } = props
   const telemetry = snapshot.status.telemetry
+  const queueCount = totalQueueCount(
+    snapshot.status.queueCount,
+    snapshot.status.remoteQueueCount,
+  )
   const completedTodos = snapshot.status.todos.filter((todo) => todo.status === 'completed').length
   const hasActivity =
     snapshot.agent !== 'idle' ||
     telemetry.activity !== undefined ||
     snapshot.status.subagents?.running !== 0 ||
-    snapshot.status.queueCount > 0
+    queueCount > 0
   const hasContext =
     snapshot.status.tokens !== undefined ||
     telemetry.contextPercent !== undefined ||
@@ -98,10 +103,10 @@ export function Inspector(props: {
                   color={theme.accent}
                 />
               ) : null}
-              {snapshot.status.queueCount > 0 ? (
+              {queueCount > 0 ? (
                 <Line
                   label={text(locale, 'inspectorQueue')}
-                  value={String(snapshot.status.queueCount)}
+                  value={String(queueCount)}
                   color={theme.accent}
                 />
               ) : null}

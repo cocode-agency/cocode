@@ -5,6 +5,7 @@ import { glyphs } from '../glyphs.ts'
 import { theme } from '../theme.ts'
 import { text, type UiLocale } from '../../runtime/ui-locale.ts'
 import { compactColumns } from '../panel-layout.ts'
+import { totalQueueCount } from '../../runtime/queue-view.ts'
 
 type HeaderData = Partial<TuiSnapshot['header']> & {
   sessionId: string
@@ -24,7 +25,7 @@ export function Header(props: {
   header: HeaderData
   locale: UiLocale
   columns?: number
-  status?: Pick<TuiSnapshot['status'], 'tokens' | 'telemetry' | 'queueCount'>
+  status?: Pick<TuiSnapshot['status'], 'tokens' | 'telemetry' | 'queueCount' | 'remoteQueueCount'>
 }) {
   const { header } = props
   const session = header.sessionId.slice(0, 8)
@@ -35,6 +36,7 @@ export function Header(props: {
   const model = header.model ?? ''
   const context = props.status?.telemetry.contextPercent
   const tokens = props.status?.tokens
+  const queueCount = totalQueueCount(props.status?.queueCount ?? 0, props.status?.remoteQueueCount ?? 0)
   const meta = wide
     ? [
         model === '' ? undefined : `${header.provider ?? ''}/${model}`,
@@ -44,8 +46,8 @@ export function Header(props: {
         tokens === undefined
           ? undefined
           : `${formatCount(tokens.input)}/${formatCount(tokens.output)}`,
-        props.status?.queueCount && props.status.queueCount > 0
-          ? `queue ${String(props.status.queueCount)}`
+        queueCount > 0
+          ? `queue ${String(queueCount)}`
           : undefined,
       ].filter((value): value is string => value !== undefined && value !== '').join(' · ')
     : ''

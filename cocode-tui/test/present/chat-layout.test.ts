@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { calculateChatLayout } from '../../src/present/chat-layout.ts'
+import { queueDockRows } from '../../src/present/components/QueueDock.tsx'
 
 describe('chat layout rows', () => {
   it('uses the composer actual rendered rows instead of fixed chrome', () => {
@@ -32,6 +33,18 @@ describe('chat layout rows', () => {
       tooSmall: false,
     })
     expect(layout.rows.composer).toBe(3)
+  })
+
+  it('reserves the queue dock above the composer', () => {
+    const queue = [{ id: 'local-1', text: 'next', attachments: [], images: [] }]
+    const layout = calculateChatLayout({
+      viewportRows: 30,
+      composerRows: 2,
+      queueDockRows: queueDockRows(queue, []),
+    })
+    expect(layout.rows.queueDock).toBe(4)
+    expect(layout.baseRows).toBe(12)
+    expect(layout.messageRows).toBe(18)
   })
 
   it('does not make a small terminal fail because of a long notice', () => {

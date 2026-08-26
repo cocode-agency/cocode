@@ -2217,6 +2217,33 @@ describe('TuiApp', () => {
       ])
   })
 
+  it('projects visible Host queue items for the dock and picker', async () => {
+    const runtime = fakeRuntime()
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, queueMutation: true },
+    })
+    await app.start()
+    runtime.emit({
+      method: 'session.queue',
+      params: {
+        sessionId: 's1',
+        items: [
+          { id: 'context-1', placement: 'context', content: [{ type: 'text', text: 'internal' }] },
+          { id: 'queued-1', placement: 'queued', content: [{ type: 'text', text: 'Host follow-up' }] },
+        ],
+      },
+    })
+    expect(app.snapshot().status.remoteQueueCount).toBe(1)
+    expect(app.snapshot().remoteQueue).toHaveLength(2)
+    app.dispatch({ type: 'command', line: '/queue' })
+    expect(app.snapshot().remoteQueuePicker?.items.map((item) => item.id)).toEqual(['queued-1'])
+  })
+
   it('opens queue management and restores a queued prompt to the front', async () => {
     const runtime = fakeRuntime()
     const app = createTuiApp({

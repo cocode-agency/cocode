@@ -192,6 +192,9 @@ export type UiTextKey =
   | 'queueQuery'
   | 'queueEmpty'
   | 'queueAttachments'
+  | 'queueDockHint'
+  | 'queueLocal'
+  | 'queueHost'
   | 'queueDeleted'
   | 'queueRestored'
   | 'checklistTitle'
@@ -519,6 +522,9 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     queueQuery: 'filter: {query}',
     queueEmpty: 'No queued prompts.',
     queueAttachments: '{count} attachments',
+    queueDockHint: 'manage with /queue',
+    queueLocal: 'local',
+    queueHost: 'Host',
     queueDeleted: 'Queued prompt deleted.',
     queueRestored: 'Queued prompt restored to the front of the queue.',
     checklistTitle: 'Checklist',
@@ -845,6 +851,9 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     queueQuery: '筛选：{query}',
     queueEmpty: '当前没有排队中的输入。',
     queueAttachments: '{count} 个附件',
+    queueDockHint: '使用 /queue 管理',
+    queueLocal: '本地',
+    queueHost: 'Host',
     queueDeleted: '已删除队列中的输入。',
     queueRestored: '已将队列输入恢复到队首。',
     checklistTitle: '任务清单',

@@ -34,7 +34,7 @@ export function QueuePicker(props: {
       paddingX={1}
     >
       <Text color={theme.text} bold wrap="truncate-end">
-        {text(props.locale, 'queueTitle')}{' '}
+        {text(props.locale, 'queueTitle')} · {text(props.locale, 'queueCount', { count: String(items.length) })}{' '}
         <Text color={theme.mute}>· {text(props.locale, 'queueHint')}</Text>
       </Text>
       <Text color={theme.dim} wrap="truncate-end">

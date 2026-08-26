@@ -1,4 +1,5 @@
 import type { ContentBlock, TuiRemoteQueueItem } from '@cocode/tui-connection'
+import { visibleRemoteQueueItems as filterVisibleRemoteQueueItems } from './queue-view.ts'
 
 export type RemoteQueuePickerState = {
   items: readonly TuiRemoteQueueItem[]
@@ -8,14 +9,17 @@ export type RemoteQueuePickerState = {
 }
 
 export function createRemoteQueuePicker(items: readonly TuiRemoteQueueItem[]): RemoteQueuePickerState {
-  return { items: [...items], query: '', selected: 0, open: true }
+  return { items: filterVisibleRemoteQueueItems(items), query: '', selected: 0, open: true }
 }
 
 export function setRemoteQueueItems(
   state: RemoteQueuePickerState,
   items: readonly TuiRemoteQueueItem[],
 ): RemoteQueuePickerState {
-  return { ...state, items: [...items], selected: Math.min(state.selected, Math.max(0, items.length - 1)) }
+  const nextItems = filterVisibleRemoteQueueItems(items)
+  const nextState = { ...state, items: nextItems, open: nextItems.length > 0 && state.open }
+  const visible = visibleRemoteQueueItems(nextState)
+  return { ...nextState, selected: Math.min(state.selected, Math.max(0, visible.length - 1)) }
 }
 
 export function setRemoteQueueQuery(state: RemoteQueuePickerState, query: string): RemoteQueuePickerState {
@@ -36,10 +40,11 @@ export function closeRemoteQueuePicker(state: RemoteQueuePickerState): RemoteQue
   return { ...state, open: false }
 }
 
-export function visibleRemoteQueueItems(state: RemoteQueuePickerState): TuiRemoteQueueItem[] {
+export function visibleRemoteQueueItems(state: RemoteQueuePickerState): readonly TuiRemoteQueueItem[] {
   const query = state.query.trim().toLocaleLowerCase()
-  if (query === '') return [...state.items]
-  return state.items.filter((item) => `${item.id} ${item.placement} ${contentText(item.content)}`.toLocaleLowerCase().includes(query))
+  const items = state.items
+  if (query === '') return items
+  return items.filter((item) => `${item.id} ${item.placement} ${contentText(item.content)}`.toLocaleLowerCase().includes(query))
 }
 
 export function contentText(content: readonly ContentBlock[]): string {

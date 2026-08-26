@@ -4,6 +4,7 @@ import { AgentStatusIndicator } from './AgentStatusIndicator.tsx'
 import { theme } from '../theme.ts'
 import { text, type UiLocale } from '../../runtime/ui-locale.ts'
 import stringWidth from 'string-width'
+import { totalQueueCount } from '../../runtime/queue-view.ts'
 
 export function noticeLines(message: string): string[] {
   return message.split('\n')
@@ -32,6 +33,10 @@ export function StatusLine(props: {
 }) {
   const notice = props.notice
   const telemetry = props.status.telemetry
+  const queueCount = totalQueueCount(
+    props.status.queueCount,
+    props.status.remoteQueueCount,
+  )
   const telemetryBits = [
     telemetry.activity === undefined
       ? undefined
@@ -84,10 +89,12 @@ export function StatusLine(props: {
               })}
             </Text>
           ) : null}
-          {props.status.queueCount > 0 ? (
+          {queueCount > 0 ? (
             <Text color={theme.accent} wrap="truncate-end">
               {' · '}
-              {text(props.locale, 'queueCount', { count: String(props.status.queueCount) })}
+              {text(props.locale, 'queueCount', {
+                count: String(queueCount),
+              })}
             </Text>
           ) : null}
         </Box>

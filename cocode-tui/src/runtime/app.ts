@@ -158,6 +158,7 @@ import {
 } from './session-projection-coordinator.ts'
 import { createComposerState } from './composer-state.ts'
 import type { DraftImage } from './prompt-queue.ts'
+import { isVisibleRemoteQueueItem } from './queue-view.ts'
 import {
   closeRemoteQueuePicker,
   createRemoteQueuePicker,
@@ -626,11 +627,13 @@ class TuiAppImpl implements TuiApp {
           ...(this.lastSubagent === undefined ? {} : { last: this.lastSubagent }),
         },
         queueCount: this.promptQueue.size,
-        remoteQueueCount: this.remoteQueue.length,
+        remoteQueueCount: this.remoteQueue.filter(isVisibleRemoteQueueItem).length,
         focusMode: this.focusMode,
         permissionMode: this.permissionMode,
         planMode: this.planMode,
       },
+      queuedPrompts: this.promptQueue.items,
+      remoteQueue: this.remoteQueue,
       queuePicker: this.promptQueue.picker,
       remoteQueuePicker: this.remoteQueuePicker,
       checklist:
@@ -1173,7 +1176,10 @@ class TuiAppImpl implements TuiApp {
         this.restoreSelectedQueuedPrompt()
         return
       case 'remoteQueue.open':
-        if (!this.capabilities.queueMutation || this.remoteQueue.length === 0) {
+        if (
+          !this.capabilities.queueMutation ||
+          !this.remoteQueue.some(isVisibleRemoteQueueItem)
+        ) {
           this.notice = { tone: 'info', message: this.locale === 'zh' ? 'Host 队列为空或当前运行时不支持。' : 'The Host queue is empty or unavailable.' }
         } else {
           this.remoteQueuePicker = createRemoteQueuePicker(this.remoteQueue)
@@ -3479,7 +3485,7 @@ class TuiAppImpl implements TuiApp {
       this.emit()
       return
     }
-    if (this.capabilities.queueMutation && this.remoteQueue.length > 0) {
+    if (this.capabilities.queueMutation && this.remoteQueue.some(isVisibleRemoteQueueItem)) {
       this.remoteQueuePicker = createRemoteQueuePicker(this.remoteQueue)
       this.helpOpen = false
       this.notice = undefined
