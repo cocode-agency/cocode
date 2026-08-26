@@ -9,7 +9,9 @@ import {
 import type {
   BusyEnterBehavior, ComposerSubmitGesture, InputSubmitMode,
 } from '../contract/composer-submission.ts'
-import { BUSY_ENTER_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
+import {
+  BUSY_ENTER_FIELD, DEBUG_MODE_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_DEBUG_MODE,
+} from '../../submission-settings.ts'
 import type { ConversationSettings } from '../../submission-settings.ts'
 
 export { DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
@@ -22,6 +24,8 @@ export { DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
 export class ComposerSubmissionPolicy {
   /** Reactive preference source for the Settings row. */
   readonly busyEnter: SnapshotStore<BusyEnterBehavior> = createSnapshotStore(DEFAULT_BUSY_ENTER_BEHAVIOR)
+  /** Reactive preference source for low-level transcript diagnostics. */
+  readonly debugMode: SnapshotStore<boolean> = createSnapshotStore(DEFAULT_DEBUG_MODE)
   private readonly host: SettingsScope<ConversationSettings> | undefined
 
   /**
@@ -67,13 +71,21 @@ export class ComposerSubmissionPolicy {
     void this.host?.set(BUSY_ENTER_FIELD, behavior)
   }
 
+  /** Change whether context injection rows are visible in the transcript. */
+  setDebugMode(enabled: boolean): void {
+    if (this.debugMode.getSnapshot() === enabled) return
+    this.debugMode.set(enabled)
+    void this.host?.set(DEBUG_MODE_FIELD, enabled)
+  }
+
   /**
    * Adopt the scope's accepted durable behavior without writing it back.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
   private adopt(host: SettingsScope<ConversationSettings>): void {
     const section = host.getSnapshot().value
-    if (section === undefined || this.busyEnter.getSnapshot() === section.busyEnter) return
-    this.busyEnter.set(section.busyEnter)
+    if (section === undefined) return
+    if (this.busyEnter.getSnapshot() !== section.busyEnter) this.busyEnter.set(section.busyEnter)
+    if (this.debugMode.getSnapshot() !== section.debugMode) this.debugMode.set(section.debugMode)
   }
 }

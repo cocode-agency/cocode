@@ -6,9 +6,10 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
-  ModelRetryNode, TurnErrorNode, UserMessageNode,
+  ModelRetryNode, SnapshotStore, TurnErrorNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock, MessageText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -17,6 +18,12 @@ import { MessageIconActions } from './MessageIconActions.tsx'
 import css from './MessageItem.module.css'
 
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
+
+export interface ContextMessageNodeInjected {
+  hooks: { debugMode: SnapshotStore<boolean> }
+}
+
+type ContextMessageNodeViewProps = ChatNodeViewProps<'context'> & InjectFace<ContextMessageNodeInjected>
 
 function contentParts(content: readonly unknown[]): {
   text: string
@@ -302,8 +309,11 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 })
 
 /** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({
+  node, t, useDebugMode,
+}: ContextMessageNodeViewProps) {
   const data = node.data
+  const debugMode = useDebugMode(value => value)
   return (
     <ContextInjectionRow
       content={data.content}
@@ -311,6 +321,7 @@ export const ContextMessageNodeView = memo(function ContextMessageNodeView({ nod
       provenance={data.provenance}
       form={data.form}
       t={t}
+      debugMode={debugMode}
     />
   )
 })

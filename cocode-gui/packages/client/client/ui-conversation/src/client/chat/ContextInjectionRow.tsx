@@ -16,6 +16,8 @@ export interface ContextInjectionRowProps {
   form: ContextMessageNode['form']
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
+  /** Whether low-level diagnostic rows are enabled in Settings. */
+  debugMode: boolean
 }
 
 /**
@@ -29,8 +31,9 @@ export interface ContextInjectionRowProps {
  * @param props - Durable content, its projected producer role/name and form, and the locale seat.
  * @returns A collapsed context row with a bounded, form-specific body.
  */
-export function ContextInjectionRow({ content, source, provenance, form, t }: ContextInjectionRowProps) {
+export function ContextInjectionRow({ content, source, provenance, form, t, debugMode }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
+  if (!debugMode) return null
   // Resolved rather than declared: a form whose fields are unreadable renders
   // the opaque body, and the marker must say what the row actually shows.
   const { rendered, summary, body } = contextBody(form, { content, source, t })

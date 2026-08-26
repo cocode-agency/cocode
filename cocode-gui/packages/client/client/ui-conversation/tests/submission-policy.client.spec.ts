@@ -4,12 +4,14 @@ import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   ComposerSubmissionPolicy, DEFAULT_BUSY_ENTER_BEHAVIOR,
 } from '../src/client/input/submission-policy.ts'
+import { DEFAULT_DEBUG_MODE } from '../src/submission-settings.ts'
 import type { ConversationSettings } from '../src/submission-settings.ts'
 
 describe('ComposerSubmissionPolicy', () => {
   it('defaults to Queue and only applies the preference while running', () => {
     const policy = new ComposerSubmissionPolicy()
     expect(policy.busyEnter.getSnapshot()).toBe(DEFAULT_BUSY_ENTER_BEHAVIOR)
+    expect(policy.debugMode.getSnapshot()).toBe(DEFAULT_DEBUG_MODE)
     expect(policy.resolve(false, 'enter', true)).toBe('queue')
     expect(policy.resolve(false, 'accelerated', true)).toBe('queue')
     expect(policy.resolve(true, 'enter', true)).toBe('queue')
@@ -46,21 +48,36 @@ describe('ComposerSubmissionPolicy', () => {
     expect(host.set).toHaveBeenCalledOnce()
   })
 
+  it('publishes and persists the debug-mode preference', () => {
+    const host = stubSettingsScope<ConversationSettings>()
+    const policy = new ComposerSubmissionPolicy(host.scope)
+    const changed = vi.fn()
+    policy.debugMode.subscribe(changed)
+
+    policy.setDebugMode(true)
+
+    expect(policy.debugMode.getSnapshot()).toBe(true)
+    expect(changed).toHaveBeenCalledTimes(1)
+    expect(host.set).toHaveBeenCalledWith('debugMode', true)
+  })
+
   it('adopts a Host preference without writing it back and leaves an identical write untouched', () => {
     const host = stubSettingsScope<ConversationSettings>()
     const policy = new ComposerSubmissionPolicy(host.scope)
-    host.publish({ status: 'ready', value: { busyEnter: 'steer' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { busyEnter: 'steer', debugMode: true }, revision: 1, writable: true })
     expect(policy.busyEnter.getSnapshot()).toBe('steer')
+    expect(policy.debugMode.getSnapshot()).toBe(true)
     policy.setBusyEnter('steer')
     expect(host.set).not.toHaveBeenCalled()
-    host.publish({ value: { busyEnter: 'steer' }, revision: 2 })
+    host.publish({ value: { busyEnter: 'steer', debugMode: true }, revision: 2 })
     expect(policy.busyEnter.getSnapshot()).toBe('steer')
   })
 
   it('adopts a section already standing at construction', () => {
     const host = stubSettingsScope<ConversationSettings>()
-    host.publish({ status: 'ready', value: { busyEnter: 'steer' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { busyEnter: 'steer', debugMode: true }, revision: 1, writable: true })
     const policy = new ComposerSubmissionPolicy(host.scope)
     expect(policy.busyEnter.getSnapshot()).toBe('steer')
+    expect(policy.debugMode.getSnapshot()).toBe(true)
   })
 })

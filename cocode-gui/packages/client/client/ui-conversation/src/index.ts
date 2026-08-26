@@ -6,7 +6,8 @@ import { CONVERSATION_SETTINGS_NAMESPACE, ConversationSettingsSchema } from './s
 
 export {
   BUSY_ENTER_BEHAVIORS, BUSY_ENTER_FIELD, CONVERSATION_SETTINGS_NAMESPACE,
-  DEFAULT_BUSY_ENTER_BEHAVIOR, type BusyEnterBehavior, type ConversationSettings,
+  DEBUG_MODE_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_DEBUG_MODE,
+  type BusyEnterBehavior, type ConversationSettings,
 } from './submission-settings.ts'
 
 /**

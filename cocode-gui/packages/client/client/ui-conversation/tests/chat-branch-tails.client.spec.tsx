@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
@@ -49,10 +50,14 @@ interface MessageItemProps {
   readonly node: ConversationNode
   readonly t: ChatNodeViewProps['t']
   readonly referenceLabels?: readonly string[]
+  readonly debugMode?: boolean
 }
 
+const DEBUG_MODE_ON = createSnapshotStore(true)
+const DEBUG_MODE_OFF = createSnapshotStore(false)
+
 /** Legacy-node fixture adapter for the independently registered renderers. */
-function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) {
+function MessageItem({ node, t: translate, referenceLabels, debugMode = true }: MessageItemProps) {
   const kind = node.kind === 'assistant' ? 'assistant-step' : node.kind
   const viewNode: ChatConversationViewNode = {
     key: `fixture:${node.kind}:${node.seq}`,
@@ -68,7 +73,12 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
         ? { ...node, referenceLabels }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
+  const props = {
+    node: viewNode,
+    t: translate,
+    renderMessageImages,
+    useDebugMode: bindSnapshotSelector(debugMode ? DEBUG_MODE_ON : DEBUG_MODE_OFF),
+  } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -341,6 +351,24 @@ describe('MessageItem arms', () => {
 
     fireEvent.keyDown(disclosure, { key: ' ' })
     expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('hides context diagnostics when debug mode is disabled', () => {
+    const view = render(
+      <MessageItem debugMode={false} t={t} node={{
+        kind: 'context',
+        seq: 3,
+        content: [{ type: 'text', text: 'internal context' }],
+        source: { kind: 'plugin', plugin: 'fixture' },
+        provenance: { role: 'inject', label: 'fixture' },
+        form: null,
+      } as never}
+      />,
+    )
+
+    expect(view.container.querySelector('[data-context-source]')).toBeNull()
+    expect(view.container.querySelector('[data-context-injection-body]')).toBeNull()
+    expect(view.container.textContent).toBe('')
   })
 
   it('the instructions form names the files it reconciled above their text', () => {

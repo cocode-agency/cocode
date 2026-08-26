@@ -51,6 +51,10 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.selector[role='switch'][aria-checked='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .chevron {
   flex: none;
 }
