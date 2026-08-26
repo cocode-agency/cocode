@@ -14,6 +14,7 @@ import {
 import { installDshTransport, rebindDshTransport } from "./dsh-transport"
 import {
 	isDesktopDshBridgeAvailable,
+	isElectronDesktopDevelopment,
 	loadDshBootstrap,
 	resolveRendererRuntimeOrigin,
 } from "./load-dsh-bootstrap"
@@ -38,7 +39,7 @@ export async function startRenderer(element: HTMLElement): Promise<void> {
 		window.__DSH_DESKTOP_RUNTIME_ORIGIN__ = runtimeOrigin
 		window.__DSH_DESKTOP_ENDPOINT_GENERATION__ = 0
 		if (isDesktopDshBridgeAvailable()) {
-			installDshTransport(runtimeOrigin, logger)
+			if (!isElectronDesktopDevelopment()) installDshTransport(runtimeOrigin, logger)
 			installRuntimeRecoveryListeners()
 		}
 		const bootEntries = selectDshBootEntries(
@@ -98,8 +99,8 @@ function installRuntimeRecoveryListeners(): void {
 		)
 	})
 	window.desktopApi.dsh.onRebound((event: DshRuntimeReboundDto) => {
-		const runtimeOrigin = new URL(event.bootstrap.origin).origin
-		rebindDshTransport(runtimeOrigin)
+		const runtimeOrigin = resolveRendererRuntimeOrigin(event.bootstrap)
+		if (!isElectronDesktopDevelopment()) rebindDshTransport(runtimeOrigin)
 		window.__DSH_DESKTOP_RUNTIME_ORIGIN__ = runtimeOrigin
 		window.__DSH_DESKTOP_ENDPOINT_GENERATION__ = event.endpointGeneration
 		document.documentElement.dataset.dshRuntimeState = "degraded"

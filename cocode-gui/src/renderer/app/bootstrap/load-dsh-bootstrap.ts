@@ -8,6 +8,11 @@ export function isDesktopDshBridgeAvailable(): boolean {
 	return window.desktopApi?.dsh !== undefined
 }
 
+/** Electron development renders from Vite over HTTP; production renders from file://. */
+export function isElectronDesktopDevelopment(): boolean {
+	return isDesktopDshBridgeAvailable() && window.location.protocol !== "file:"
+}
+
 function isElectronDesktopRenderer(): boolean {
 	return (
 		typeof __COCODE_ELECTRON_DESKTOP__ !== "undefined" && __COCODE_ELECTRON_DESKTOP__ === true
@@ -36,6 +41,7 @@ export async function loadDshBootstrap(): Promise<DshRuntimeBootstrapDto> {
 
 /** Desktop rewrites through preload; browser dev proxies DSH routes on the Vite origin. */
 export function resolveRendererRuntimeOrigin(bootstrap: DshRuntimeBootstrapDto): string {
+	if (isElectronDesktopDevelopment()) return window.location.origin
 	if (isDesktopDshBridgeAvailable()) return new URL(bootstrap.origin).origin
 	return window.location.origin
 }

@@ -12,7 +12,10 @@ import {
 	unregisterDshRuntimeIpc,
 } from "../contexts/dsh-runtime/presentation/ipc/register-dsh-runtime-ipc"
 import { registerApplicationLifecycle } from "../shell/lifecycle/register-application-lifecycle"
-import { acquireSingleInstanceLock } from "../shell/lifecycle/single-instance-guard"
+import {
+	acquireSingleInstanceLock,
+	configureDevelopmentUserData,
+} from "../shell/lifecycle/single-instance-guard"
 import { runCleanupStep } from "../shell/lifecycle/run-cleanup-step"
 import {
 	createStartupFailureInjector,
@@ -62,6 +65,7 @@ import {
 } from "../contexts/local-files/presentation/ipc/register-local-files-ipc"
 
 export const startApplication = (): void => {
+	configureDevelopmentUserData()
 	// Claimed before observability, the database and the DSH runtime start, so a
 	// duplicate launch never touches state the running instance owns.
 	if (!acquireSingleInstanceLock()) return
