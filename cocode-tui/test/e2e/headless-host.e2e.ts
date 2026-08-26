@@ -22,6 +22,10 @@ const SUCCESS_PROMPT = 'Return the exact marker COCODE_E2E_ASSISTANT_OK.'
 const SUCCESS_REPLY = 'COCODE_E2E_ASSISTANT_OK'
 const FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_ERROR'
 const HTTP_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_ERROR'
+const TOOL_PROMPT = 'COCODE_E2E_FORCE_BASH_TOOL'
+const TOOL_FILE_NAME = 'cocode-e2e-tool-output.txt'
+const TOOL_FILE_CONTENT = 'COCODE_E2E_TOOL_OK\n'
+const TOOL_REPLY = 'COCODE_E2E_TOOL_COMPLETED'
 const CONTINUATION_FIRST_PROMPT = 'COCODE_E2E_CONTINUATION_FIRST'
 const CONTINUATION_SECOND_PROMPT = 'COCODE_E2E_CONTINUATION_SECOND'
 
@@ -262,6 +266,45 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain('502')
   })
 
+  it('executes a real bash tool and persists its file side effect', async () => {
+    const sessionId = 'e2e-bash-tool'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: TOOL_PROMPT,
+      sessionId,
+    })
+
+    expect(result.code, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: 'completed',
+      sessionId,
+      provider: PROVIDER,
+      model: MODEL,
+    })
+
+    expect(await readFile(join(workspace, TOOL_FILE_NAME), 'utf8')).toBe(TOOL_FILE_CONTENT)
+    const request = fixture.requests.find((entry) =>
+      JSON.stringify(entry.body).includes(TOOL_PROMPT) && Array.isArray(entry.body.tools),
+    )
+    expect(request?.body.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: 'bash' }) }),
+    ]))
+
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toEqual(expect.arrayContaining(['tool/call', 'tool/result', 'turn/end']))
+    expectEventOrder(events, ['running', 'tool/call', 'tool/result', 'turn/end', 'idle'])
+    expect(JSON.stringify(events)).toContain(TOOL_FILE_NAME)
+    expect(JSON.stringify(events)).toContain(TOOL_FILE_CONTENT.trim())
+    expect(JSON.stringify(events)).toContain(TOOL_REPLY)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(TOOL_PROMPT)
+    expect(persisted).toContain('tool/call')
+    expect(persisted).toContain('tool/result')
+    expect(persisted).toContain(TOOL_REPLY)
+  })
+
   function runHeadlessCli(options: {
     eventLog: string
     prompt: string
@@ -304,6 +347,31 @@ async function startFixtureServer(): Promise<{
       const body = JSON.parse(await readRequestBody(request)) as Record<string, unknown>
       requests.push({ body, headers: request.headers, url: request.url })
       const failure = JSON.stringify(body).includes(FAILURE_PROMPT)
+      const hasBashTool = Array.isArray(body.tools)
+        && body.tools.some((tool) => (
+          typeof tool === 'object'
+          && tool !== null
+          && 'function' in tool
+          && typeof tool.function === 'object'
+          && tool.function !== null
+          && 'name' in tool.function
+          && tool.function.name === 'bash'
+        ))
+      const hasToolResult = Array.isArray(body.messages)
+        && body.messages.some((message) => (
+          typeof message === 'object'
+          && message !== null
+          && 'role' in message
+          && message.role === 'tool'
+        ))
+      if (hasBashTool && JSON.stringify(body).includes(TOOL_PROMPT)) {
+        if (hasToolResult) {
+          writeCompletion(response, false, TOOL_REPLY)
+        } else {
+          writeBashToolCall(response)
+        }
+        return
+      }
       if (JSON.stringify(body).includes(HTTP_FAILURE_PROMPT)) {
         response.writeHead(502, { 'content-type': 'application/json' })
         response.end(JSON.stringify({
@@ -348,7 +416,7 @@ function e2eTempRoot(): string {
   return process.platform === 'darwin' ? '/tmp' : tmpdir()
 }
 
-function writeCompletion(response: ServerResponse, failure: boolean): void {
+function writeCompletion(response: ServerResponse, failure: boolean, reply = SUCCESS_REPLY): void {
   response.writeHead(200, {
     'cache-control': 'no-cache',
     connection: 'keep-alive',
@@ -366,12 +434,53 @@ function writeCompletion(response: ServerResponse, failure: boolean): void {
   }
   chunk([{ index: 0, delta: { role: 'assistant' }, finish_reason: null }])
   if (!failure) {
-    chunk([{ index: 0, delta: { content: SUCCESS_REPLY }, finish_reason: null }])
+    chunk([{ index: 0, delta: { content: reply }, finish_reason: null }])
   }
   chunk(
     [{ index: 0, delta: {}, finish_reason: failure ? 'content_filter' : 'stop' }],
     { prompt_tokens: 8, completion_tokens: failure ? 0 : 4, total_tokens: failure ? 8 : 12 },
   )
+  response.end('data: [DONE]\n\n')
+}
+
+function writeBashToolCall(response: ServerResponse): void {
+  response.writeHead(200, {
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+    'content-type': 'text/event-stream',
+  })
+  response.write(`data: ${JSON.stringify({
+    id: 'chatcmpl-e2e-tool-call',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: MODEL,
+    choices: [{
+      index: 0,
+      delta: {
+        role: 'assistant',
+        tool_calls: [{
+          index: 0,
+          id: 'call-e2e-bash',
+          type: 'function',
+          function: {
+            name: 'bash',
+            arguments: JSON.stringify({
+              command: `printf '${TOOL_FILE_CONTENT.replace('\n', '\\n')}' > ${TOOL_FILE_NAME}`,
+              description: 'Create the E2E marker file',
+            }),
+          },
+        }],
+      },
+      finish_reason: null,
+    }],
+  })}\n\n`)
+  response.write(`data: ${JSON.stringify({
+    id: 'chatcmpl-e2e-tool-call',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: MODEL,
+    choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+  })}\n\n`)
   response.end('data: [DONE]\n\n')
 }
 
