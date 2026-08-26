@@ -413,6 +413,7 @@ describe('cocode run with the real Host', () => {
 
     const events = await readEventLog(eventLog)
     expect(eventSequence(events)).toEqual(expect.arrayContaining(['running', 'turn/start', 'step/start']))
+    expectEventOrder(events, ['running', 'turn/start', 'step/start', 'step/end', 'idle'])
     expect(eventTypes(events)).not.toContain('assistant/message')
     expect(fixture.requests.some((entry) => JSON.stringify(entry.body).includes(TIMEOUT_PROMPT))).toBe(true)
 
