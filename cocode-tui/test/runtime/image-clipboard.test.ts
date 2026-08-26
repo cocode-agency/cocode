@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   ClipboardImageError,
   MAX_CLIPBOARD_IMAGE_BYTES,
@@ -55,7 +56,7 @@ describe('image clipboard', () => {
         platform: 'linux',
         run: async (command, args) => {
           if (command === 'wl-paste' && args.includes('text/uri-list')) {
-            return Buffer.from(`file://${encodeURIComponent(imagePath).replaceAll('%2F', '/')}`)
+            return Buffer.from(pathToFileURL(imagePath).href)
           }
           throw new Error('clipboard target unavailable')
         },

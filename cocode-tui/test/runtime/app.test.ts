@@ -1991,7 +1991,7 @@ describe('TuiApp', () => {
     expect(app.snapshot().agent).toBe('idle')
   })
 
-  it('prompts only when idle', async () => {
+  it('queues Enter submissions while running and sends them after idle', async () => {
     const runtime = fakeRuntime()
     const app = createTuiApp({
       runtime,
@@ -2009,7 +2009,19 @@ describe('TuiApp', () => {
     })
     app.dispatch({ type: 'submit', text: 'again' })
     expect(runtime.prompts).toHaveLength(1)
-    expect(app.snapshot().notice?.message).toMatch(/Turn in progress/)
+    expect(app.snapshot().status.queueCount).toBe(1)
+    expect(app.snapshot().notice?.message).toMatch(/Queued prompt/)
+
+    runtime.emit({
+      method: 'session.status',
+      params: { sessionId: 's1', status: 'idle' },
+    })
+    await expect
+      .poll(() => runtime.prompts)
+      .toEqual([
+        { sessionId: 's1', text: 'hello' },
+        { sessionId: 's1', text: 'again' },
+      ])
   })
 
   it('shows thinking while a turn is running before the first response chunk', async () => {

@@ -101,6 +101,19 @@ export function pastedImagePath(input: string, cwd = process.cwd()): string | un
   return value
 }
 
+function fileUrlToLocalPath(value: string): string | undefined {
+  try {
+    return fileURLToPath(value)
+  } catch {
+    try {
+      // Linux URI-lists are POSIX; Windows fileURLToPath rejects them.
+      return fileURLToPath(value, { windows: false })
+    } catch {
+      return undefined
+    }
+  }
+}
+
 function normalizePastedPath(input: string, cwd: string): string | undefined {
   let value = input
     .replace(/^\u001b\[200~/u, '')
@@ -115,11 +128,9 @@ function normalizePastedPath(input: string, cwd: string): string | undefined {
     value = value.slice(1, -1)
   }
   if (value.startsWith('file://')) {
-    try {
-      value = fileURLToPath(value)
-    } catch {
-      return undefined
-    }
+    const path = fileUrlToLocalPath(value)
+    if (path === undefined) return undefined
+    value = path
   } else {
     value = value.replace(/\\ /gu, ' ')
   }
