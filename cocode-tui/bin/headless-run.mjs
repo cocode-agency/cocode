@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { finished } from 'node:stream/promises'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1_000
+const CANCELLATION_GRACE_MS = 1_000
 const APPROVAL_POLICIES = new Set(['allow', 'reject'])
 
 export function parseRunArgs(args, env = process.env) {
@@ -109,9 +110,13 @@ export async function runHeadless(options, dependencies) {
   let workspace
   let finishTurn
   let failTurn
+  let finishTurnEnd
   const turnDone = new Promise((resolveTurn, rejectTurn) => {
     finishTurn = resolveTurn
     failTurn = rejectTurn
+  })
+  const turnEnded = new Promise((resolveTurnEnd) => {
+    finishTurnEnd = resolveTurnEnd
   })
 
   try {
@@ -135,6 +140,7 @@ export async function runHeadless(options, dependencies) {
       if (notification.method === 'session.event' && params.sessionId === sessionId) {
         eventCount += 1
         writeEvent(eventStream, { method: notification.method, params })
+        if (params.event?.type === 'turn/end') finishTurnEnd()
         const turnError = readTurnError(params.event)
         if (turnError !== undefined && !completed) failTurn(turnError)
         return
@@ -201,6 +207,7 @@ export async function runHeadless(options, dependencies) {
     }
     await withTimeout(turnDone, options.timeoutMs, async () => {
       await peer.request('cocode/session/cancel', { sessionId }).catch(() => undefined)
+      await waitForGrace(turnEnded, CANCELLATION_GRACE_MS)
     })
     return {
       schemaVersion: 1,
@@ -313,17 +320,32 @@ function readTurnError(event) {
 
 async function withTimeout(promise, timeoutMs, onTimeout) {
   let timer
+  const outcome = await Promise.race([
+    promise.then(
+      (value) => ({ status: 'fulfilled', value }),
+      (error) => ({ status: 'rejected', error }),
+    ),
+    new Promise((resolveTimeout) => {
+      timer = setTimeout(() => resolveTimeout({ status: 'timed-out' }), timeoutMs)
+    }),
+  ])
+  clearTimeout(timer)
+  if (outcome.status === 'fulfilled') return outcome.value
+  if (outcome.status === 'rejected') throw outcome.error
+
+  await onTimeout()
+  const error = new Error(`Cocode agent turn timed out after ${timeoutMs}ms`)
+  error.code = 'COCODE_RUN_TIMEOUT'
+  throw error
+}
+
+async function waitForGrace(promise, timeoutMs) {
+  let timer
   try {
-    return await Promise.race([
+    await Promise.race([
       promise,
-      new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          void Promise.resolve(onTimeout()).finally(() => {
-            const error = new Error(`Cocode agent turn timed out after ${timeoutMs}ms`)
-            error.code = 'COCODE_RUN_TIMEOUT'
-            reject(error)
-          })
-        }, timeoutMs)
+      new Promise((resolveTimeout) => {
+        timer = setTimeout(resolveTimeout, timeoutMs)
       }),
     ])
   } finally {

@@ -97,9 +97,16 @@ describe('headless Cocode run', () => {
   it('cancels the session and exposes a timeout exit classification', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cocode-run-timeout-'))
     temporaryDirectories.push(directory)
-    const harness = createHarness({ complete: false })
+    const eventLog = join(directory, 'events.jsonl')
+    const harness = createHarness({ cancelCompletes: true, complete: false })
     const error = await runHeadless({
-      ...parseRunArgs(['--cwd', directory, '--allow-tools', '--timeout', '5ms', 'wait forever']),
+      ...parseRunArgs([
+        '--cwd', directory,
+        '--allow-tools',
+        '--event-log', eventLog,
+        '--timeout', '5ms',
+        'wait forever',
+      ]),
       prompt: 'wait forever',
       sessionId: 'session-timeout',
     }, { supervisor: harness.supervisor, env: {} }).catch((caught) => caught)
@@ -109,6 +116,8 @@ describe('headless Cocode run', () => {
       'cocode/session/cancel',
       { sessionId: 'session-timeout' },
     ])
+    expect(await readFile(eventLog, 'utf8')).toContain('"type":"turn/end"')
+    expect(harness.closedAfterCancelCompleted).toBe(true)
     expect(harness.released).toBe(true)
   })
 
@@ -130,11 +139,16 @@ describe('headless Cocode run', () => {
   })
 })
 
-function createHarness(options: { complete?: boolean; turnError?: boolean } = {}) {
+function createHarness(options: {
+  cancelCompletes?: boolean
+  complete?: boolean
+  turnError?: boolean
+} = {}) {
   const requests: [string, Record<string, unknown>][] = []
   const subscribers = new Set<(notification: { method: string; params: Record<string, unknown> }) => void>()
   let released = false
   let closed = false
+  let cancelCompleted = false
   const notify = (method: string, params: Record<string, unknown>) => {
     for (const subscriber of subscribers) subscriber({ method, params })
   }
@@ -178,6 +192,20 @@ function createHarness(options: { complete?: boolean; turnError?: boolean } = {}
         }
         return { messageId: 'message-one' }
       }
+      if (method === 'cocode/session/cancel' && options.cancelCompletes === true) {
+        setTimeout(() => {
+          notify('session.event', {
+            sessionId: String(params.sessionId),
+            event: {
+              type: 'turn/end',
+              seq: 2,
+              time: 2,
+              data: { reason: { kind: 'cancelled' } },
+            },
+          })
+          cancelCompleted = true
+        }, 20)
+      }
       return {}
     },
   }
@@ -186,6 +214,7 @@ function createHarness(options: { complete?: boolean; turnError?: boolean } = {}
     requests,
     get released() { return released },
     get closed() { return closed },
+    get closedAfterCancelCompleted() { return closed && cancelCompleted },
     now() { tick += 250; return tick },
     supervisor: {
       resolveCocodeHostScope() {
