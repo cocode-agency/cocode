@@ -21,6 +21,7 @@ const MODEL = 'deepseek-v4-flash'
 const SUCCESS_PROMPT = 'Return the exact marker COCODE_E2E_ASSISTANT_OK.'
 const SUCCESS_REPLY = 'COCODE_E2E_ASSISTANT_OK'
 const FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_ERROR'
+const HTTP_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_ERROR'
 const CONTINUATION_FIRST_PROMPT = 'COCODE_E2E_CONTINUATION_FIRST'
 const CONTINUATION_SECOND_PROMPT = 'COCODE_E2E_CONTINUATION_SECOND'
 
@@ -231,6 +232,36 @@ describe('cocode run with the real Host', () => {
     expect((persisted.match(/"type":"turn\/end"/g) ?? []).length).toBeGreaterThanOrEqual(2)
   })
 
+  it('reports a provider HTTP failure as a terminal error', async () => {
+    const sessionId = 'e2e-provider-http-error'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: HTTP_FAILURE_PROMPT,
+      sessionId,
+    })
+
+    expect(result.code).toBe(1)
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toContain('turn/end')
+    expectEventOrder(events, ['running', 'turn/end'])
+    const terminal = events.find((entry) =>
+      entry.method === 'session.event' && entry.params?.event?.type === 'turn/end',
+    )
+    expect(terminal?.params?.event?.data?.reason?.kind).toBe('error')
+    expect(JSON.stringify(terminal)).toContain('502')
+    const sequence = eventSequence(events)
+    const terminalIndex = sequence.indexOf('turn/end')
+    const idleIndex = sequence.indexOf('idle')
+    expect(terminalIndex).toBeGreaterThanOrEqual(0)
+    expect(idleIndex === -1 || idleIndex > terminalIndex).toBe(true)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(HTTP_FAILURE_PROMPT)
+    expect(persisted).toContain('turn/end')
+    expect(persisted).toContain('502')
+  })
+
   function runHeadlessCli(options: {
     eventLog: string
     prompt: string
@@ -273,6 +304,16 @@ async function startFixtureServer(): Promise<{
       const body = JSON.parse(await readRequestBody(request)) as Record<string, unknown>
       requests.push({ body, headers: request.headers, url: request.url })
       const failure = JSON.stringify(body).includes(FAILURE_PROMPT)
+      if (JSON.stringify(body).includes(HTTP_FAILURE_PROMPT)) {
+        response.writeHead(502, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({
+          error: {
+            code: 'UPSTREAM_UNAVAILABLE',
+            message: 'fixture upstream unavailable',
+          },
+        }))
+        return
+      }
       writeCompletion(response, failure)
     } catch (error) {
       response.writeHead(500, { 'content-type': 'application/json' })
