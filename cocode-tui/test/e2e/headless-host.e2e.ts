@@ -24,6 +24,7 @@ const FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_ERROR'
 const HTTP_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_ERROR'
 const MALFORMED_SSE_PROMPT = 'COCODE_E2E_FORCE_MALFORMED_SSE'
 const TRUNCATED_SSE_PROMPT = 'COCODE_E2E_FORCE_TRUNCATED_SSE'
+const TIMEOUT_PROMPT = 'COCODE_E2E_FORCE_TIMEOUT'
 const TOOL_PROMPT = 'COCODE_E2E_FORCE_BASH_TOOL'
 const TOOL_FILE_NAME = 'cocode-e2e-tool-output.txt'
 const TOOL_FILE_CONTENT = 'COCODE_E2E_TOOL_OK\n'
@@ -324,6 +325,37 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain('turn/end')
   })
 
+  it('cancels a running turn and returns the timeout exit code', async () => {
+    const sessionId = 'e2e-provider-timeout'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const setup = await runHeadlessCli({
+      eventLog: join(eventRoot, `${sessionId}-setup.jsonl`),
+      prompt: SUCCESS_PROMPT,
+      sessionId,
+    })
+    expect(setup.code, setup.stderr).toBe(0)
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: TIMEOUT_PROMPT,
+      sessionId,
+      timeout: '100ms',
+    })
+
+    expect(result.code).toBe(124)
+    expect(result.signal).toBeNull()
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Cocode agent turn timed out after 100ms')
+
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toEqual(expect.arrayContaining(['turn/start', 'step/start']))
+    expect(eventTypes(events)).not.toContain('assistant/message')
+    expect(fixture.requests.some((entry) => JSON.stringify(entry.body).includes(TIMEOUT_PROMPT))).toBe(true)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(TIMEOUT_PROMPT)
+    expect(persisted).toContain('step/end')
+  })
+
   it('executes a real bash tool and persists its file side effect', async () => {
     const sessionId = 'e2e-bash-tool'
     const eventLog = join(eventRoot, `${sessionId}.jsonl`)
@@ -367,6 +399,7 @@ describe('cocode run with the real Host', () => {
     eventLog: string
     prompt: string
     sessionId: string
+    timeout?: string
   }): Promise<ProcessResult> {
     return runCli([
       'run',
@@ -377,7 +410,7 @@ describe('cocode run with the real Host', () => {
       '--model', MODEL,
       '--provider', PROVIDER,
       '--session-id', options.sessionId,
-      '--timeout', '60s',
+      '--timeout', options.timeout ?? '60s',
       options.prompt,
     ], env, 90_000).catch((error) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\nfixture requests: ${JSON.stringify(fixture.requests)}`)
@@ -446,6 +479,10 @@ async function startFixtureServer(): Promise<{
       }
       if (JSON.stringify(body).includes(TRUNCATED_SSE_PROMPT)) {
         writeTruncatedSse(response)
+        return
+      }
+      if (JSON.stringify(body).includes(TIMEOUT_PROMPT)) {
+        writeDelayedSse(response)
         return
       }
       writeCompletion(response, failure)
@@ -532,6 +569,16 @@ function writeTruncatedSse(response: ServerResponse): void {
     choices: [{ index: 0, delta: { role: 'assistant', content: 'partial' }, finish_reason: null }],
   })}\n\n`)
   response.destroy()
+}
+
+function writeDelayedSse(response: ServerResponse): void {
+  response.writeHead(200, {
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+    'content-type': 'text/event-stream',
+  })
+  const timer = setTimeout(() => response.end('data: [DONE]\n\n'), 5_000)
+  response.once('close', () => clearTimeout(timer))
 }
 
 function writeBashToolCall(response: ServerResponse): void {
