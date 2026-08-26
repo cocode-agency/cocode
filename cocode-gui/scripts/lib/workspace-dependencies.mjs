@@ -5,10 +5,17 @@ import {
 	lstatSync,
 	readFileSync,
 	readdirSync,
+	realpathSync,
 	rmSync,
+	statSync,
 } from "node:fs"
 import * as path from "pathe"
 import { shellCommandOptions } from "./child-process-options.mjs"
+import { assertNativeBinaryArchitecture } from "./native-binary-inspection.mjs"
+
+/**
+ * @typedef {(command: string, args: string[], options?: import("node:child_process").ExecFileSyncOptions) => unknown} RunCommand
+ */
 
 /**
  * Install a sibling workspace's dependencies when its required artifacts are
@@ -30,6 +37,193 @@ export function ensureWorkspaceDependencies({ root, label, requiredPaths }) {
 	return true
 }
 
+export function discoverNodePtyPackages(root) {
+	const packages = []
+	const seen = new Set()
+	visitNodeModules(path.join(root, "node_modules"))
+	return packages.sort((left, right) => left.packageRoot.localeCompare(right.packageRoot))
+
+	function visitNodeModules(modulesRoot) {
+		if (!existsSync(modulesRoot)) return
+		for (const entry of readdirSync(modulesRoot, { withFileTypes: true })) {
+			if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+			const packageRoot = path.join(modulesRoot, entry.name)
+			if (entry.name.startsWith("@")) {
+				visitNodeModules(packageRoot)
+				continue
+			}
+			visitPackage(packageRoot)
+		}
+	}
+
+	function visitPackage(packageRoot) {
+		let manifest
+		try {
+			manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"))
+		} catch {
+			manifest = undefined
+		}
+		if (manifest?.name === "node-pty") {
+			const resolvedRoot = realpathSync(packageRoot)
+			if (!seen.has(resolvedRoot)) {
+				seen.add(resolvedRoot)
+				packages.push({
+					packageRoot: resolvedRoot,
+					version: String(manifest.version ?? "unknown"),
+					manifest,
+				})
+			}
+		}
+		visitNodeModules(path.join(packageRoot, "node_modules"))
+	}
+}
+
+export function resolveNodePtyNativeDirectory(
+	packageRoot,
+	{ platform = process.platform, arch = process.arch } = {},
+) {
+	return [
+		path.join(packageRoot, "build", "Release"),
+		path.join(packageRoot, "build", "Debug"),
+		path.join(packageRoot, "prebuilds", `${platform}-${arch}`),
+	].find((directory) => existsSync(path.join(directory, "pty.node")))
+}
+
+/**
+ * @param {{
+ *   root: string,
+ *   platform?: NodeJS.Platform,
+ *   arch?: NodeJS.Architecture,
+ *   force?: boolean,
+ *   run?: RunCommand,
+ *   compileSpawnHelper?: (packageRoot: string, nativeDirectory: string) => unknown,
+ * }} [options]
+ */
+export function prepareNodePtyNatives({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+	force = false,
+	run = execFileSync,
+	compileSpawnHelper = (packageRoot, nativeDirectory) =>
+		compileUnixNodePtySpawnHelper(packageRoot, nativeDirectory, { run }),
+} = {}) {
+	if (!["win32", "darwin", "linux"].includes(platform)) return []
+	const packages = discoverNodePtyPackages(root)
+	if (packages.length === 0) return []
+	for (const { packageRoot, version } of packages) {
+		if (platform === "win32")
+			ensureWindowsNodePtyNatives({ root, packageRoot, version, platform, arch, force, run })
+		if (platform === "linux")
+			ensureLinuxNodePtyNatives({
+				root,
+				packageRoot,
+				platform,
+				arch,
+				force,
+				run,
+				skipHelperRebuild: true,
+			})
+		if (platform === "darwin")
+			ensureDarwinNodePtyNatives({
+				root,
+				packageRoot,
+				platform,
+				arch,
+				force,
+				run,
+				skipHelperRebuild: true,
+			})
+	}
+
+	for (const { packageRoot } of packages) {
+		const nativeDirectory = resolveNodePtyNativeDirectory(packageRoot, { platform, arch })
+		if (!nativeDirectory) {
+			throw new Error(`node-pty pty.node is missing for ${platform}/${arch}: ${packageRoot}`)
+		}
+		if (platform !== "win32") {
+			const helper = path.join(nativeDirectory, "spawn-helper")
+			if (!existsSync(helper)) compileSpawnHelper(packageRoot, nativeDirectory)
+			if (!existsSync(helper)) {
+				throw new Error(
+					`node-pty spawn-helper is missing for ${platform}/${arch}: ${helper}`,
+				)
+			}
+			chmodSync(helper, 0o755)
+		}
+	}
+
+	return packages
+}
+
+export function restoreNodePtyHelpers({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+} = {}) {
+	const restored = []
+	for (const { packageRoot } of discoverNodePtyPackages(root)) {
+		const nativeDirectory = resolveNodePtyNativeDirectory(packageRoot, { platform, arch })
+		if (!nativeDirectory) continue
+		const helper = path.join(nativeDirectory, "spawn-helper")
+		if (!existsSync(helper))
+			throw new Error(`node-pty spawn-helper is missing for ${platform}/${arch}: ${helper}`)
+		chmodSync(helper, 0o755)
+		assertNativeBinaryArchitecture(path.join(nativeDirectory, "pty.node"), { platform, arch })
+		assertNativeBinaryArchitecture(helper, { platform, arch })
+		restored.push(helper)
+	}
+	return restored
+}
+
+export function verifyNodePtyNativesRecursively({
+	root,
+	platform = process.platform,
+	arch = process.arch,
+} = {}) {
+	const results = []
+	for (const { packageRoot, version } of discoverNodePtyPackages(root)) {
+		const nativeDirectory = resolveNodePtyNativeDirectory(packageRoot, { platform, arch })
+		if (!nativeDirectory)
+			throw new Error(`node-pty pty.node is missing for ${platform}/${arch}: ${packageRoot}`)
+		const pty = path.join(nativeDirectory, "pty.node")
+		if (platform !== "win32") {
+			const helper = path.join(nativeDirectory, "spawn-helper")
+			if (!existsSync(helper))
+				throw new Error(
+					`node-pty spawn-helper is missing for ${platform}/${arch}: ${helper}`,
+				)
+			if ((statSync(helper).mode & 0o111) === 0)
+				throw new Error(`node-pty spawn-helper is not executable: ${helper}`)
+			assertNativeBinaryArchitecture(pty, { platform, arch })
+			assertNativeBinaryArchitecture(helper, { platform, arch })
+			results.push({ packageRoot, version, nativeDirectory, files: [pty, helper] })
+			continue
+		}
+		const beta = version.includes("1.2.0-beta")
+		const required = beta
+			? [
+					"conpty.node",
+					"conpty_console_list.node",
+					path.join("conpty", "conpty.dll"),
+					path.join("conpty", "OpenConsole.exe"),
+			  ]
+			: [
+					"conpty.node",
+					"winpty-agent.exe",
+					path.join("conpty", "conpty.dll"),
+					path.join("conpty", "OpenConsole.exe"),
+			  ]
+		const files = [pty, ...required.map((relative) => path.join(nativeDirectory, relative))]
+		for (const file of files)
+			if (!existsSync(file))
+				throw new Error(`node-pty ${version} asset is missing for win32/${arch}: ${file}`)
+		for (const file of files) assertNativeBinaryArchitecture(file, { platform, arch })
+		results.push({ packageRoot, version, nativeDirectory, files })
+	}
+	return results
+}
+
 /**
  * node-pty can load its Windows native modules from build/Release,
  * build/Debug, or prebuilds/win32-<arch>. The ConPTY companion binaries live
@@ -37,16 +231,30 @@ export function ensureWorkspaceDependencies({ root, label, requiredPaths }) {
  * valid JS install while those architecture-specific files are missing, so
  * repair the native files explicitly before the runtime is staged.
  */
+/**
+ * @param {{
+ *   root: string,
+ *   packageRoot?: string,
+ *   version?: string,
+ *   platform?: NodeJS.Platform,
+ *   arch?: NodeJS.Architecture,
+ *   force?: boolean,
+ *   run?: RunCommand,
+ * }} [options]
+ */
 export function ensureWindowsNodePtyNatives({
 	root,
+	packageRoot = path.join(root, "node_modules", "node-pty"),
+	version,
 	platform = process.platform,
 	arch = process.arch,
 	force = false,
 	run = execFileSync,
 } = {}) {
 	if (platform !== "win32") return false
-	const packageRoot = path.join(root, "node_modules", "node-pty")
-	if (!force && resolveWindowsNodePtyMissing(packageRoot, arch).length === 0) return false
+	const packageVersion = version ?? readNodePtyVersion(packageRoot)
+	if (!force && resolveWindowsNodePtyMissing(packageRoot, arch, packageVersion).length === 0)
+		return false
 
 	console.log(`[workspace-deps] rebuilding node-pty natives for win32/${arch}`)
 	run(
@@ -54,11 +262,11 @@ export function ensureWindowsNodePtyNatives({
 		["pnpm@10.34.5", "rebuild", "node-pty"],
 		{
 			...shellCommandOptions({ cwd: root, stdio: "inherit" }),
-			env: { ...process.env, npm_config_arch: arch },
+			env: { ...process.env, npm_config_arch: arch, DSH_NODE_PTY_PACKAGE_ROOT: packageRoot },
 		},
 	)
 
-	const missing = resolveWindowsNodePtyMissing(packageRoot, arch)
+	const missing = resolveWindowsNodePtyMissing(packageRoot, arch, packageVersion)
 	if (missing.length > 0) {
 		throw new Error(
 			[
@@ -72,16 +280,30 @@ export function ensureWindowsNodePtyNatives({
 	return true
 }
 
+/**
+ * @param {{
+ *   root: string,
+ *   packageRoot?: string,
+ *   platform?: NodeJS.Platform,
+ *   arch?: NodeJS.Architecture,
+ *   force?: boolean,
+ *   skipHelperRebuild?: boolean,
+ *   run?: RunCommand,
+ * }} [options]
+ */
 export function ensureLinuxNodePtyNatives({
 	root,
+	packageRoot = path.join(root, "node_modules", "node-pty"),
 	platform = process.platform,
 	arch = process.arch,
 	force = false,
+	skipHelperRebuild = false,
 	run = execFileSync,
 } = {}) {
 	if (platform !== "linux") return false
-	const packageRoot = path.join(root, "node_modules", "node-pty")
-	if (!force && resolveLinuxNodePtyMissing(packageRoot, arch).length === 0) return false
+	const nativeDirectory = resolveNodePtyNativeDirectory(packageRoot, { platform: "linux", arch })
+	if (!force && nativeDirectory && skipHelperRebuild) return false
+	if (!force && !resolveLinuxNodePtyMissing(packageRoot, arch).length) return false
 
 	console.log(`[workspace-deps] rebuilding node-pty natives for linux/${arch}`)
 	run(
@@ -89,10 +311,15 @@ export function ensureLinuxNodePtyNatives({
 		["pnpm@10.34.5", "rebuild", "node-pty"],
 		{
 			...shellCommandOptions({ cwd: root, stdio: "inherit" }),
-			env: { ...process.env, npm_config_arch: arch },
+			env: { ...process.env, npm_config_arch: arch, DSH_NODE_PTY_PACKAGE_ROOT: packageRoot },
 		},
 	)
-	compileLinuxNodePtySpawnHelper(packageRoot, { run })
+	const rebuiltNativeDirectory = resolveNodePtyNativeDirectory(packageRoot, {
+		platform: "linux",
+		arch,
+	})
+	if (rebuiltNativeDirectory)
+		compileUnixNodePtySpawnHelper(packageRoot, rebuiltNativeDirectory, { run })
 
 	const missing = resolveLinuxNodePtyMissing(packageRoot, arch)
 	if (missing.length > 0) {
@@ -114,18 +341,33 @@ export function ensureLinuxNodePtyNatives({
  * loader checks build/Release before prebuilds, so always remove that output
  * before rebuilding the target package during a native release.
  */
+/**
+ * @param {{
+ *   root: string,
+ *   packageRoot?: string,
+ *   platform?: NodeJS.Platform,
+ *   arch?: NodeJS.Architecture,
+ *   force?: boolean,
+ *   skipHelperRebuild?: boolean,
+ *   run?: RunCommand,
+ * }} [options]
+ */
 export function ensureDarwinNodePtyNatives({
 	root,
+	packageRoot = path.join(root, "node_modules", "node-pty"),
 	platform = process.platform,
 	arch = process.arch,
 	force = false,
+	skipHelperRebuild = false,
 	run = execFileSync,
 } = {}) {
 	if (platform !== "darwin") return false
-	const packageRoot = path.join(root, "node_modules", "node-pty")
 	const buildRoot = path.join(packageRoot, "build")
-	const missingBefore = resolveDarwinNodePtyMissing(packageRoot, arch)
-	if (!force && !existsSync(buildRoot) && missingBefore.length === 0) return false
+	const nativeDirectory = resolveNodePtyNativeDirectory(packageRoot, { platform: "darwin", arch })
+	if (!force && nativeDirectory && skipHelperRebuild) return false
+	if (!force && nativeDirectory && resolveDarwinNodePtyMissing(packageRoot, arch).length === 0)
+		return false
+	if (!force && !existsSync(buildRoot) && !nativeDirectory) return false
 
 	rmSync(buildRoot, { recursive: true, force: true })
 	console.log(`[workspace-deps] rebuilding node-pty natives for darwin/${arch}`)
@@ -138,6 +380,7 @@ export function ensureDarwinNodePtyNatives({
 				...process.env,
 				npm_config_arch: arch,
 				npm_config_platform: "darwin",
+				DSH_NODE_PTY_PACKAGE_ROOT: packageRoot,
 			},
 		},
 	)
@@ -167,12 +410,15 @@ export function verifyDarwinNodePtyArchitecture({
 	const packageRoot = path.join(root, "node_modules", "node-pty")
 	const nativeDirectory = resolveDarwinNodePtyDirectory(packageRoot, arch)
 	if (!nativeDirectory) {
-		throw new Error(`node-pty native files are missing for darwin/${arch} under ${packageRoot}.`)
+		throw new Error(
+			`node-pty native files are missing for darwin/${arch} under ${packageRoot}.`,
+		)
 	}
 	const expectedArchitecture = arch === "x64" ? "x86_64" : arch
 	for (const name of ["pty.node", "spawn-helper"]) {
 		const file = path.join(nativeDirectory, name)
-		if (!existsSync(file)) throw new Error(`node-pty ${name} is missing for darwin/${arch}: ${file}`)
+		if (!existsSync(file))
+			throw new Error(`node-pty ${name} is missing for darwin/${arch}: ${file}`)
 		if (!architectures(file).includes(expectedArchitecture)) {
 			throw new Error(`node-pty ${name} architecture mismatch for darwin/${arch}: ${file}`)
 		}
@@ -180,12 +426,17 @@ export function verifyDarwinNodePtyArchitecture({
 	return true
 }
 
-function compileLinuxNodePtySpawnHelper(packageRoot, { run }) {
+/**
+ * @param {string} packageRoot
+ * @param {string} nativeDirectory
+ * @param {{ run: RunCommand }} options
+ */
+function compileUnixNodePtySpawnHelper(packageRoot, nativeDirectory, { run }) {
 	const source = path.join(packageRoot, "src", "unix", "spawn-helper.cc")
-	const output = path.join(packageRoot, "build", "Release", "spawn-helper")
+	const output = path.join(nativeDirectory, "spawn-helper")
 	if (!existsSync(source) || existsSync(output)) return
 
-	console.log("[workspace-deps] compiling node-pty spawn-helper for linux")
+	console.log(`[workspace-deps] compiling node-pty spawn-helper in ${nativeDirectory}`)
 	run(process.env.CXX || "c++", ["-O2", "-std=c++17", source, "-o", output], {
 		...shellCommandOptions({ cwd: packageRoot, stdio: "inherit" }),
 	})
@@ -336,18 +587,26 @@ export function pruneNativePrebuildDirectories(
 	{ platform = process.platform, arch = process.arch } = {},
 ) {
 	if (platform !== "win32" && platform !== "darwin" && platform !== "linux") return false
-	const packageRoot = path.join(root, "node_modules", "node-pty")
-	if (!existsSync(packageRoot)) return false
-	let changed = pruneTargetDirectories(path.join(packageRoot, "prebuilds"), `${platform}-${arch}`)
-	if (platform === "darwin")
-		changed = pruneNodePtyAbiDirectories(path.join(packageRoot, "bin"), arch) || changed
-	changed =
-		(platform === "win32"
-			? pruneTargetDirectories(
-					path.join(packageRoot, "third_party", "conpty"),
-					`win10-${arch}`,
-			  )
-			: removeDirectory(path.join(packageRoot, "third_party", "conpty"))) || changed
+	const packageRoots = new Set([
+		path.join(root, "node_modules", "node-pty"),
+		...discoverNodePtyPackages(root).map(({ packageRoot }) => packageRoot),
+	])
+	let changed = false
+	for (const packageRoot of packageRoots) {
+		if (!existsSync(packageRoot)) continue
+		changed =
+			pruneTargetDirectories(path.join(packageRoot, "prebuilds"), `${platform}-${arch}`) ||
+			changed
+		if (platform === "darwin")
+			changed = pruneNodePtyAbiDirectories(path.join(packageRoot, "bin"), arch) || changed
+		changed =
+			(platform === "win32"
+				? pruneTargetDirectories(
+						path.join(packageRoot, "third_party", "conpty"),
+						`win10-${arch}`,
+				  )
+				: removeDirectory(path.join(packageRoot, "third_party", "conpty"))) || changed
+	}
 	return changed
 }
 
@@ -381,7 +640,11 @@ function pruneTargetDirectories(root, expected) {
 	return changed
 }
 
-function resolveWindowsNodePtyMissing(packageRoot, arch) {
+function resolveWindowsNodePtyMissing(
+	packageRoot,
+	arch,
+	version = readNodePtyVersion(packageRoot),
+) {
 	const searchDirectories = [
 		path.join(packageRoot, "build", "Release"),
 		path.join(packageRoot, "build", "Debug"),
@@ -393,8 +656,11 @@ function resolveWindowsNodePtyMissing(packageRoot, arch) {
 	const ptyDirectory = resolveDirectory("pty.node")
 	if (!ptyDirectory) {
 		missing.push(`pty.node (searched: ${searchDirectories.join(", ")})`)
-	} else if (!existsSync(path.join(ptyDirectory, "winpty-agent.exe"))) {
-		missing.push(path.join(ptyDirectory, "winpty-agent.exe"))
+	} else {
+		const beta = String(version).includes("1.2.0-beta")
+		const companion = beta ? "conpty_console_list.node" : "winpty-agent.exe"
+		if (!existsSync(path.join(ptyDirectory, companion)))
+			missing.push(path.join(ptyDirectory, companion))
 	}
 	const conptyDirectory = resolveDirectory("conpty.node")
 	if (!conptyDirectory) {
@@ -406,6 +672,14 @@ function resolveWindowsNodePtyMissing(packageRoot, arch) {
 		}
 	}
 	return missing
+}
+
+function readNodePtyVersion(packageRoot) {
+	try {
+		return JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")).version
+	} catch {
+		return "unknown"
+	}
 }
 
 function resolveLinuxNodePtyMissing(packageRoot, arch) {

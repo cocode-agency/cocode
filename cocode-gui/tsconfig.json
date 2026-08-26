@@ -12,7 +12,10 @@
 		"jsx": "react-jsx",
 		"paths": {
 			"@/*": ["src/renderer/*"],
-			"@deepseek-ai/dsh-client-web": ["src/renderer/types/dsh-client-web.d.ts"]
+			"@deepseek-ai/dsh-client-web": ["src/renderer/types/dsh-client-web.d.ts"],
+			"@cocode-agency/host-supervisor/runtime-closure": [
+				"../cocode-host-supervisor/packages/host-supervisor/lib/runtime-closure.d.ts"
+			]
 		},
 		"outDir": "dist",
 		"moduleResolution": "node",

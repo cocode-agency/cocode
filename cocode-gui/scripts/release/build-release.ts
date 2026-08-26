@@ -9,9 +9,10 @@ import {
 } from "./release-config"
 import { assertNativeReleaseHost } from "./assert-native-release-host.mjs"
 import {
-	ensureDarwinNodePtyNatives,
-	verifyDarwinNodePtyArchitecture,
+	prepareNodePtyNatives,
+	verifyNodePtyNativesRecursively,
 } from "../lib/workspace-dependencies.mjs"
+import { collectRuntimeNativeInventory } from "../lib/native-binary-inspection.mjs"
 
 loadReleaseEnvironment()
 
@@ -82,19 +83,12 @@ if (target.platform === "darwin" || target.platform === "win32" || target.platfo
 			`${target.platform} ${target.arch} native dependency preparation exited with code ${String(nativeDependencyStatus)}.`,
 		)
 	}
-	if (target.platform === "darwin") {
-		ensureDarwinNodePtyNatives({
-			root: process.cwd(),
-			platform: target.platform,
-			arch: target.arch,
-			force: true,
-		})
-		verifyDarwinNodePtyArchitecture({
-			root: process.cwd(),
-			platform: target.platform,
-			arch: target.arch,
-		})
-	}
+	prepareNodePtyNatives({
+		root: process.cwd(),
+		platform: target.platform,
+		arch: target.arch,
+		force: true,
+	})
 }
 
 const runtimeStatus = runPnpm([
@@ -106,13 +100,15 @@ const runtimeStatus = runPnpm([
 	runtimeArtifactRoot,
 ])
 if (runtimeStatus !== 0) throw new Error(`Runtime build exited with code ${String(runtimeStatus)}.`)
-if (target.platform === "darwin") {
-	verifyDarwinNodePtyArchitecture({
-		root: runtimeArtifactRoot,
-		platform: target.platform,
-		arch: target.arch,
-	})
-}
+verifyNodePtyNativesRecursively({
+	root: runtimeArtifactRoot,
+	platform: target.platform,
+	arch: target.arch,
+})
+collectRuntimeNativeInventory(runtimeArtifactRoot, {
+	platform: target.platform,
+	arch: target.arch,
+})
 
 const tuiStatus = runPnpm(["run", "build:tui", "--", "--output", tuiArtifactRoot])
 if (tuiStatus !== 0) throw new Error(`TUI build exited with code ${String(tuiStatus)}.`)

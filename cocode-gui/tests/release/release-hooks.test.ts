@@ -418,6 +418,10 @@ test("verifies the staged Windows runtime and fails on a missing DSH entry", () 
 			JSON.stringify({ name: "@cocode-agency/host-supervisor" }),
 		)
 		writeFixture(
+			path.join(runtime, "node_modules", "node-pty", "package.json"),
+			JSON.stringify({ name: "node-pty", version: "1.1.0" }),
+		)
+		writeFixture(
 			path.join(runtime, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
 			"",
 		)
@@ -434,10 +438,6 @@ test("verifies the staged Windows runtime and fails on a missing DSH entry", () 
 		for (const name of ["conpty.dll", "OpenConsole.exe"])
 			writeFixture(path.join(pty, "conpty", name), createPeFixture())
 		writeFixture(
-			path.join(runtime, "node_modules", "node-pty", "prebuilds", "darwin-arm64", "pty.node"),
-			Buffer.from("not-a-pe"),
-		)
-		writeFixture(
 			path.join(runtime, "node_modules", "node-pty", "prebuilds", "win32-x64", "pty.node"),
 			createPeFixture(),
 		)
@@ -450,10 +450,38 @@ test("verifies the staged Windows runtime and fails on a missing DSH entry", () 
 			path.join(resources, "app", "node_modules", "better-sqlite3", "prebuilds", "win32-x64.node"),
 			createPeFixture(),
 		)
-		writeFixture(path.join(sharp, "package.json"), JSON.stringify({ name: "sharp" }))
+		writeFixture(
+			path.join(sharp, "package.json"),
+			JSON.stringify({
+				name: "sharp",
+				optionalDependencies: {
+					"@img/sharp-win32-x64": "0.35.3",
+					"@img/sharp-libvips-win32-x64": "1.3.2",
+				},
+			}),
+		)
+		writeFixture(
+			path.join(runtime, "node_modules", "@img", "sharp-win32-x64", "package.json"),
+			JSON.stringify({ name: "@img/sharp-win32-x64", version: "0.35.3", os: ["win32"], cpu: ["x64"] }),
+		)
+		writeFixture(
+			path.join(runtime, "node_modules", "@img", "sharp-libvips-win32-x64", "package.json"),
+			JSON.stringify({ name: "@img/sharp-libvips-win32-x64", version: "1.3.2", os: ["win32"], cpu: ["x64"] }),
+		)
 		writeFixture(path.join(sharpNative, "sharp-win32-x64.node"), createPeFixture())
 		writeFixture(path.join(sharpNative, "libvips-42.dll"), createPeFixture())
 		writeFixture(path.join(sharpNative, "libvips-cpp-8.18.3.dll"), createPeFixture())
+		writeFixture(
+			path.join(
+				runtime,
+				"node_modules",
+				"@img",
+				"sharp-libvips-win32-x64",
+				"lib",
+				"libvips-cpp-8.18.3.dll",
+			),
+			createPeFixture(),
+		)
 
 		const result = verifyPackagedStartupAssets(root, { platform: "win32", arch: "x64" })
 		assert.equal(result.appRoot, path.join(resources, "app"))
@@ -472,6 +500,20 @@ test("verifies the staged Windows runtime and fails on a missing DSH entry", () 
 		assert.throws(
 			() => verifyPackagedStartupAssets(root, { platform: "win32", arch: "x64" }),
 			/packaged DSH Web entry is missing/,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("does not skip packaged runtime verification on macOS", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "cocode-packaged-macos-assets-"))
+	try {
+		writeFixture(path.join(root, "resources", "cocode-node"), createMachOFixture(0x0100000c))
+		writeFixture(path.join(root, "resources", "startup-failure.html"), "<html />")
+		assert.throws(
+			() => verifyPackagedStartupAssets(root, { platform: "darwin", arch: "arm64" }),
+			/packaged DSH runtime is missing/,
 		)
 	} finally {
 		rmSync(root, { recursive: true, force: true })
@@ -675,6 +717,13 @@ function createPeFixture(): Buffer {
 	bytes.writeUInt32LE(0x80, 0x3c)
 	bytes.write("PE\0\0", 0x80, "ascii")
 	bytes.writeUInt16LE(0x8664, 0x84)
+	return bytes
+}
+
+function createMachOFixture(cputype: number): Buffer {
+	const bytes = Buffer.alloc(32)
+	bytes.writeUInt32LE(0xfeedfacf, 0)
+	bytes.writeInt32LE(cputype, 4)
 	return bytes
 }
 

@@ -1,12 +1,16 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import * as path from "pathe"
 import { verifyRequiredWindowsNativePackages } from "../verify-dsh-runtime.mjs"
+import {
+	assertNativeBinaryArchitecture,
+	collectRuntimeNativeInventory,
+} from "../lib/native-binary-inspection.mjs"
+import { verifyNodePtyNativesRecursively } from "../lib/workspace-dependencies.mjs"
 
 export function verifyPackagedStartupAssets(
 	packageRoot,
 	{ platform, arch, nodeExecutableName = platform === "win32" ? "cocode-node.exe" : "cocode-node" } = {},
 ) {
-	if (platform !== "win32") return
 	const root = path.resolve(packageRoot)
 	assertFile(path.join(root, "resources", nodeExecutableName), `packaged ${nodeExecutableName}`)
 	assertFile(
@@ -45,31 +49,42 @@ export function verifyPackagedStartupAssets(
 	assertDirectory(betterSqliteRoot, "packaged better-sqlite3")
 	const betterSqliteNative = findTargetNativeAddon(betterSqliteRoot, platform, arch)
 	if (!betterSqliteNative) throw new Error("Packaged better-sqlite3 native module is missing.")
+	assertNativeBinaryArchitecture(betterSqliteNative, { platform, arch })
 
 	const ptyRoot = path.join(runtimeRoot, "node_modules", "node-pty")
 	assertDirectory(ptyRoot, "packaged node-pty")
 	const ptyDirectory = findTargetNodePtyDirectory(ptyRoot, platform, arch)
 	const ptyNative = path.join(ptyDirectory, "pty.node")
 	assertFile(ptyNative, "packaged node-pty pty.node")
-	assertPeArchitecture(ptyNative, arch)
+	assertNativeBinaryArchitecture(ptyNative, { platform, arch })
 	if (platform === "win32") {
-		const winptyAgent = path.join(ptyDirectory, "winpty-agent.exe")
+		const ptyManifest = JSON.parse(readFileSync(path.join(ptyRoot, "package.json"), "utf8"))
+		const beta = String(ptyManifest.version).includes("1.2.0-beta")
 		const conptyNative = path.join(ptyDirectory, "conpty.node")
+		const conptyConsoleList = path.join(ptyDirectory, "conpty_console_list.node")
+		const winptyAgent = path.join(ptyDirectory, "winpty-agent.exe")
 		const conptyLibrary = path.join(ptyDirectory, "conpty", "conpty.dll")
 		const openConsole = path.join(ptyDirectory, "conpty", "OpenConsole.exe")
-		assertFile(winptyAgent, "packaged node-pty winpty agent")
 		assertFile(conptyNative, "packaged node-pty conpty.node")
 		assertFile(conptyLibrary, "packaged node-pty conpty.dll")
 		assertFile(openConsole, "packaged node-pty OpenConsole.exe")
-		for (const nativeFile of [ptyNative, winptyAgent, conptyNative, conptyLibrary, openConsole])
-			assertPeArchitecture(nativeFile, arch)
+		if (beta) assertFile(conptyConsoleList, "packaged node-pty conpty_console_list.node")
+		else assertFile(winptyAgent, "packaged node-pty winpty agent")
+		for (const nativeFile of [
+			ptyNative,
+			...(beta ? [conptyConsoleList] : [winptyAgent]),
+			conptyNative,
+			conptyLibrary,
+			openConsole,
+		])
+			assertNativeBinaryArchitecture(nativeFile, { platform, arch })
 	}
 
-	assertPeArchitecture(path.join(root, "resources", nodeExecutableName), arch)
-	assertPeArchitecture(betterSqliteNative, arch)
+	assertNativeBinaryArchitecture(path.join(root, "resources", nodeExecutableName), { platform, arch })
 	verifyRequiredWindowsNativePackages(runtimeRoot, { platform, arch })
-	verifySharpNatives(runtimeRoot, platform, arch)
-	return { appRoot, runtimeRoot, betterSqliteNative }
+	const nodePtyInventory = verifyNodePtyNativesRecursively({ root: runtimeRoot, platform, arch })
+	const nativeInventory = collectRuntimeNativeInventory(runtimeRoot, { platform, arch })
+	return { appRoot, runtimeRoot, betterSqliteNative, nodePtyInventory, nativeInventory }
 }
 
 function resolvePackagedAppRoot(root) {
@@ -83,26 +98,6 @@ function resolvePackagedAppRoot(root) {
 	)
 	if (!resolved) throw new Error("Packaged application node_modules are missing.")
 	return resolved
-}
-
-function verifySharpNatives(runtimeRoot, platform, arch) {
-	const sharpRoot = path.join(runtimeRoot, "node_modules", "sharp")
-	assertDirectory(sharpRoot, "packaged sharp")
-	assertFile(path.join(sharpRoot, "package.json"), "packaged sharp manifest")
-	const sharpNativeRoot = path.join(
-		runtimeRoot,
-		"node_modules",
-		"@img",
-		`sharp-${platform}-${arch}`,
-	)
-	assertDirectory(sharpNativeRoot, `packaged sharp native package for ${platform}/${arch}`)
-	const sharpNative = findFirstByExtension(sharpNativeRoot, ".node")
-	if (!sharpNative) throw new Error("Packaged sharp native module is missing.")
-	assertPeArchitecture(sharpNative, arch)
-	const libvips = findRequiredFile(sharpNativeRoot, "libvips-42.dll")
-	for (const library of findAllByExtension(sharpNativeRoot, ".dll"))
-		assertPeArchitecture(library, arch)
-	return { sharpNative, libvips }
 }
 
 function assertDirectory(directory, label) {
@@ -122,12 +117,6 @@ function assertPackageEntry(root, packageName, label) {
 	const packageManifest = JSON.parse(readFileSync(packageManifestPath, "utf8"))
 	const entry = typeof packageManifest.main === "string" ? packageManifest.main : "lib/index.js"
 	assertFile(path.join(packageRoot, entry), `${label} entry`)
-}
-
-function findRequiredFile(root, name) {
-	const file = findFirstByName(root, name)
-	if (!file) throw new Error(`Packaged native file is missing: ${name}`)
-	return file
 }
 
 function findTargetNodePtyDirectory(root, platform, arch) {
@@ -167,33 +156,9 @@ function findFirstByExtension(root, extension) {
 	return undefined
 }
 
-function findAllByExtension(root, extension) {
-	if (!existsSync(root) || !statSync(root).isDirectory()) return []
-	const files = []
-	for (const entry of readdirSync(root, { withFileTypes: true })) {
-		const file = path.join(root, entry.name)
-		if (entry.isFile() && entry.name.toLowerCase().endsWith(extension)) files.push(file)
-		if (entry.isDirectory()) files.push(...findAllByExtension(file, extension))
-	}
-	return files
-}
-
 function findTargetNativeAddon(root, platform, arch) {
 	const targetName = `${platform}-${arch}.node`
 	const target = findFirstByName(root, targetName)
 	if (target) return target
 	return findFirstByExtension(root, ".node")
-}
-
-function assertPeArchitecture(file, arch) {
-	const bytes = readFileSync(file)
-	if (bytes.length < 0x40 || bytes.readUInt16LE(0) !== 0x5a4d)
-		throw new Error(`Native packaged file is not a Windows PE image: ${file}`)
-	const peOffset = bytes.readUInt32LE(0x3c)
-	if (peOffset + 6 > bytes.length || bytes.toString("ascii", peOffset, peOffset + 4) !== "PE\0\0")
-		throw new Error(`Native packaged file has no PE header: ${file}`)
-	const machine = bytes.readUInt16LE(peOffset + 4)
-	const expected = arch === "arm64" ? 0xaa64 : 0x8664
-	if (machine !== expected)
-		throw new Error(`Native packaged file architecture mismatch for ${arch}: ${file}`)
 }

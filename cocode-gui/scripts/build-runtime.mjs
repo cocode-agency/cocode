@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { buildSupervisor } from "./build-supervisor.mjs"
 import { hashDirectory, hashFiles, hashJson } from "./runtime-build-helpers.mjs"
 import { verifyRuntime } from "./verify-dsh-runtime.mjs"
+import { collectRuntimeNativeInventory } from "./lib/native-binary-inspection.mjs"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -14,7 +15,7 @@ export function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
 	execFileSync(command, ["pnpm@10.34.5", "run", "build:cocode-plugins"], {
 		...shellCommandOptions({ cwd: repositoryRoot, stdio: "inherit" }),
 	})
-	const supervisor = buildSupervisor({ clean })
+	const supervisor = buildSupervisor({ clean, buildGuiPlugins: false })
 	const inputFingerprint = hashJson({
 		platform: process.platform,
 		arch: process.arch,
@@ -23,11 +24,22 @@ export function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
 	})
 	mkdirSync(path.dirname(output), { recursive: true })
 	rmSync(output, { recursive: true, force: true })
+	const dependencyRecordsPath = path.join(output, ".runtime-dependency-records.json")
+	// The stage script writes a sanitized, repository-relative closure record so
+	// the runtime manifest can prove where every resolved package was placed.
 	execFileSync(
 		process.execPath,
-		[path.join(repositoryRoot, "scripts", "stage-dsh-runtime.mjs"), "--destination", output],
+		[
+			path.join(repositoryRoot, "scripts", "stage-dsh-runtime.mjs"),
+			"--destination",
+			output,
+			"--records-output",
+			dependencyRecordsPath,
+		],
 		{ cwd: repositoryRoot, stdio: "inherit" },
 	)
+	const dependencyRecords = JSON.parse(readFileSync(dependencyRecordsPath, "utf8"))
+	rmSync(dependencyRecordsPath, { force: true })
 	execFileSync(
 		process.execPath,
 		[
@@ -41,7 +53,7 @@ export function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
 		{ cwd: repositoryRoot, stdio: "inherit" },
 	)
 	const manifest = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		platform: process.platform,
 		arch: process.arch,
 		inputFingerprint,
@@ -49,6 +61,12 @@ export function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
 		plugins: discoverRuntimePlugins(output),
 		dsh: readDshManifest(output),
 		dependencyClosureHash: hashDirectory(path.join(output, "node_modules")),
+		dependencyRecords,
+		dependencyRecordsHash: hashJson(dependencyRecords),
+		nativeInventory: collectRuntimeNativeInventory(output, {
+			platform: process.platform,
+			arch: process.arch,
+		}),
 		runtimeContentHash: hashDirectory(output, {
 			ignore: (relative) => relative === "runtime-manifest.json",
 		}),

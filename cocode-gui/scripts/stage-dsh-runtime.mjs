@@ -5,8 +5,8 @@ import {
 	mkdirSync,
 	rmSync,
 	readFileSync,
+	writeFileSync,
 	readdirSync,
-	realpathSync,
 } from "node:fs"
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
@@ -15,9 +15,15 @@ import process from "node:process"
 import {
 	isPackageCompatible,
 	pruneIncompatibleNativePackages,
+	restoreNodePtyHelpers,
 } from "./lib/workspace-dependencies.mjs"
+import {
+	copyRuntimeDependencyClosure,
+	resolveRuntimeDependencyClosure,
+} from "../../cocode-host-supervisor/packages/host-supervisor/lib/runtime-closure.mjs"
 
 const destination = readArgument("--destination")
+const recordsOutput = readArgument("--records-output")
 if (!destination) {
 	console.error("Usage: node scripts/stage-dsh-runtime.mjs --destination <directory>")
 	process.exit(2)
@@ -80,14 +86,31 @@ verifyWorkspacePluginArtifacts(supervisorRoot)
 rmSync(destination, { recursive: true, force: true })
 mkdirSync(destination, { recursive: true })
 copyTree(supervisorRoot, destination)
-materializeDependencyClosure(
+const dependencyRecords = materializeDependencyClosure(
 	supervisorRoot,
 	destination,
 	readDirectory(path.join(supervisorRoot, "runtime", "plugins")).map((entry) =>
 		path.join(supervisorRoot, "runtime", "plugins", entry),
 	),
 )
-materializeBundledPlugins(destination)
+if (recordsOutput) {
+	mkdirSync(path.dirname(recordsOutput), { recursive: true })
+	writeFileSync(
+		recordsOutput,
+		`${JSON.stringify(
+			dependencyRecords
+				.filter((record) => record.copy)
+				.map((record) => ({
+					destination: path.join("node_modules", ...record.destinationSegments),
+					name: record.name,
+					version: record.version,
+					requestedName: record.requestedName,
+					lineage: record.lineage,
+				})),
+			null,
+		)}\n`,
+	)
+}
 pruneIncompatibleNativePackages(destination)
 restoreNodePtyHelper(destination)
 
@@ -143,113 +166,46 @@ function copyTree(source, target) {
 }
 
 /**
- * Build a flat npm-shaped dependency tree from the installed package graph.
- * The GUI workspace uses pnpm's isolated symlink layout, which is not safe to
- * copy into Electron resources because links would point back to this
- * checkout. The runtime bootstrap resolves the same closure again at Host
- * startup, so the staged Supervisor must itself be self-contained first.
+ * Build a self-contained npm-shaped dependency tree from the installed package
+ * graph. The resolver preserves nested package versions instead of treating a
+ * package name as a global singleton.
  */
 function materializeDependencyClosure(supervisorRoot, destination, additionalRoots) {
-	const targetModules = path.join(destination, "node_modules")
-	const pending = [
-		{ root: realpathSync(supervisorRoot), copy: false },
-		...additionalRoots.map((root) => ({ root: realpathSync(root), copy: true })),
+	const roots = [
+		{ root: supervisorRoot, destinationSegments: [], copy: false },
+		...additionalRoots.map((root) => {
+			const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"))
+			return {
+				root,
+				destinationSegments: String(manifest.name).split("/"),
+				copy: true,
+			}
+		}),
 	]
-	const visited = new Set()
-	while (pending.length > 0) {
-		const { root, copy } = pending.shift()
-		const manifestPath = path.join(root, "package.json")
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
-		if (typeof manifest.name !== "string" || visited.has(manifest.name)) continue
+	const records = resolveRuntimeDependencyClosure({ roots, fallbackRoot: supervisorRoot })
+	for (const record of records) {
+		const manifest = JSON.parse(readFileSync(path.join(record.root, "package.json"), "utf8"))
 		if (!isPackageCompatible(manifest))
 			throw new Error(
-				`Cannot stage incompatible runtime package ${manifest.name} for ${process.platform}/${process.arch}.`,
+				`Cannot stage incompatible runtime package ${record.name}@${record.version} for ${process.platform}/${process.arch}.`,
 			)
-		visited.add(manifest.name)
-		if (copy) {
-			const target = path.join(targetModules, ...manifest.name.split("/"))
-			mkdirSync(path.dirname(target), { recursive: true })
-			copyPackageTree(root, target)
-		}
-		const packageRequire = createRequire(manifestPath)
-		const dependencyGroups = [
-			{ names: Object.keys(manifest.dependencies ?? {}), optional: false },
-			{ names: Object.keys(manifest.optionalDependencies ?? {}), optional: true },
-			{
-				names: Object.keys(manifest.peerDependencies ?? {}),
-				optional: false,
-			},
-		]
-		for (const { names, optional } of dependencyGroups) {
-			for (const dependency of names) {
-				try {
-					const dependencyRoot = resolvePackageRoot(packageRequire, dependency)
-					const dependencyManifest = JSON.parse(
-						readFileSync(path.join(dependencyRoot, "package.json"), "utf8"),
-					)
-					const dependencyOptional =
-						optional || manifest.peerDependenciesMeta?.[dependency]?.optional === true
-					if (!isPackageCompatible(dependencyManifest)) {
-						if (dependencyOptional) continue
-						throw new Error(
-							`Runtime dependency ${dependency} is incompatible with ${process.platform}/${process.arch}.`,
-						)
-					}
-					pending.push({ root: dependencyRoot, copy: true })
-				} catch (error) {
-					if (optional || manifest.peerDependenciesMeta?.[dependency]?.optional === true)
-						continue
-					throw new Error(
-						`Unable to resolve staged runtime dependency ${dependency} from ${root}: ${String(
-							error,
-						)}`,
-					)
-				}
-			}
-		}
 	}
-}
-
-function copyPackageTree(source, target) {
-	cpSync(source, target, {
-		recursive: true,
-		dereference: true,
-		filter: (entry) => {
-			const relative = path.relative(source, entry)
-			if (relative === "") return true
-			return (
-				path.basename(entry) !== "node_modules" &&
-				!relative.split("/").includes(".cache") &&
-				shouldCopyWindowsProductionEntry(source, entry)
-			)
-		},
+	copyRuntimeDependencyClosure({
+		records,
+		targetModules: path.join(destination, "node_modules"),
+		filter: (entry) =>
+			!path.relative(supervisorRoot, entry).split("/").includes(".cache") &&
+			shouldCopyWindowsProductionEntry(recordRootFor(entry, records), entry),
 	})
+	return records
 }
 
-function resolvePackageRoot(packageRequire, packageName) {
-	for (const searchPath of packageRequire.resolve.paths(packageName) ?? []) {
-		const candidate = path.join(searchPath, ...packageName.split("/"))
-		const manifestPath = path.join(candidate, "package.json")
-		if (!existsSync(manifestPath)) continue
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
-		if (manifest.name === packageName) return realpathSync(candidate)
+function recordRootFor(entry, records) {
+	for (const record of records) {
+		if (entry === record.root || entry.startsWith(`${record.root}${path.sep}`))
+			return record.root
 	}
-	throw new Error(`package root not found for ${packageName}`)
-}
-
-function materializeBundledPlugins(root) {
-	const pluginsRoot = path.join(root, "runtime", "plugins")
-	if (!existsSync(pluginsRoot)) return
-	for (const entry of readDirectory(pluginsRoot)) {
-		const source = path.join(pluginsRoot, entry)
-		const target = path.join(root, "node_modules", ...entry.split("/"))
-		mkdirSync(path.dirname(target), { recursive: true })
-		cpSync(source, target, {
-			recursive: true,
-			dereference: true,
-			filter: (entry) => shouldCopyWindowsProductionEntry(source, entry),
-		})
-	}
+	return entry
 }
 
 /**
@@ -299,19 +255,7 @@ function sha256(file) {
 }
 
 function restoreNodePtyHelper(root) {
-	for (const helper of [
-		path.join(
-			root,
-			"node_modules",
-			"node-pty",
-			"prebuilds",
-			`${process.platform}-${process.arch}`,
-			"spawn-helper",
-		),
-		path.join(root, "node_modules", "node-pty", "build", "Release", "spawn-helper"),
-	]) {
-		if (existsSync(helper)) chmodSync(helper, 0o755)
-	}
+	restoreNodePtyHelpers({ root, platform: process.platform, arch: process.arch })
 }
 
 function readDirectory(directory) {

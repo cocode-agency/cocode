@@ -265,6 +265,7 @@ test("keeps package scripts focused while preserving Host Supervisor checks", ()
 		scripts["typecheck:host-supervisor"],
 		"pnpm --dir ../cocode-host-supervisor run typecheck",
 	)
+	assert.equal(scripts["verify:runtime"], "node scripts/verify-dsh-runtime.mjs")
 	assert.match(scripts.package ?? "", /pnpm run build:electron/)
 	assert.match(scripts.make ?? "", /pnpm run build:electron/)
 	assert.equal(scripts.release, "tsx scripts/release/build-release.ts")
@@ -336,9 +337,9 @@ test("prepares target-native dependencies before building release assets", () =>
 	assert.match(buildRelease, /`--platform=\$\{target\.platform\}`/)
 	assert.match(buildRelease, /`--arch=\$\{target\.arch\}`/)
 	assert.match(buildRelease, /cleanNativeBuildOutputs/)
-	assert.match(buildRelease, /target\.platform === "darwin"/)
-	assert.match(buildRelease, /ensureDarwinNodePtyNatives/)
-	assert.match(buildRelease, /verifyDarwinNodePtyArchitecture/)
+	assert.match(buildRelease, /prepareNodePtyNatives/)
+	assert.match(buildRelease, /verifyNodePtyNativesRecursively/)
+	assert.match(buildRelease, /collectRuntimeNativeInventory/)
 	assert.match(buildRelease, /cleanBuilderOutput/)
 	assert.match(buildRelease, /assertNativeReleaseHost/)
 })
@@ -348,9 +349,8 @@ test("prepares the sibling Host Supervisor node-pty for the active target", () =
 		path.join(repoRoot, "cocode-gui/scripts/build-supervisor.mjs"),
 		"utf8",
 	)
-	assert.match(buildSupervisor, /ensureDarwinNodePtyNatives/)
-	assert.match(buildSupervisor, /ensureWindowsNodePtyNatives/)
-	assert.match(buildSupervisor, /ensureLinuxNodePtyNatives/)
+	assert.match(buildSupervisor, /prepareNodePtyNatives/)
+	assert.match(buildSupervisor, /build:cocode-plugins/)
 })
 
 test("configures signed Windows updates and the Cocode NSIS include", () => {

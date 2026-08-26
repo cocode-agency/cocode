@@ -4,9 +4,7 @@ import * as path from "pathe"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
 import {
-	ensureDarwinNodePtyNatives,
-	ensureLinuxNodePtyNatives,
-	ensureWindowsNodePtyNatives,
+	prepareNodePtyNatives,
 	ensureWorkspaceDependencies,
 } from "./lib/workspace-dependencies.mjs"
 import { hashFiles, listFiles, sha256File } from "./runtime-build-helpers.mjs"
@@ -21,9 +19,25 @@ const defaultManifestPath = path.join(
 	"supervisor-build-manifest.json",
 )
 
-export function buildSupervisor({ clean = false, manifestPath = defaultManifestPath } = {}) {
+export function buildSupervisor({
+	clean = false,
+	manifestPath = defaultManifestPath,
+	buildGuiPlugins = true,
+} = {}) {
 	if (!existsSync(supervisorRoot))
 		throw new Error(`Supervisor checkout not found: ${supervisorRoot}`)
+	// Repair the sibling workspace before discovering or building anything that
+	// will be staged into its runtime. This keeps native preparation ahead of
+	// both Supervisor and GUI plugin compilation in the release path.
+	ensureSupervisorDependencies()
+	const nativeOptions = {
+		root: supervisorRoot,
+		platform: process.platform,
+		arch: process.arch,
+		force: process.env.RELEASE_REQUIRE_NATIVE_ARCH_MATCH === "1",
+	}
+	prepareNodePtyNatives(nativeOptions)
+	if (buildGuiPlugins) buildCocodePlugins()
 	const guiPlugins = discoverGuiPlugins()
 	const inputFiles = [
 		"package.json",
@@ -80,16 +94,6 @@ export function buildSupervisor({ clean = false, manifestPath = defaultManifestP
 		outputFiles.every(
 			(file) => previous.artifacts?.[file] === sha256File(path.join(supervisorRoot, file)),
 		)
-	ensureSupervisorDependencies()
-	const nativeOptions = {
-		root: supervisorRoot,
-		platform: process.platform,
-		arch: process.arch,
-		force: process.env.RELEASE_REQUIRE_NATIVE_ARCH_MATCH === "1",
-	}
-	ensureWindowsNodePtyNatives(nativeOptions)
-	ensureLinuxNodePtyNatives(nativeOptions)
-	ensureDarwinNodePtyNatives(nativeOptions)
 	if (!valid) {
 		console.log("[supervisor-build] building @cocode-agency/host-supervisor")
 		execFileSync(
@@ -137,6 +141,14 @@ export function buildSupervisor({ clean = false, manifestPath = defaultManifestP
 		`${JSON.stringify({ schemaVersion: 1, inputHash, artifacts }, null, 2)}\n`,
 	)
 	return { manifestPath, manifest: { schemaVersion: 1, inputHash, artifacts }, supervisorRoot }
+}
+
+function buildCocodePlugins() {
+	execFileSync(
+		process.platform === "win32" ? "corepack.cmd" : "corepack",
+		["pnpm@10.34.5", "run", "build:cocode-plugins"],
+		shellCommandOptions({ cwd: repositoryRoot, stdio: "inherit" }),
+	)
 }
 
 function ensureSupervisorDependencies() {

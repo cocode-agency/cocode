@@ -1,5 +1,13 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import * as path from "pathe"
 import test from "node:test"
@@ -13,6 +21,8 @@ import {
 	ensureDarwinNodePtyNatives,
 	verifyDarwinNodePtyArchitecture,
 	ensureWindowsNodePtyNatives,
+	discoverNodePtyPackages,
+	prepareNodePtyNatives,
 	ensureWorkspaceDependencies,
 } from "../../scripts/lib/workspace-dependencies.mjs"
 
@@ -155,7 +165,12 @@ test("cleans stale macOS node-pty build output before rebuilding the target arch
 	const targetPrebuild = path.join(root, "node_modules", "node-pty", "prebuilds", "darwin-x64")
 	mkdirSync(buildRelease, { recursive: true })
 	writeFileSync(stalePty, "arm64")
-	const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv; staleStillExists?: boolean }> = []
+	const calls: Array<{
+		command: string
+		args: string[]
+		env?: NodeJS.ProcessEnv
+		staleStillExists?: boolean
+	}> = []
 	try {
 		assert.equal(
 			ensureDarwinNodePtyNatives({
@@ -277,13 +292,27 @@ test("prunes node-pty ABI directories to the staged macOS architecture", () => {
 
 		assert.equal(
 			existsSync(
-				path.join(root, "node_modules", "node-pty", "bin", "darwin-x64-148", "node-pty.node"),
+				path.join(
+					root,
+					"node_modules",
+					"node-pty",
+					"bin",
+					"darwin-x64-148",
+					"node-pty.node",
+				),
 			),
 			true,
 		)
 		assert.equal(
 			existsSync(
-				path.join(root, "node_modules", "node-pty", "bin", "darwin-arm64-148", "node-pty.node"),
+				path.join(
+					root,
+					"node_modules",
+					"node-pty",
+					"bin",
+					"darwin-arm64-148",
+					"node-pty.node",
+				),
 			),
 			false,
 		)
@@ -368,6 +397,160 @@ test("prunes incompatible optional native packages and node-pty conpty assets", 
 		assert.equal(
 			existsSync(path.join(root, "node_modules", "node-pty", "third_party", "conpty")),
 			false,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("discovers root and nested node-pty packages by resolved package root", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-node-pty-discovery-test-"))
+	try {
+		for (const [relative, version] of [
+			["node_modules/node-pty", "1.1.0"],
+			[
+				"node_modules/@deepseek-ai/dsh-subprocess-local/node_modules/node-pty",
+				"1.2.0-beta.15",
+			],
+		]) {
+			const packageRoot = path.join(root, relative)
+			mkdirSync(packageRoot, { recursive: true })
+			writeFileSync(
+				path.join(packageRoot, "package.json"),
+				JSON.stringify({ name: "node-pty", version }),
+			)
+		}
+
+		assert.deepEqual(
+			discoverNodePtyPackages(root)
+				.map(({ version }) => version)
+				.sort(),
+			["1.1.0", "1.2.0-beta.15"],
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("prepares nested Unix node-pty helpers beside each active pty native", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-node-pty-recursive-prepare-test-"))
+	try {
+		const packages = [
+			path.join(root, "node_modules", "node-pty"),
+			path.join(
+				root,
+				"node_modules",
+				"@deepseek-ai",
+				"dsh-subprocess-local",
+				"node_modules",
+				"node-pty",
+			),
+		]
+		for (const [index, packageRoot] of packages.entries()) {
+			mkdirSync(packageRoot, { recursive: true })
+			writeFileSync(
+				path.join(packageRoot, "package.json"),
+				JSON.stringify({
+					name: "node-pty",
+					version: index === 0 ? "1.1.0" : "1.2.0-beta.15",
+				}),
+			)
+			const nativeRoot = path.join(packageRoot, "prebuilds", "linux-arm64")
+			mkdirSync(nativeRoot, { recursive: true })
+			writeFileSync(path.join(nativeRoot, "pty.node"), "native")
+			if (index === 0) {
+				writeFileSync(path.join(nativeRoot, "spawn-helper"), "native")
+			}
+		}
+
+		const compiled: string[] = []
+		const records = prepareNodePtyNatives({
+			root,
+			platform: "linux",
+			arch: "arm64",
+			compileSpawnHelper(packageRoot, nativeRoot) {
+				const helper = path.join(nativeRoot, "spawn-helper")
+				mkdirSync(path.dirname(helper), { recursive: true })
+				writeFileSync(helper, "native")
+				compiled.push(packageRoot)
+			},
+		})
+
+		assert.equal(records.length, 2)
+		assert.deepEqual(compiled, [realpathSync(packages[1])])
+		assert.equal(
+			existsSync(path.join(packages[1], "prebuilds", "linux-arm64", "spawn-helper")),
+			true,
+		)
+		assert.notEqual(
+			statSync(path.join(packages[1], "prebuilds", "linux-arm64", "spawn-helper")).mode &
+				0o111,
+			0,
+		)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
+test("prepares the beta Windows ConPTY layout for every resolved node-pty package", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "cocode-node-pty-windows-recursive-prepare-test-"))
+	try {
+		const packageRoots = [
+			path.join(root, "node_modules", "node-pty"),
+			path.join(
+				root,
+				"node_modules",
+				"@deepseek-ai",
+				"dsh-subprocess-local",
+				"node_modules",
+				"node-pty",
+			),
+		]
+		for (const [index, packageRoot] of packageRoots.entries()) {
+			mkdirSync(packageRoot, { recursive: true })
+			writeFileSync(
+				path.join(packageRoot, "package.json"),
+				JSON.stringify({
+					name: "node-pty",
+					version: index === 0 ? "1.1.0" : "1.2.0-beta.15",
+				}),
+			)
+		}
+		for (let index = 0; index < packageRoots.length; index += 1)
+			packageRoots[index] = realpathSync(packageRoots[index])
+		const calls: string[] = []
+		const records = prepareNodePtyNatives({
+			root,
+			platform: "win32",
+			arch: "x64",
+			run(command, args, options) {
+				calls.push(`${command} ${args.join(" ")}`)
+				const packageRoot =
+					options?.env?.DSH_NODE_PTY_PACKAGE_ROOT ?? packageRoots[calls.length - 1]
+				const index = packageRoots.indexOf(packageRoot)
+				{
+					const nativeRoot = path.join(packageRoot, "prebuilds", "win32-x64")
+					for (const relative of [
+						"pty.node",
+						"conpty.node",
+						...(index === 0 ? ["winpty-agent.exe"] : ["conpty_console_list.node"]),
+						path.join("conpty", "conpty.dll"),
+						path.join("conpty", "OpenConsole.exe"),
+					]) {
+						const file = path.join(nativeRoot, relative)
+						mkdirSync(path.dirname(file), { recursive: true })
+						writeFileSync(file, "native")
+					}
+				}
+			},
+		})
+		assert.equal(records.length, 2)
+		assert.equal(calls.length, 2)
+		assert.equal(
+			existsSync(
+				path.join(packageRoots[1], "prebuilds", "win32-x64", "conpty_console_list.node"),
+			),
+			true,
 		)
 	} finally {
 		rmSync(root, { recursive: true, force: true })

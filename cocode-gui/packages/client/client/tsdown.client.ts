@@ -477,7 +477,17 @@ function clientConfig(id: string, entry: string): UserConfig {
     // key: zustand probes `import.meta.env ? import.meta.env.MODE : ...`, and
     // the truthiness probe would otherwise survive as an empty import.meta.
     define: {
+      // Keep dynamic DSH_CLIENT_* reads browser-safe. Exact substitutions below
+      // still win for known build values, while an unset value behaves like the
+      // existing optional environment lookup instead of touching Node `process`.
+      'process.env': '{}',
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
+      // Client bundles execute in the Electron renderer's browser context,
+      // where Node's `process` global is intentionally unavailable. The
+      // official branding package uses this build profile as a compile-time
+      // feature flag, so replace it while producing the browser artifact
+      // instead of leaking a runtime Node access into `lib/client.js`.
+      'process.env.DSH_CLIENT_BUILD_PROFILE': JSON.stringify('official'),
       'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
       'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
     },

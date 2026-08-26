@@ -83,6 +83,18 @@ await build({
   tsconfig: join(packageRoot, 'tsconfig.json'),
 })
 
+await build({
+  absWorkingDir: workspaceRoot,
+  entryPoints: [join(packageRoot, 'src/runtime-closure.ts')],
+  outfile: join(lib, 'runtime-closure.mjs'),
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: 'node22',
+  sourcemap: true,
+  tsconfig: join(packageRoot, 'tsconfig.json'),
+})
+
 const runtimeRoot = join(packageRoot, '..', '..', 'runtime')
 mkdirSync(runtimeRoot, { recursive: true })
 const runtimePluginRoot = join(runtimeRoot, 'plugins')

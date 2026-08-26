@@ -1,9 +1,10 @@
 import { createRequire } from 'node:module'
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimeSlotDirectory } from './paths.js'
 import { hostKey, resolveCocodeHome, stableJson, type HostRuntimeEnv, type HostScope } from './protocol.js'
+import { copyRuntimeDependencyClosure, resolveRuntimeDependencyClosure, restoreRuntimeNodePtyHelpers } from './runtime-closure.js'
 
 export type RuntimeSlot = { root: string; entry: string; version: string; buildId?: string; patch: string; jsonRpcEndpoint: string }
 
@@ -111,11 +112,6 @@ type RuntimePackageManifest = {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
 }
 
-type RuntimePackage = {
-  root: string
-  manifest: RuntimePackageManifest
-}
-
 export function resolveDshPackage(): { root: string; entry: string; version: string; buildId?: string } {
   const require = createRequire(import.meta.url)
   const entry = require.resolve('@deepseek-ai/dsh/lib/bin.js')
@@ -165,7 +161,17 @@ export function prepareRuntimeSlot(
       const source = join(pluginRoot, entry.name)
       const target = join(slot, 'node_modules', ...entry.name.split('/'))
       mkdirSync(dirname(target), { recursive: true })
-      cpSync(source, target, { recursive: true, dereference: true })
+      cpSync(source, target, {
+        recursive: true,
+        dereference: true,
+        // Package-local node_modules are materialized by the shared
+        // destination-aware closure above. Copying them here would reintroduce
+        // pnpm links or silently flatten a second version of a dependency.
+        filter: (candidate) => {
+          const relativePath = relative(source, candidate)
+          return relativePath === '' || !relativePath.split('/').includes('node_modules')
+        },
+      })
       pluginEntries.push({ name: entry.name, entry: join(target, 'lib', 'index.js') })
     }
   }
@@ -200,11 +206,21 @@ function isRuntimePackageComplete(sourceRoot: string, targetRoot: string, plugin
   // A slot can keep a complete DSH package while a newly copied plugin has a
   // dependency that the old flat node_modules tree never materialized.
   const targetModules = dirname(dirname(targetRoot))
-  return collectPackageClosure(pluginSources, sourceRoot).every(({ manifest }) => {
-    if (manifest.name === undefined) return false
-    const targetManifestPath = join(targetModules, ...manifest.name.split('/'), 'package.json')
+  const records = resolveRuntimeDependencyClosure({
+    roots: [
+      { root: sourceRoot, destinationSegments: ['@deepseek-ai', 'dsh'], copy: false },
+      ...pluginSources.map((root) => ({
+        root,
+        destinationSegments: readManifest(join(root, 'package.json')).name!.split('/'),
+        copy: false,
+      })),
+    ],
+    fallbackRoot: sourceRoot,
+  })
+  return records.every((record) => {
+    const targetManifestPath = join(targetModules, ...record.destinationSegments, 'package.json')
     if (!existsSync(targetManifestPath)) return false
-    return stableJson(readManifest(targetManifestPath)) === stableJson(manifest)
+    return stableJson(readManifest(targetManifestPath)) === stableJson(readManifest(join(record.root, 'package.json')))
   })
 }
 
@@ -322,12 +338,7 @@ function llmPiAiPatchLines(providers: Record<string, unknown>): string[] {
 }
 
 function restoreNodePtyHelper(root: string): void {
-  for (const helper of [
-    join(root, 'node_modules', 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'),
-    join(root, 'node_modules', 'node-pty', 'build', 'Release', 'spawn-helper'),
-  ]) {
-    if (existsSync(helper)) chmodSync(helper, 0o755)
-  }
+	restoreRuntimeNodePtyHelpers(root, { platform: process.platform, arch: process.arch })
 }
 
 function copyPackageClosure(dshRoot: string, slot: string, additionalRoots: readonly string[] = []): void {
@@ -341,68 +352,18 @@ function copyPackageClosure(dshRoot: string, slot: string, additionalRoots: read
    * the same lookup shape an npm install provides and is also the shape used
    * by DSH's profile fallback healer.
    */
-  const targetModules = join(slot, 'node_modules')
-  for (const { root, manifest } of collectPackageClosure([dshRoot, ...additionalRoots], dshRoot)) {
-    if (typeof manifest.name !== 'string') continue
-    const destination = join(targetModules, ...manifest.name.split('/'))
-    mkdirSync(dirname(destination), { recursive: true })
-    cpSync(root, destination, {
-      recursive: true,
-      dereference: true,
-      filter: (source) => basename(source) !== 'node_modules',
-    })
-  }
+  const roots = [
+    { root: dshRoot, destinationSegments: ['@deepseek-ai', 'dsh'], copy: true },
+    ...additionalRoots.map((root) => ({
+      root,
+      destinationSegments: readManifest(join(root, 'package.json')).name!.split('/'),
+      copy: true,
+    })),
+  ]
+  const records = resolveRuntimeDependencyClosure({ roots, fallbackRoot: dshRoot })
+  copyRuntimeDependencyClosure({ records, targetModules: join(slot, 'node_modules') })
 }
 
 function readManifest(path: string): RuntimePackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as RuntimePackageManifest
-}
-
-function collectPackageClosure(roots: readonly string[], fallbackRoot: string): RuntimePackage[] {
-  const pending = roots.map((root) => realpathSync(root))
-  const visited = new Set<string>()
-  const packages: RuntimePackage[] = []
-  while (pending.length > 0) {
-    const root = pending.shift()!
-    const manifestPath = join(root, 'package.json')
-    const manifest = readManifest(manifestPath)
-    if (typeof manifest.name !== 'string' || visited.has(manifest.name)) continue
-    visited.add(manifest.name)
-    packages.push({ root, manifest })
-
-    const dependencies = {
-      ...manifest.dependencies,
-      ...manifest.optionalDependencies,
-      ...manifest.peerDependencies,
-    }
-    const packageRequire = createRequire(manifestPath)
-    for (const dependency of Object.keys(dependencies)) {
-      try {
-        pending.push(resolvePackageRoot(packageRequire, dependency, fallbackRoot))
-      } catch (error) {
-        if (manifest.optionalDependencies?.[dependency] !== undefined || manifest.peerDependenciesMeta?.[dependency]?.optional === true) continue
-        throw new Error(`Unable to resolve DSH runtime dependency ${dependency} from ${root}: ${String(error)}`)
-      }
-    }
-  }
-  return packages
-}
-
-function resolvePackageRoot(require: NodeRequire, packageName: string, fallbackRoot?: string): string {
-  // Do not use `require.resolve(`${name}/package.json`)`: many valid npm
-  // packages intentionally do not export their manifest. Node still exposes
-  // the package lookup roots, which lets us locate the package directory in
-  // both npm's flat tree and pnpm's `.pnpm/node_modules` fallback.
-  for (const searchPath of require.resolve.paths(packageName) ?? []) {
-    const candidate = join(searchPath, ...packageName.split('/'))
-    const manifestPath = join(candidate, 'package.json')
-    if (!existsSync(manifestPath)) continue
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: string }
-    if (manifest.name === packageName) return realpathSync(candidate)
-  }
-  if (fallbackRoot !== undefined && fallbackRoot !== dirname(fallbackRoot)) {
-    const fallbackRequire = createRequire(join(fallbackRoot, 'package.json'))
-    if (fallbackRequire !== require) return resolvePackageRoot(fallbackRequire, packageName)
-  }
-  throw new Error(`package root not found for ${packageName}`)
 }

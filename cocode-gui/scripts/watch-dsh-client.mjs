@@ -103,7 +103,28 @@ export function isClientBundleStale(clientPackage) {
 	const bundleMtime = statSync(clientPackage.bundlePath).mtimeMs
 	return (
 		latestMtime(clientPackage.sourceRoot) > bundleMtime ||
-		hasUnregisteredClientExternal(clientPackage.bundlePath)
+		hasUnregisteredClientExternal(clientPackage.bundlePath) ||
+		hasUnsupportedClientRuntimeGlobal(clientPackage.bundlePath)
+	)
+}
+
+const UNSUPPORTED_CLIENT_RUNTIME_GLOBAL = /\bprocess\.(?:env|platform|arch|versions|execArgv)\b/g
+
+/**
+ * Browser client bundles are loaded by the renderer's module table, not by a
+ * Node runtime. Any remaining access to a Node `process` property is therefore
+ * a stale or incorrectly configured artifact and will throw during plugin load.
+ */
+export function hasUnsupportedClientRuntimeGlobal(bundlePath) {
+	if (!existsSync(bundlePath)) return true
+	UNSUPPORTED_CLIENT_RUNTIME_GLOBAL.lastIndex = 0
+	return UNSUPPORTED_CLIENT_RUNTIME_GLOBAL.test(readFileSync(bundlePath, "utf8"))
+}
+
+export function assertBrowserSafeClientBundle(bundlePath) {
+	if (!hasUnsupportedClientRuntimeGlobal(bundlePath)) return
+	throw new Error(
+		`DSH client bundle still references a Node process global: ${bundlePath}`,
 	)
 }
 
@@ -152,6 +173,7 @@ export async function createClientBuildConfig(clientPackage) {
 async function rebuildClientPackage(clientPackage, runtimeRoot) {
 	console.log(`[client-watch] rebuilding ${clientPackage.id}`)
 	await build(await createClientBuildConfig(clientPackage))
+	assertBrowserSafeClientBundle(clientPackage.bundlePath)
 	syncClientBundle(clientPackage, runtimeRoot)
 	console.log(`[client-watch] updated ${clientPackage.id}`)
 }
@@ -160,6 +182,7 @@ function syncClientBundle(clientPackage, runtimeRoot) {
 	if (!existsSync(clientPackage.bundlePath)) {
 		throw new Error(`Client bundle was not emitted: ${clientPackage.bundlePath}`)
 	}
+	assertBrowserSafeClientBundle(clientPackage.bundlePath)
 	const destination = resolveRuntimeClientBundlePath(runtimeRoot, clientPackage.id)
 	if (!existsSync(destination)) {
 		console.warn(

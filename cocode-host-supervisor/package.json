@@ -23,6 +23,7 @@
       "types": "./packages/host-supervisor/lib/index.d.ts",
       "import": "./packages/host-supervisor/lib/index.js"
     },
+    "./runtime-closure": "./packages/host-supervisor/lib/runtime-closure.mjs",
     "./package.json": "./package.json"
   },
   "files": [

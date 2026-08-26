@@ -180,6 +180,29 @@ test("marks bundles with non-table CommonJS externals for rebuild", () => {
 	}
 })
 
+test("marks browser bundles with unresolved Node process globals for rebuild", () => {
+	const root = path.join(os.tmpdir(), `dsh-client-node-global-${String(process.pid)}`)
+	rmSync(root, { recursive: true, force: true })
+	try {
+		const sourceRoot = path.join(root, "src")
+		const bundlePath = path.join(root, "lib", "client.js")
+		mkdirSync(sourceRoot, { recursive: true })
+		mkdirSync(path.dirname(bundlePath), { recursive: true })
+		writeFileSync(path.join(sourceRoot, "index.ts"), "export {}")
+		writeFileSync(
+			bundlePath,
+			'if (process.env.DSH_CLIENT_BUILD_PROFILE !== "official") return;',
+		)
+		const now = Date.now() / 1000
+		utimesSync(path.join(sourceRoot, "index.ts"), now, now)
+		utimesSync(bundlePath, now + 2, now + 2)
+
+		assert.equal(isClientBundleStale({ bundlePath, sourceRoot }), true)
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
+
 test("forces ordinary client dependencies into the browser bundle", async () => {
 	const config = await createClientBuildConfig({
 		id: "@deepseek-ai/dsh-client-ui-trajectory",
@@ -219,4 +242,16 @@ test("forces ordinary client dependencies into the browser bundle", async () => 
 	)
 	assert.match(String(resolver?.resolveId?.("diff", importer)), /diff/)
 	assert.equal(resolver?.resolveId?.("@xterm/xterm/css/xterm.css", importer), null)
+})
+
+test("defines the browser-safe DSH client build profile", async () => {
+	const config = await createClientBuildConfig({
+		id: "@deepseek-ai/dsh-client-ui-brand-official",
+		root: path.resolve("packages/client/client/ui-brand-official"),
+		configPath: path.resolve("packages/client/client/ui-brand-official/tsdown.config.ts"),
+		tsconfigPath: path.resolve("tsconfig.base.client.json"),
+	})
+
+	assert.equal(config.define?.["process.env"], "{}")
+	assert.equal(config.define?.["process.env.DSH_CLIENT_BUILD_PROFILE"], '"official"')
 })
