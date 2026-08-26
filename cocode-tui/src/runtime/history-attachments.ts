@@ -1,11 +1,5 @@
 import type { SessionEvent, TuiRuntime } from '@cocode/tui-connection'
 
-type AttachmentBlock = {
-  type: 'image'
-  attachment?: { attachmentId?: string; [key: string]: unknown }
-  [key: string]: unknown
-}
-
 /**
  * Probe cold-history image references without making a failed image hide the
  * surrounding message. The returned event copies only failed image blocks.
