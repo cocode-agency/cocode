@@ -257,6 +257,8 @@ function cloudRouteValue(
 		models: models.map((model) => ({
 			id: model.id,
 			name: model.name,
+			...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+			...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
 			...(model.reasoningEfforts === undefined
 				? {}
 				: { reasoningEfforts: model.reasoningEfforts }),
@@ -269,6 +271,8 @@ function routeModelsMatch(route: Record<string, unknown>, models: readonly Agenc
 	const expected = models.map((model) => ({
 		id: model.id,
 		name: model.name,
+		...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+		...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
 		...(model.reasoningEfforts === undefined
 			? {}
 			: { reasoningEfforts: model.reasoningEfforts }),

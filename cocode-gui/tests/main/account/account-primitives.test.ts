@@ -265,6 +265,8 @@ test("Agency client preserves hosted reasoning effort metadata", async () => {
 					{
 						id: "deepseek-v4-flash",
 						name: "DeepSeek V4 Flash",
+						context_window: 1_000_000,
+						max_output_tokens: 384_000,
 						reasoning_efforts: { high: "high", max: "max" },
 					},
 				],
@@ -276,6 +278,8 @@ test("Agency client preserves hosted reasoning effort metadata", async () => {
 			{
 				id: "deepseek-v4-flash",
 				name: "DeepSeek V4 Flash",
+				contextWindow: 1_000_000,
+				maxTokens: 384_000,
 				reasoningEfforts: { high: "high", max: "max" },
 			},
 		])

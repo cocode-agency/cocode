@@ -45,7 +45,9 @@ type AgencyProfile = {
 export type AgencyModel = {
 	readonly id: string
 	readonly name: string
-	readonly reasoningEfforts?: Readonly<Record<string, string>>
+	readonly contextWindow?: number
+	readonly maxTokens?: number
+	readonly reasoningEfforts?: Readonly<Record<string, string | null>>
 }
 export type CreatedApiKey = { readonly secret: string; readonly id: string; readonly name: string }
 export type AgencyAccountUsage = {
@@ -292,7 +294,13 @@ export class AgencyClient {
 	async models(apiKey: string): Promise<AgencyModel[]> {
 		if (!/^ck_[A-Za-z0-9_-]+$/.test(apiKey)) throw new Error("invalid Cocode Nut API key")
 		const response = await this.request<{
-			data?: { id?: string; name?: string; reasoning_efforts?: Record<string, string> }[]
+			data?: {
+				id?: string
+				name?: string
+				context_window?: number
+				max_output_tokens?: number
+				reasoning_efforts?: Record<string, string | null>
+			}[]
 		}>("/v1/me/models", { method: "GET", token: apiKey })
 		if (response.status !== 200)
 			throw new AgencyHttpError("could not list hosted models", response.status)
@@ -303,17 +311,25 @@ export class AgencyClient {
 				): row is {
 					id: string
 					name?: string
-					reasoning_efforts?: Record<string, string>
+					context_window?: number
+					max_output_tokens?: number
+					reasoning_efforts?: Record<string, string | null>
 				} => typeof row.id === "string" && row.id !== "",
 			)
-			.map((row) => ({
-				id: row.id,
-				name: row.name?.trim() || row.id,
-				...(row.reasoning_efforts !== undefined &&
-				Object.keys(row.reasoning_efforts).length > 0
-					? { reasoningEfforts: row.reasoning_efforts }
-					: {}),
-			}))
+			.map((row) => {
+				const contextWindow = positiveInteger(row.context_window)
+				const maxTokens = positiveInteger(row.max_output_tokens)
+				return {
+					id: row.id,
+					name: row.name?.trim() || row.id,
+					...(contextWindow === undefined ? {} : { contextWindow }),
+					...(maxTokens === undefined ? {} : { maxTokens }),
+					...(row.reasoning_efforts !== undefined &&
+					Object.keys(row.reasoning_efforts).length > 0
+						? { reasoningEfforts: row.reasoning_efforts }
+						: {}),
+				}
+			})
 		return [...new Map(models.map((model) => [model.id, model])).values()]
 	}
 
@@ -524,6 +540,12 @@ export class AgencyClient {
 
 function finiteNumber(value: number | undefined): number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function positiveInteger(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+		? value
+		: undefined
 }
 
 function usagePercent(used: number, limit: number): number {
