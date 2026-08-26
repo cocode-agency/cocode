@@ -1291,6 +1291,10 @@ describe('TuiApp', () => {
       ],
       failures: [],
     }
+    const listModels = vi.spyOn(runtime, 'listModels').mockImplementation(async function () {
+      expect(this).toBe(runtime)
+      return runtime.modelCatalog
+    })
     const app = createTuiApp({
       runtime,
       cwd: '/tmp',
@@ -1311,6 +1315,7 @@ describe('TuiApp', () => {
     app.dispatch({ type: 'command', line: '/model' })
     await expect.poll(() => app.snapshot().modelPicker?.open).toBe(true)
     expect(app.snapshot().modelPicker?.groups[0]?.id).toBe('p2')
+    expect(listModels).toHaveBeenCalledOnce()
     app.dispatch({ type: 'model.confirm' })
     await expect.poll(() => app.snapshot().header.provider).toBe('p2')
     expect(runtime.restarts).toEqual([{ provider: 'p2', model: 'm2' }])
@@ -1318,6 +1323,61 @@ describe('TuiApp', () => {
     expect(app.snapshot().header.sessionId).not.toBe('s1')
     expect(runtime.opens).toEqual([])
     expect(persistedModels).toEqual([{ provider: 'p2', model: 'm2' }])
+  })
+
+  it('falls back to the host model catalog when a cold session has no session model record', async () => {
+    const runtime = fakeRuntime()
+    runtime.modelCatalog = {
+      groups: [{ id: 'p2', name: 'Provider 2', models: [{ id: 'm2', name: 'Model 2' }] }],
+      failures: [],
+    }
+    runtime.sessionModels = async function () {
+      expect(this).toBe(runtime)
+      throw new Error('session "s1" was not found')
+    }
+    const listModels = vi.spyOn(runtime, 'listModels').mockImplementation(async function () {
+      expect(this).toBe(runtime)
+      return runtime.modelCatalog
+    })
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p1',
+      model: 'm1',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, modelList: true, sessionModels: true },
+    })
+
+    await app.start()
+    app.dispatch({ type: 'command', line: '/model' })
+
+    await expect.poll(() => app.snapshot().modelPicker?.open).toBe(true)
+    expect(app.snapshot().modelPicker?.groups[0]?.id).toBe('p2')
+    expect(listModels).toHaveBeenCalledOnce()
+    expect(app.snapshot().notice?.tone).not.toBe('error')
+  })
+
+  it('does not call the global model catalog when its capability is unavailable', async () => {
+    const runtime = fakeRuntime()
+    runtime.sessionModels = async () => {
+      throw new Error('session "s1" was not found')
+    }
+    const listModels = vi.spyOn(runtime, 'listModels')
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p1',
+      model: 'm1',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, sessionModels: true, modelList: false },
+    })
+
+    await app.start()
+    app.dispatch({ type: 'command', line: '/model' })
+
+    await expect.poll(() => app.snapshot().modelInputOpen).toBe(true)
+    expect(listModels).not.toHaveBeenCalled()
+    expect(app.snapshot().notice?.message).toBe('Could not load model catalog')
   })
 
   it('opens an effort picker from /effort when the model advertises levels', async () => {

@@ -2632,9 +2632,10 @@ class TuiAppImpl implements TuiApp {
   }
 
   private async refreshSessionModels(): Promise<void> {
-    if (!this.capabilities.sessionModels || this.runtime.sessionModels === undefined) return
+    const sessionModels = this.runtime.sessionModels
+    if (!this.capabilities.sessionModels || sessionModels === undefined) return
     try {
-      const result = await this.runtime.sessionModels(this.sessionId)
+      const result = await sessionModels.call(this.runtime, this.sessionId)
       this.modelCatalog = { groups: result.groups, failures: result.failures }
       this.provider = result.current.provider
       this.model = result.current.model
@@ -2699,7 +2700,8 @@ class TuiAppImpl implements TuiApp {
     const sessionModelsReader = this.capabilities.sessionModels ? this.runtime.sessionModels : undefined
     const listModels = this.runtime.listModels
     const canReadSessionModels = sessionModelsReader !== undefined
-    if (!canReadSessionModels && (!this.capabilities.modelList || listModels === undefined)) {
+    const canListModels = this.capabilities.modelList && listModels !== undefined
+    if (!canReadSessionModels && !canListModels) {
       this.modelInputOpen = true
       this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
       this.emit()
@@ -2707,19 +2709,28 @@ class TuiAppImpl implements TuiApp {
     }
     this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogLoading') }
     this.emit()
+    this.logger?.debug('model.catalog.load.started', {
+      sessionModels: canReadSessionModels,
+      modelList: canListModels,
+    })
     try {
       let catalog: TuiModelCatalog
       if (canReadSessionModels) {
-        const sessionModels = await sessionModelsReader(this.sessionId)
-        catalog = { groups: sessionModels.groups, failures: sessionModels.failures }
-        this.provider = sessionModels.current.provider
-        this.model = sessionModels.current.model
-        this.reasoningEffort = sessionModels.current.reasoningEffort
-        if (!sessionModels.routable) {
-          this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
+        try {
+          const sessionModels = await sessionModelsReader.call(this.runtime, this.sessionId)
+          catalog = { groups: sessionModels.groups, failures: sessionModels.failures }
+          this.provider = sessionModels.current.provider
+          this.model = sessionModels.current.model
+          this.reasoningEffort = sessionModels.current.reasoningEffort
+          if (!sessionModels.routable) {
+            this.notice = { tone: 'info', message: text(this.locale, 'modelCatalogUnavailable') }
+          }
+        } catch (sessionError) {
+          if (!canListModels) throw sessionError
+          catalog = await listModels.call(this.runtime)
         }
-      } else if (listModels !== undefined) {
-        catalog = await listModels()
+      } else if (canListModels) {
+        catalog = await listModels.call(this.runtime)
       } else {
         throw new Error('model catalog is unavailable')
       }
@@ -2735,7 +2746,17 @@ class TuiAppImpl implements TuiApp {
             ? undefined
             : { tone: 'info', message: text(this.locale, 'modelCatalogPartial') }
       }
-    } catch {
+      this.logger?.debug('model.catalog.load.completed', {
+        groups: catalog.groups.length,
+        models: catalog.groups.reduce((count, group) => count + group.models.length, 0),
+        failures: catalog.failures.length,
+      })
+    } catch (error) {
+      this.logger?.warn('model.catalog.load.failed', {
+        message: errorMessage(error),
+        sessionModels: canReadSessionModels,
+        modelList: canListModels,
+      })
       this.modelInputOpen = true
       this.notice = { tone: 'error', message: text(this.locale, 'modelCatalogFailed') }
     }
@@ -2874,9 +2895,10 @@ class TuiAppImpl implements TuiApp {
   }
 
   private async loadModelCatalog(): Promise<TuiModelCatalog | undefined> {
-    if (!this.capabilities.modelList || this.runtime.listModels === undefined) return undefined
+    const listModels = this.runtime.listModels
+    if (!this.capabilities.modelList || listModels === undefined) return undefined
     try {
-      const catalog = await this.runtime.listModels()
+      const catalog = await listModels.call(this.runtime)
       this.modelCatalog = catalog
       return catalog
     } catch {
