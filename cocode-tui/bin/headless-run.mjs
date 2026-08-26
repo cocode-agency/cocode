@@ -6,6 +6,7 @@ import { finished } from 'node:stream/promises'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1_000
 const CANCELLATION_GRACE_MS = 1_000
+const CANCEL_REQUEST_TIMEOUT_MS = 500
 const APPROVAL_POLICIES = new Set(['allow', 'reject'])
 
 export function parseRunArgs(args, env = process.env) {
@@ -206,7 +207,10 @@ export async function runHeadless(options, dependencies) {
       throw new Error(`session/prompt returned no message id: ${JSON.stringify(promptResult)}`)
     }
     await withTimeout(turnDone, options.timeoutMs, async () => {
-      await peer.request('cocode/session/cancel', { sessionId }).catch(() => undefined)
+      const cancelRequest = Promise.resolve()
+        .then(() => peer.request('cocode/session/cancel', { sessionId }, CANCEL_REQUEST_TIMEOUT_MS))
+        .catch(() => undefined)
+      await waitForGrace(cancelRequest, CANCELLATION_GRACE_MS)
       await waitForGrace(turnEnded, CANCELLATION_GRACE_MS)
     })
     return {

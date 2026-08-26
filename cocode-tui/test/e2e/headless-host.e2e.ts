@@ -347,11 +347,11 @@ describe('cocode run with the real Host', () => {
     expect(result.stderr).toContain('Cocode agent turn timed out after 100ms')
 
     const events = await readEventLog(eventLog)
-    expect(eventTypes(events)).toEqual(expect.arrayContaining(['turn/start', 'step/start']))
+    expect(eventSequence(events)).toEqual(expect.arrayContaining(['running', 'turn/start', 'step/start']))
     expect(eventTypes(events)).not.toContain('assistant/message')
     expect(fixture.requests.some((entry) => JSON.stringify(entry.body).includes(TIMEOUT_PROMPT))).toBe(true)
 
-    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId, TIMEOUT_PROMPT)
     expect(persisted).toContain(TIMEOUT_PROMPT)
     expect(persisted).toContain('step/end')
   })
@@ -714,11 +714,11 @@ function eventSequence(events: EventRecord[]): string[] {
   })
 }
 
-async function waitForSessionText(sessionRoot: string, sessionId: string): Promise<string> {
+async function waitForSessionText(sessionRoot: string, sessionId: string, marker?: string): Promise<string> {
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
     const content = await readSessionText(sessionRoot, sessionId)
-    if (content !== '') return content
+    if (content !== '' && (marker === undefined || content.includes(marker))) return content
     await new Promise((resolveWait) => setTimeout(resolveWait, 100))
   }
   throw new Error(`No persisted session log appeared under ${sessionRoot} for ${sessionId}`)
