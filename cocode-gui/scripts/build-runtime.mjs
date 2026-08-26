@@ -4,18 +4,21 @@ import * as path from "pathe"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { buildSupervisor } from "./build-supervisor.mjs"
 import { hashDirectory, hashFiles, hashJson } from "./runtime-build-helpers.mjs"
-import { verifyRuntime } from "./verify-dsh-runtime.mjs"
 import { collectRuntimeNativeInventory } from "./lib/native-binary-inspection.mjs"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
-export function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
+export async function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
 	const command = process.platform === "win32" ? "corepack.cmd" : "corepack"
 	execFileSync(command, ["pnpm@10.34.5", "run", "build:cocode-plugins"], {
 		...shellCommandOptions({ cwd: repositoryRoot, stdio: "inherit" }),
 	})
 	const supervisor = buildSupervisor({ clean, buildGuiPlugins: false })
+	// The verifier consumes runtime-closure.mjs, a generated Host Supervisor
+	// artifact. Load it only after buildSupervisor has materialized the staged
+	// Supervisor output; a fresh CI checkout has no generated lib directory yet.
+	const { verifyRuntime } = await import("./verify-dsh-runtime.mjs")
 	const inputFingerprint = hashJson({
 		platform: process.platform,
 		arch: process.arch,
@@ -143,7 +146,7 @@ function requireReaddir(root) {
 const invokedPath = process.argv[1]
 if (invokedPath && import.meta.url === pathToFileURL(path.resolve(invokedPath)).href) {
 	const outputIndex = process.argv.indexOf("--output")
-	buildRuntime({
+	await buildRuntime({
 		clean: process.argv.includes("--clean"),
 		...(outputIndex >= 0 ? { output: path.resolve(process.argv[outputIndex + 1]) } : {}),
 	})
