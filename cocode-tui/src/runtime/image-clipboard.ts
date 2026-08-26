@@ -11,7 +11,7 @@ export const MAX_CLIPBOARD_IMAGE_BYTES = 5 * 1024 * 1024
 type ClipboardImageCommand = {
   command: string
   args: readonly string[]
-  output: 'base64' | 'binary'
+  output: 'base64' | 'binary' | 'paths'
   mediaType?: TuiImageMediaType
 }
 
@@ -38,15 +38,34 @@ export async function readClipboardImage(options: {
   const run = options.run ?? runClipboardImageCommand
   let commandAvailable = false
   let unsupported = false
+  let filePathPresented = false
 
   for (const candidate of commands) {
     try {
       const encodedLimit = candidate.output === 'base64'
         ? Math.ceil(MAX_CLIPBOARD_IMAGE_BYTES / 3) * 4 + 1024
-        : MAX_CLIPBOARD_IMAGE_BYTES + 1
+        : candidate.output === 'paths'
+          ? 64 * 1024
+          : MAX_CLIPBOARD_IMAGE_BYTES + 1
       const output = await run(candidate.command, candidate.args, encodedLimit)
       commandAvailable = true
       if (output.length === 0) continue
+      if (candidate.output === 'paths') {
+        const paths = parseClipboardImagePaths(output)
+        filePathPresented ||= paths.length > 0
+        for (const path of paths) {
+          try {
+            return await readImageFile(path)
+          } catch (error) {
+            if (error instanceof ClipboardImageError) {
+              if (error.code === 'too-large') throw error
+              unsupported ||= error.code === 'unsupported'
+            }
+          }
+        }
+        continue
+      }
+      if (filePathPresented) continue
       const image = candidate.output === 'base64'
         ? decodeBase64Output(output)
         : decodeBinaryOutput(output, candidate.mediaType)
@@ -77,6 +96,12 @@ export async function readImageFile(path: string): Promise<TuiImageInput> {
 }
 
 export function pastedImagePath(input: string, cwd = process.cwd()): string | undefined {
+  const value = normalizePastedPath(input, cwd)
+  if (value === undefined || !/\.(?:png|jpe?g|webp|gif)$/iu.test(value)) return undefined
+  return value
+}
+
+function normalizePastedPath(input: string, cwd: string): string | undefined {
   let value = input
     .replace(/^\u001b\[200~/u, '')
     .replace(/\u001b\[201~$/u, '')
@@ -99,8 +124,20 @@ export function pastedImagePath(input: string, cwd = process.cwd()): string | un
     value = value.replace(/\\ /gu, ' ')
   }
   if (!isAbsolute(value)) value = resolve(cwd, value)
-  if (!/\.(?:png|jpe?g|webp|gif)$/iu.test(value)) return undefined
   return value
+}
+
+export function parseClipboardImagePaths(output: Uint8Array): string[] {
+  const paths: string[] = []
+  for (const line of Buffer.from(output).toString('utf8').split(/\r?\n/u)) {
+    const value = line.trim()
+    if (value === '' || value.startsWith('#') || value === 'copy' || value === 'cut') continue
+    const unquoted = value.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/u, '$1$2')
+    if (!unquoted.startsWith('file://') && !isAbsolute(unquoted)) continue
+    const path = normalizePastedPath(value, process.cwd())
+    if (path !== undefined && !paths.includes(path)) paths.push(path)
+  }
+  return paths
 }
 
 export function clipboardImageCommands(platform: NodeJS.Platform): readonly ClipboardImageCommand[] {
@@ -114,11 +151,18 @@ export function clipboardImageCommands(platform: NodeJS.Platform): readonly Clip
     ]
   }
   if (platform === 'linux') {
-    return IMAGE_MEDIA_TYPES.flatMap((mediaType) => [
-      { command: 'wl-paste', args: ['--no-newline', '--type', mediaType], output: 'binary' as const, mediaType },
-      { command: 'xclip', args: ['-selection', 'clipboard', '-t', mediaType, '-o'], output: 'binary' as const, mediaType },
-      { command: 'xsel', args: ['--clipboard', '--output'], output: 'binary' as const, mediaType },
-    ])
+    return [
+      ...LINUX_FILE_LIST_TYPES.flatMap((mediaType) => [
+        { command: 'wl-paste', args: ['--no-newline', '--type', mediaType], output: 'paths' as const },
+        { command: 'xclip', args: ['-selection', 'clipboard', '-t', mediaType, '-o'], output: 'paths' as const },
+      ]),
+      { command: 'xsel', args: ['--clipboard', '--output'], output: 'paths' as const },
+      ...IMAGE_MEDIA_TYPES.flatMap((mediaType) => [
+        { command: 'wl-paste', args: ['--no-newline', '--type', mediaType], output: 'binary' as const, mediaType },
+        { command: 'xclip', args: ['-selection', 'clipboard', '-t', mediaType, '-o'], output: 'binary' as const, mediaType },
+      ]),
+      { command: 'xsel', args: ['--clipboard', '--output'], output: 'binary' as const },
+    ]
   }
   return []
 }
@@ -213,6 +257,7 @@ function runClipboardImageCommand(
 }
 
 const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+const LINUX_FILE_LIST_TYPES = ['text/uri-list', 'x-special/gnome-copied-files'] as const
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 const MACOS_CLIPBOARD_SCRIPT = String.raw`
@@ -255,7 +300,28 @@ const formats = [
   ['com.compuserve.gif', 'image/gif'],
 ]
 let emitted = false
+
+// Finder may put both a preview/icon representation and the original file URL
+// on the pasteboard. Prefer the file URL so a copied image file is not reduced
+// to Finder's generic JPG/PNG icon.
+const items = pasteboard.pasteboardItems
+for (let index = 0; index < items.count && !emitted; index++) {
+  const item = items.objectAtIndex(index)
+  const fileUrlValue = item.stringForType('public.file-url')
+  if (!fileUrlValue) continue
+  const fileUrlString = ObjC.unwrap(fileUrlValue)
+  const fileUrl = $.NSURL.URLWithString(fileUrlString)
+  if (!fileUrl || !fileUrl.isFileURL) continue
+  const fileData = $.NSData.dataWithContentsOfURL(fileUrl)
+  const encoded = convertToPng(fileData)
+  if (encoded) {
+    writeOutput('image/png' + '\n' + encoded)
+    emitted = true
+  }
+}
+
 for (const [type, mediaType] of formats) {
+  if (emitted) break
   const value = pasteboard.dataForType(type)
   if (!value) continue
   emitted = printImage(mediaType, value)
@@ -271,21 +337,24 @@ if (!emitted) {
   }
 }
 
-const fileUrlValue = emitted ? null : pasteboard.stringForType('public.file-url')
-if (!emitted && fileUrlValue) {
-  const fileUrl = $.NSURL.URLWithString(fileUrlValue)
-  if (fileUrl && fileUrl.isFileURL) {
-    const fileData = $.NSData.dataWithContentsOfURL(fileUrl)
-    const encoded = convertToPng(fileData)
-    if (encoded) writeOutput('image/png' + '\n' + encoded)
-  }
-}
 `
 
 const WINDOWS_CLIPBOARD_SCRIPT = String.raw`
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$image = [Windows.Forms.Clipboard]::GetImage()
+$image = $null
+if ([Windows.Forms.Clipboard]::ContainsFileDropList()) {
+  foreach ($path in [Windows.Forms.Clipboard]::GetFileDropList()) {
+    try {
+      $image = [Drawing.Image]::FromFile($path)
+      if ($null -ne $image) { break }
+    } catch {
+      if ($null -ne $image) { $image.Dispose(); $image = $null }
+    }
+  }
+} else {
+  $image = [Windows.Forms.Clipboard]::GetImage()
+}
 if ($null -ne $image) {
   $stream = New-Object IO.MemoryStream
   try {
