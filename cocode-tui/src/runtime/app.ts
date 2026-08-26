@@ -1940,7 +1940,22 @@ class TuiAppImpl implements TuiApp {
     this.remoteCommands = []
   }
 
+  private isCurrentSessionTreeItem(item: SessionTreePickerItem): boolean {
+    if (item.current) return true
+    if (item.session.id === this.currentSessionIdentity()) return true
+    return item.externalSessionId !== undefined && this.externalSession?.id === item.externalSessionId
+  }
+
+  private noticeAlreadyInSession(): void {
+    this.notice = { tone: 'info', message: text(this.locale, 'sessionTreeAlreadyOpen') }
+    this.emit()
+  }
+
   private async openSessionTreeItem(item: SessionTreePickerItem): Promise<void> {
+    if (this.isCurrentSessionTreeItem(item)) {
+      this.noticeAlreadyInSession()
+      return
+    }
     if (item.source === 'external') {
       await this.openExternalSession(item)
       return
@@ -3056,6 +3071,10 @@ class TuiAppImpl implements TuiApp {
   }
 
   private async resumeSession(sessionId: string, path: string | undefined): Promise<void> {
+    if (sessionId === this.currentSessionIdentity()) {
+      this.noticeAlreadyInSession()
+      return
+    }
     if (path === undefined) {
       this.notice = {
         tone: 'error',

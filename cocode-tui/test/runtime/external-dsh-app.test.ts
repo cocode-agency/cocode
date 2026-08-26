@@ -506,4 +506,63 @@ describe('TUI shared DSH sessions', () => {
     expect(app.snapshot().header.readOnly).toBe(false)
     await app.close()
   })
+
+  it('opens a Cocode session that shares a raw id with the active shared session', async () => {
+    const host = runtime()
+    host.listSessions = async () => [
+      {
+        sessionId: 'same-id',
+        createdAt: 2,
+        cwd: '/cocode/project',
+        title: 'Cocode copy',
+      },
+    ]
+    const reader = externalReader({
+      source: 'shared-dsh',
+      canMutate: true,
+      concurrency: 'no-concurrent-writes',
+      id: 'same-id',
+      createdAt: 1,
+      path: '/tmp/official-dsh/session.jsonl',
+    })
+    const app = createTuiApp({
+      runtime: host,
+      externalDsh: reader,
+      cwd: '/cocode/project',
+      provider: 'p',
+      model: 'm',
+      sessionId: 'cocode-session',
+      capabilities: { ...P0_CAPABILITIES, sessionList: 'rpc' },
+      diagnostics: { tty: true, launchConfigured: true, argsConfigured: true },
+    })
+
+    await app.start()
+    app.dispatch({ type: 'session.open' })
+    await vi.waitFor(() => expect(app.snapshot().sessionTreePicker?.open).toBe(true))
+    const externalIndex = app
+      .snapshot()
+      .sessionTreePicker?.items.findIndex((candidate) => candidate.source === 'external')
+    expect(externalIndex).toBeGreaterThanOrEqual(0)
+    app.dispatch({ type: 'sessionTree.move', delta: externalIndex ?? 0 })
+    app.dispatch({ type: 'sessionTree.confirm' })
+    await vi.waitFor(() => expect(app.snapshot().header.sessionId).toBe('shared-dsh:same-id'))
+
+    host.opens.length = 0
+    app.dispatch({ type: 'session.open' })
+    await vi.waitFor(() => expect(app.snapshot().sessionTreePicker?.open).toBe(true))
+    const localIndex = app
+      .snapshot()
+      .sessionTreePicker?.items.findIndex(
+        (candidate) => candidate.source === 'rpc' && candidate.session.id === 'same-id',
+      )
+    expect(localIndex).toBeGreaterThanOrEqual(0)
+    app.dispatch({
+      type: 'sessionTree.move',
+      delta: (localIndex ?? 0) - (app.snapshot().sessionTreePicker?.selected ?? 0),
+    })
+    app.dispatch({ type: 'sessionTree.confirm' })
+    await vi.waitFor(() => expect(host.opens).toEqual(['same-id']))
+    expect(app.snapshot().notice?.message).not.toMatch(/Already in this session/)
+    await app.close()
+  })
 })

@@ -325,6 +325,7 @@ export type UiTextKey =
   | 'sessionTreeQuery'
   | 'sessionTreeLoading'
   | 'sessionTreeOpenFailed'
+  | 'sessionTreeAlreadyOpen'
   | 'returningPreviousSession'
   | 'returnedToPreviousSession'
 
@@ -651,6 +652,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     sessionTreeQuery: 'filter: {query}',
     sessionTreeLoading: 'Loading sessions…',
     sessionTreeOpenFailed: 'The runtime could not open this session.',
+    sessionTreeAlreadyOpen: 'Already in this session.',
     returningPreviousSession: 'Returning to the previous session…',
     returnedToPreviousSession: 'Returned to the previous session.',
   },
@@ -976,6 +978,7 @@ const TEXT: Record<UiLocale, Record<UiTextKey, string>> = {
     sessionTreeQuery: '筛选：{query}',
     sessionTreeLoading: '正在加载会话列表……',
     sessionTreeOpenFailed: '运行时无法打开该会话。',
+    sessionTreeAlreadyOpen: '当前已在该会话中。',
     returningPreviousSession: '正在返回上一个会话……',
     returnedToPreviousSession: '已返回上一个会话。',
   },

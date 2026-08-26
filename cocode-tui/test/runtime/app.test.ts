@@ -1776,6 +1776,93 @@ describe('TuiApp', () => {
     }
   })
 
+  it('shows a friendly notice when reopening the current /sessions item', async () => {
+    const runtime = fakeRuntime()
+    runtime.listSessions = async () => [
+      { sessionId: 'other-session', createdAt: 2, updatedAt: 20, cwd: '/tmp', title: 'Other' },
+      { sessionId: 's1', createdAt: 1, updatedAt: 10, cwd: '/tmp', title: 'Current' },
+    ]
+    runtime.open = async (sessionId, replaceSessionId) => {
+      runtime.opens.push({
+        sessionId,
+        ...(replaceSessionId === undefined ? {} : { replaceSessionId }),
+      })
+      return { opened: false }
+    }
+    const app = createTuiApp({
+      runtime,
+      cwd: '/tmp',
+      provider: 'p',
+      model: 'm',
+      sessionId: 's1',
+      capabilities: { ...P0_CAPABILITIES, sessionList: 'rpc' },
+    })
+    await app.start()
+    app.dispatch({ type: 'command', line: '/sessions' })
+    await expect.poll(() => app.snapshot().sessionTreePicker?.open).toBe(true)
+    const picker = app.snapshot().sessionTreePicker
+    const index = picker?.items.findIndex((item) => item.session.id === 's1') ?? -1
+    expect(index).toBeGreaterThanOrEqual(0)
+    app.dispatch({ type: 'sessionTree.move', delta: index - (picker?.selected ?? 0) })
+    expect(app.snapshot().sessionTreePicker?.items[app.snapshot().sessionTreePicker.selected]?.session.id).toBe('s1')
+    app.dispatch({ type: 'sessionTree.confirm' })
+    await expect.poll(() => app.snapshot().notice?.message).toBe('Already in this session.')
+    expect(app.snapshot().notice?.tone).toBe('info')
+    expect(app.snapshot().header.sessionId).toBe('s1')
+    expect(runtime.opens).toEqual([])
+
+    app.dispatch({ type: 'command', line: '/sessions' })
+    await expect.poll(() => app.snapshot().sessionTreePicker?.open).toBe(true)
+    app.dispatch({ type: 'sessionTree.confirm' })
+    await expect.poll(() => runtime.opens).toEqual([{ sessionId: 'other-session', replaceSessionId: 's1' }])
+    expect(app.snapshot().notice?.message).not.toBe('Already in this session.')
+  })
+
+  it('shows a friendly notice when /resume selects the current session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cocode-resume-current-'))
+    const cwd = await mkdtemp(join(tmpdir(), 'cocode-resume-current-cwd-'))
+    try {
+      const sessionDir = join(root, 'project', 's1')
+      await mkdir(sessionDir, { recursive: true })
+      await writeFile(
+        join(sessionDir, 'session.jsonl'),
+        `${JSON.stringify({
+          type: 'session',
+          id: 's1',
+          createdAt: 1_700_000_000_000,
+          cwd,
+        })}\n`,
+      )
+      const runtime = fakeRuntime()
+      const app = createTuiApp({
+        runtime,
+        cwd,
+        provider: 'p',
+        model: 'm',
+        sessionId: 's1',
+        capabilities: { ...P0_CAPABILITIES, sessionList: 'jsonl' },
+        diagnostics: {
+          tty: true,
+          launchConfigured: true,
+          argsConfigured: true,
+          sessionRoot: root,
+        },
+      })
+      await app.start()
+      app.dispatch({ type: 'command', line: '/resume' })
+      await expect.poll(() => app.snapshot().resumePicker?.open).toBe(true)
+      expect(app.snapshot().resumePicker?.items.map((item) => item.id)).toEqual(['s1'])
+      app.dispatch({ type: 'resume.confirm' })
+      await expect.poll(() => app.snapshot().notice?.message).toBe('Already in this session.')
+      expect(app.snapshot().notice?.tone).toBe('info')
+      expect(app.snapshot().header.sessionId).toBe('s1')
+      expect(runtime.opens).toEqual([])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
   it('rebuilds all projections when forking a session with a seed', async () => {
     const runtime = fakeRuntime()
     runtime.fork = async () => ({
