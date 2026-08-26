@@ -108,5 +108,5 @@ Host E2E 必须同时满足以下条件：
 | P1 | 工具调用产生真实文件副作用 | tool call、审批策略、命令结果和持久化 | bash 文件副作用已实现 |
 | P1 | question / approval 交互 | JSON-RPC request-response、取消和终止状态 | 待实现 |
 | P1 | provider HTTP 500、断流和 malformed SSE | 网络失败映射、退出码、`turn/end(error)` 和持久化 | HTTP 502、断流、malformed SSE 已实现；500 待实现 |
-| P2 | CLI 中断和超时 | SIGINT、Host 清理、session 状态和残留进程 | 待实现 |
+| P2 | CLI 中断和超时 | SIGINT、Host 清理、session 状态和残留进程 | 超时已实现；SIGINT 待实现 |
 | P2 | PTY 真实终端验收 | ANSI、resize、退出和中断 | 待实现 |
