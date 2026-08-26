@@ -22,6 +22,7 @@ const SUCCESS_PROMPT = 'Return the exact marker COCODE_E2E_ASSISTANT_OK.'
 const SUCCESS_REPLY = 'COCODE_E2E_ASSISTANT_OK'
 const FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_ERROR'
 const HTTP_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_ERROR'
+const HTTP_500_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_500'
 const MALFORMED_SSE_PROMPT = 'COCODE_E2E_FORCE_MALFORMED_SSE'
 const TRUNCATED_SSE_PROMPT = 'COCODE_E2E_FORCE_TRUNCATED_SSE'
 const TIMEOUT_PROMPT = 'COCODE_E2E_FORCE_TIMEOUT'
@@ -269,6 +270,36 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain('502')
   })
 
+  it('reports a provider HTTP 500 as a terminal error', async () => {
+    const sessionId = 'e2e-provider-http-500'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: HTTP_500_FAILURE_PROMPT,
+      sessionId,
+    })
+
+    expect(result.code).toBe(1)
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toContain('turn/end')
+    expectEventOrder(events, ['running', 'turn/end'])
+    const terminal = events.find((entry) =>
+      entry.method === 'session.event' && entry.params?.event?.type === 'turn/end',
+    )
+    expect(terminal?.params?.event?.data?.reason?.kind).toBe('error')
+    expect(JSON.stringify(terminal)).toContain('500')
+    const sequence = eventSequence(events)
+    const terminalIndex = sequence.indexOf('turn/end')
+    const idleIndex = sequence.indexOf('idle')
+    expect(terminalIndex).toBeGreaterThanOrEqual(0)
+    expect(idleIndex === -1 || idleIndex > terminalIndex).toBe(true)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(HTTP_500_FAILURE_PROMPT)
+    expect(persisted).toContain('turn/end')
+    expect(persisted).toContain('500')
+  })
+
   it('reports malformed provider SSE as a terminal error', async () => {
     const sessionId = 'e2e-provider-malformed-sse'
     const eventLog = join(eventRoot, `${sessionId}.jsonl`)
@@ -469,6 +500,16 @@ async function startFixtureServer(): Promise<{
           error: {
             code: 'UPSTREAM_UNAVAILABLE',
             message: 'fixture upstream unavailable',
+          },
+        }))
+        return
+      }
+      if (JSON.stringify(body).includes(HTTP_500_FAILURE_PROMPT)) {
+        response.writeHead(500, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({
+          error: {
+            code: 'UPSTREAM_INTERNAL_ERROR',
+            message: 'fixture upstream internal error',
           },
         }))
         return
