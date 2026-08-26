@@ -26,6 +26,8 @@ const HTTP_500_FAILURE_PROMPT = 'COCODE_E2E_FORCE_PROVIDER_HTTP_500'
 const MALFORMED_SSE_PROMPT = 'COCODE_E2E_FORCE_MALFORMED_SSE'
 const TRUNCATED_SSE_PROMPT = 'COCODE_E2E_FORCE_TRUNCATED_SSE'
 const TIMEOUT_PROMPT = 'COCODE_E2E_FORCE_TIMEOUT'
+const QUESTION_PROMPT = 'COCODE_E2E_FORCE_QUESTION'
+const QUESTION_REPLY = 'COCODE_E2E_QUESTION_CANCELLED'
 const TOOL_PROMPT = 'COCODE_E2E_FORCE_BASH_TOOL'
 const TOOL_FILE_NAME = 'cocode-e2e-tool-output.txt'
 const TOOL_FILE_CONTENT = 'COCODE_E2E_TOOL_OK\n'
@@ -300,6 +302,36 @@ describe('cocode run with the real Host', () => {
     expect(persisted).toContain('500')
   })
 
+  it('cancels a real user question and completes the headless turn', async () => {
+    const sessionId = 'e2e-question-cancelled'
+    const eventLog = join(eventRoot, `${sessionId}.jsonl`)
+    const result = await runHeadlessCli({
+      eventLog,
+      prompt: QUESTION_PROMPT,
+      sessionId,
+      timeout: '5s',
+    })
+
+    expect(result.code).toBe(0)
+    expect(result.signal).toBeNull()
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: 'completed', sessionId })
+
+    const events = await readEventLog(eventLog)
+    expect(eventTypes(events)).toEqual(expect.arrayContaining(['tool/call', 'tool/result', 'turn/end']))
+    expectEventOrder(events, ['running', 'tool/call', 'tool/result', 'turn/end', 'idle'])
+    expect(JSON.stringify(events)).toContain('ask_user_question')
+    expect(JSON.stringify(events)).toContain('interrupted')
+    expect(JSON.stringify(events)).toContain(QUESTION_REPLY)
+
+    const persisted = await waitForSessionText(env.DSH_SESSION_ROOT!, sessionId)
+    expect(persisted).toContain(QUESTION_PROMPT)
+    expect(persisted).toContain('tool/call')
+    expect(persisted).toContain('tool/result')
+    expect(persisted).toContain('turn/end')
+    expect(persisted).toContain('interrupted')
+    expect(persisted).toContain(QUESTION_REPLY)
+  })
+
   it('reports malformed provider SSE as a terminal error', async () => {
     const sessionId = 'e2e-provider-malformed-sse'
     const eventLog = join(eventRoot, `${sessionId}.jsonl`)
@@ -514,6 +546,14 @@ async function startFixtureServer(): Promise<{
         }))
         return
       }
+      if (JSON.stringify(body).includes(QUESTION_PROMPT)) {
+        if (hasToolResult) {
+          writeCompletion(response, false, QUESTION_REPLY)
+        } else {
+          writeQuestionToolCall(response)
+        }
+        return
+      }
       if (JSON.stringify(body).includes(MALFORMED_SSE_PROMPT)) {
         writeMalformedSse(response)
         return
@@ -610,6 +650,50 @@ function writeTruncatedSse(response: ServerResponse): void {
     choices: [{ index: 0, delta: { role: 'assistant', content: 'partial' }, finish_reason: null }],
   })}\n\n`)
   response.destroy()
+}
+
+function writeQuestionToolCall(response: ServerResponse): void {
+  response.writeHead(200, {
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+    'content-type': 'text/event-stream',
+  })
+  response.write(`data: ${JSON.stringify({
+    id: 'chatcmpl-e2e-question',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: MODEL,
+    choices: [{
+      index: 0,
+      delta: {
+        role: 'assistant',
+        tool_calls: [{
+          index: 0,
+          id: 'call-e2e-question',
+          type: 'function',
+          function: {
+            name: 'ask_user_question',
+            arguments: JSON.stringify({
+              questions: [{
+                id: 'e2e-question',
+                question: 'Continue the E2E scenario?',
+                options: [{ label: 'Continue' }, { label: 'Stop' }],
+              }],
+            }),
+          },
+        }],
+      },
+      finish_reason: null,
+    }],
+  })}\n\n`)
+  response.write(`data: ${JSON.stringify({
+    id: 'chatcmpl-e2e-question',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: MODEL,
+    choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+  })}\n\n`)
+  response.end('data: [DONE]\n\n')
 }
 
 function writeDelayedSse(response: ServerResponse): void {
