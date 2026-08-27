@@ -487,6 +487,25 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
+  it('switches from Trajectory back to Chat through the header tabs', () => {
+    const b = mount(conversationSnapshot())
+    const chatTab = b.view.getByRole('tab', { name: 'Chat' })
+    const trajectoryTab = b.view.getByRole('tab', { name: 'Trajectory' })
+
+    expect(b.view.getByTestId('view-chat')).toBeTruthy()
+    expect(chatTab.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.click(trajectoryTab)
+    expect(b.view.getByTestId('view-trajectory')).toBeTruthy()
+    expect(trajectoryTab.getAttribute('aria-selected')).toBe('true')
+    expect(chatTab.getAttribute('aria-selected')).toBe('false')
+
+    fireEvent.click(chatTab)
+    expect(b.view.getByTestId('view-chat')).toBeTruthy()
+    expect(chatTab.getAttribute('aria-selected')).toBe('true')
+    expect(trajectoryTab.getAttribute('aria-selected')).toBe('false')
+  })
+
   it('keeps the Chat fallback selected by id when a view is inserted before it', () => {
     const viewTabs: ViewTab[] = [
       { id: 'chat', label: 'Chat' },

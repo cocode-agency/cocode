@@ -62,7 +62,9 @@ jobs:
 
       - name: Install Host Supervisor dependencies
         working-directory: cocode-host-supervisor
-        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+        # Host Supervisor tests exercise the packaged node-pty runtime. Its
+        # install hook builds the Linux spawn-helper, so scripts must run here.
+        run: corepack pnpm@10.34.5 install --frozen-lockfile
 
       - name: Build Host Supervisor package
         working-directory: cocode-host-supervisor
@@ -169,7 +171,9 @@ jobs:
 
       - name: Install Host Supervisor dependencies
         working-directory: cocode-host-supervisor
-        run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+        # Host Supervisor tests exercise the packaged node-pty runtime. Its
+        # install hook builds the Linux spawn-helper, so scripts must run here.
+        run: corepack pnpm@10.34.5 install --frozen-lockfile
 
       - name: Build Host Supervisor package
         working-directory: cocode-host-supervisor

@@ -10,6 +10,14 @@
   min-width: 0;
   background: var(--dsw-alias-bg-base);
 
+  /* AppFrame supplies these values for the assembled shell. The fallbacks
+     keep this package's direct component fixtures and isolated previews
+     faithful to the same two-row geometry. */
+  --dsh-conversation-tabs-height: 37px;
+  --dsh-conversation-header-height: calc(
+    var(--dsh-shell-header-height, 46px) + var(--dsh-conversation-tabs-height)
+  );
+
   /* Shared width axis for the whole column: one content width W
      (--dsh-chat-content-width) for the transcript, the dock cards
      (todo/goal/queue: card minus four insets, 4 x 8 = 32), and the takeover
@@ -28,9 +36,11 @@
 .header {
   position: relative;
   flex: none;
-  padding: 7px 28px 7px 20px;
-  /* The shell owns this row so the collapsed rail can carry the same seam. */
-  height: var(--dsh-shell-header-height, 46px);
+  box-sizing: border-box;
+  padding: 7px 28px 0 20px;
+  /* Keep title and view tabs in the two-row conversation chrome used by
+     Harness. The first row remains aligned with the shell titlebar. */
+  height: var(--dsh-conversation-header-height);
   overflow: hidden;
   /* Match the left sidebar surface so the top chrome reads as one band. */
   background: var(--dsw-specific-sidebar-fill);
@@ -55,7 +65,9 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
+  /* Only the shell titlebar is a window-drag surface. The tabs row must stay
+     interactive so switching back from Trajectory remains reliable. */
+  height: var(--dsh-shell-header-height, 46px);
   z-index: 1;
   -webkit-app-region: drag;
 }
@@ -168,12 +180,15 @@
 
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned. */
 .tabs {
-  position: relative;
-  z-index: 1;
+  position: absolute;
+  top: var(--dsh-shell-header-height, 46px);
+  left: 20px;
+  z-index: 10;
   display: flex;
   gap: 36px;
-  margin-top: 4px;
+  height: var(--dsh-conversation-tabs-height);
   padding-left: 8px;
+  -webkit-app-region: no-drag;
 }
 
 /* figma .Tab 34:11442: 13/16 text (figma wt510, rendered 500), gap 8 to the 2px bar. */

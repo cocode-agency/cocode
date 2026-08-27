@@ -1,9 +1,12 @@
 .frame {
-  /* The top chrome row. The session header fills it and the collapsed rail
-     continues its seam across, so the window controls and the session title
-     sit in one band spanning the frame — hence a frame-level declaration
-     rather than a number each occupant repeats. */
+  /* Shared vertical geometry: the shell titlebar is one row, while a session
+     may add its own second row for view tabs below it. Keep both values at
+     the frame so the sidebar seam, overlays, and session header agree. */
   --dsh-shell-header-height: 46px;
+  --dsh-conversation-tabs-height: 37px;
+  --dsh-conversation-header-height: calc(
+    var(--dsh-shell-header-height) + var(--dsh-conversation-tabs-height)
+  );
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
   grid-template-rows: minmax(0, 1fr) 0;
