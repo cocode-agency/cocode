@@ -451,14 +451,16 @@ describe('WorkspaceRuntime', () => {
 
     workspaces.configureDefaultStorage('/tmp/recent-cocode')
     await expect(workspaces.connectDefaultSession()).resolves.toBe('default-session')
-    expect(api.callsOf('session.create')).toEqual([{ cwd: '/tmp/recent-cocode' }])
+    const configuredCall = api.callsOf('session.create')[0] as { cwd?: string; sessionId?: string }
+    expect(configuredCall.sessionId).toMatch(/^session-[0-9a-f-]{36}$/)
+    expect(configuredCall.cwd).toBe(`/tmp/recent-cocode/${configuredCall.sessionId}`)
 
     workspaces.configureDefaultStorage('  ')
     await expect(workspaces.connectDefaultSession()).resolves.toBe('default-session')
-    expect(api.callsOf('session.create')).toEqual([
-      { cwd: '/tmp/recent-cocode' },
-      {},
-    ])
+    const calls = api.callsOf('session.create') as Array<{ cwd?: string; sessionId?: string }>
+    expect(calls).toHaveLength(2)
+    expect(calls[1]?.sessionId).toMatch(/^session-[0-9a-f-]{36}$/)
+    expect(calls[1]?.cwd).toBe(`/f/${calls[1]?.sessionId}`)
   })
 
   it('archives a session, projects the set from the response, list, and frame, and clears only the current one', async () => {
