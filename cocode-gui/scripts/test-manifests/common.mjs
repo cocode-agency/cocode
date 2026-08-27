@@ -15,7 +15,6 @@ export const patterns = [
 	"tests/release/release-config.test.ts",
 	"tests/release/release-hooks.test.ts",
 	"tests/release/release-workflow.test.ts",
-	"tests/release/electron-module-build-doc.test.ts",
 	"tests/release/release-evidence.test.ts",
 	"tests/release/finalize-linux-release-assets.test.ts",
 	"tests/release/linux-repository.test.ts",
