@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   isProtocolDependency,
@@ -55,6 +56,26 @@ if (runtimeSmoke.status !== 1 || !runtimeSmoke.stderr.includes('Cocode TUI requi
   failures.push(
     `bundled TUI runtime smoke failed: ${runtimeSmoke.stderr || runtimeSmoke.stdout || `exit ${runtimeSmoke.status}`}`,
   )
+}
+
+// GUI staging copies dist/cocode-tui.mjs next to the CLI, so ../package.json
+// no longer resolves to this package. The flattened smoke catches that.
+const flattenRoot = mkdtempSync(join(tmpdir(), 'cocode-tui-flatten-'))
+try {
+  const flattened = join(flattenRoot, 'cocode-tui.mjs')
+  copyFileSync(resolve(root, 'dist/cocode-tui.mjs'), flattened)
+  const flattenSmoke = spawnSync(process.execPath, [flattened], {
+    cwd: flattenRoot,
+    encoding: 'utf8',
+    ...npmSpawnOptionsForPlatform(),
+  })
+  if (flattenSmoke.status !== 1 || !flattenSmoke.stderr.includes('Cocode TUI requires a TTY.')) {
+    failures.push(
+      `flattened TUI runtime smoke failed: ${flattenSmoke.stderr || flattenSmoke.stdout || `exit ${flattenSmoke.status}`}`,
+    )
+  }
+} finally {
+  rmSync(flattenRoot, { recursive: true, force: true })
 }
 
 let pack

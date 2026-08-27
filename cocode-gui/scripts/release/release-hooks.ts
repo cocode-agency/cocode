@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
 import {
@@ -857,6 +857,12 @@ async function verifyTuiArtifact(root: string): Promise<void> {
 	const runtimeHash = createHash("sha256").update(await fs.readFile(entry)).digest("hex")
 	if (cliHash !== manifest.sha256 || runtimeHash !== manifest.runtimeSha256) {
 		throw new Error("TUI artifact hash does not match its manifest.")
+	}
+	const smoke = spawnSync(process.execPath, [entry], { encoding: "utf8" })
+	if (smoke.status !== 1 || !String(smoke.stderr).includes("Cocode TUI requires a TTY.")) {
+		throw new Error(
+			`TUI artifact failed to start: ${smoke.stderr || smoke.stdout || `exit ${String(smoke.status)}`}`,
+		)
 	}
 }
 
