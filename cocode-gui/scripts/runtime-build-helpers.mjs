@@ -13,6 +13,10 @@ export function listFiles(root, prefix = "") {
 	})
 }
 
+/**
+ * @param {string} root
+ * @param {{ignore?: (relative: string) => boolean}} [options]
+ */
 export function hashDirectory(root, { ignore = () => false } = {}) {
 	const hash = createHash("sha256")
 	for (const relative of listFiles(root).sort()) {

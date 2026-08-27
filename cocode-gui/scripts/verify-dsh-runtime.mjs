@@ -293,10 +293,7 @@ export function recomputeRuntimeDependencyRecords(root) {
 		allowedRoot: supervisorRoot,
 	})
 	for (const record of records) {
-		if (
-			record.root !== supervisorRoot &&
-			!record.root.startsWith(`${supervisorRoot}${path.sep}`)
-		)
+		if (!isPathWithin(supervisorRoot, record.root))
 			throw new Error(
 				`Runtime dependency resolution escaped staged root: ${record.name}@${record.version} at ${record.root}`,
 			)
@@ -345,6 +342,14 @@ function sortDependencyRecords(records) {
 function compareDependencyRecords(left, right) {
 	return `${left.destination}\0${left.name}\0${left.version}`.localeCompare(
 		`${right.destination}\0${right.name}\0${right.version}`,
+	)
+}
+
+function isPathWithin(root, candidate) {
+	const relative = path.relative(path.resolve(root), path.resolve(candidate))
+	return (
+		relative === "" ||
+		(!relative.startsWith("../") && relative !== ".." && !path.isAbsolute(relative))
 	)
 }
 

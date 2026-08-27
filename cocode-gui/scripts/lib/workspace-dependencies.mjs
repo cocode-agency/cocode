@@ -82,11 +82,16 @@ export function resolveNodePtyNativeDirectory(
 	packageRoot,
 	{ platform = process.platform, arch = process.arch } = {},
 ) {
-	return [
+	const directories = [
 		path.join(packageRoot, "build", "Release"),
 		path.join(packageRoot, "build", "Debug"),
 		path.join(packageRoot, "prebuilds", `${platform}-${arch}`),
-	].find((directory) => existsSync(path.join(directory, "pty.node")))
+	]
+	return directories.find(
+		(directory) =>
+			existsSync(path.join(directory, "pty.node")) ||
+			existsSync(path.join(directory, "conpty.node")),
+	)
 }
 
 /**
@@ -161,6 +166,8 @@ export function restoreNodePtyHelpers({
 	platform = process.platform,
 	arch = process.arch,
 } = {}) {
+	// Windows node-pty has no Unix spawn-helper executable to restore.
+	if (platform === "win32") return []
 	const restored = []
 	for (const { packageRoot } of discoverNodePtyPackages(root)) {
 		const nativeDirectory = resolveNodePtyNativeDirectory(packageRoot, { platform, arch })
@@ -201,9 +208,9 @@ export function verifyNodePtyNativesRecursively({
 			continue
 		}
 		const beta = version.includes("1.2.0-beta")
+		const primary = beta ? "conpty.node" : "pty.node"
 		const required = beta
 			? [
-					"conpty.node",
 					"conpty_console_list.node",
 					path.join("conpty", "conpty.dll"),
 					path.join("conpty", "OpenConsole.exe"),
@@ -214,7 +221,10 @@ export function verifyNodePtyNativesRecursively({
 					path.join("conpty", "conpty.dll"),
 					path.join("conpty", "OpenConsole.exe"),
 			  ]
-		const files = [pty, ...required.map((relative) => path.join(nativeDirectory, relative))]
+		const files = [
+			path.join(nativeDirectory, primary),
+			...required.map((relative) => path.join(nativeDirectory, relative)),
+		]
 		for (const file of files)
 			if (!existsSync(file))
 				throw new Error(`node-pty ${version} asset is missing for win32/${arch}: ${file}`)
@@ -231,7 +241,46 @@ export function verifyNodePtyNativesRecursively({
  * valid JS install while those architecture-specific files are missing, so
  * repair the native files explicitly before the runtime is staged.
  */
+function resolveNodePtyWorkspaceRoot(packageRoot, fallbackRoot) {
+	let current = packageRoot
+	while (true) {
+		if (existsSync(path.join(current, "pnpm-lock.yaml"))) return current
+		const parent = path.dirname(current)
+		if (parent === current) return fallbackRoot
+		current = parent
+	}
+}
+
+const NODE_PTY_REBUILD_LOCK_STALE_MS = 30 * 60 * 1000
+const NODE_PTY_REBUILD_LOCK_TIMEOUT_MS = 35 * 60 * 1000
+
 /**
+function withWindowsNodePtyRebuildLock(workspaceRoot, arch, task) {
+	const lockDirectory = path.join(workspaceRoot, ".cache", "cocode")
+	const lockPath = path.join(lockDirectory, `node-pty-win32-${arch}.lock`)
+	mkdirSync(lockDirectory, { recursive: true })
+	const startedAt = Date.now()
+	while (true) {
+		try {
+			mkdirSync(lockPath)
+			break
+		} catch (error) {
+			if (error?.code !== "EEXIST") throw error
+			if (isStaleNodePtyRebuildLock(lockPath)) {
+				rmSync(lockPath, { recursive: true, force: true })
+				continue
+			}
+			if (Date.now() - startedAt >= NODE_PTY_REBUILD_LOCK_TIMEOUT_MS)
+				throw new Error(`Timed out waiting for the Windows node-pty rebuild lock: ${lockPath}`)
+			sleepSync(250)
+		}
+	}
+	try {
+		return task()
+	} finally {
+		rmSync(lockPath, { recursive: true, force: true })
+	}
+}
  * @param {{
  *   root: string,
  *   packageRoot?: string,
@@ -257,14 +306,26 @@ export function ensureWindowsNodePtyNatives({
 		return false
 
 	console.log(`[workspace-deps] rebuilding node-pty natives for win32/${arch}`)
+	const workspaceRoot = resolveNodePtyWorkspaceRoot(packageRoot, root)
 	run(
 		process.platform === "win32" ? "corepack.cmd" : "corepack",
 		["pnpm@10.34.5", "rebuild", "node-pty"],
 		{
-			...shellCommandOptions({ cwd: root, stdio: "inherit" }),
+			...shellCommandOptions({ cwd: workspaceRoot, stdio: "inherit" }),
 			env: { ...process.env, npm_config_arch: arch, DSH_NODE_PTY_PACKAGE_ROOT: packageRoot },
 		},
 	)
+
+	// pnpm rebuild can rebuild the native addon without replaying node-pty's
+	// postinstall hook. That hook copies the ConPTY companion binaries beside
+	// conpty.node, so run it explicitly when the package provides it.
+	const postInstall = path.join(packageRoot, "scripts", "post-install.js")
+	if (existsSync(postInstall)) {
+		run(process.execPath, [postInstall], {
+			...shellCommandOptions({ cwd: packageRoot, stdio: "inherit" }),
+			env: { ...process.env, npm_config_arch: arch, DSH_NODE_PTY_PACKAGE_ROOT: packageRoot },
+		})
+	}
 
 	const missing = resolveWindowsNodePtyMissing(packageRoot, arch, packageVersion)
 	if (missing.length > 0) {
@@ -272,7 +333,7 @@ export function ensureWindowsNodePtyNatives({
 			[
 				`node-pty Windows native files are missing after rebuild for win32/${arch}.`,
 				"Run the pinned pnpm rebuild in the host-supervisor workspace and ensure node-pty build scripts are allowed:",
-				`  corepack pnpm@10.34.5 --dir ${root} rebuild node-pty`,
+				`  corepack pnpm@10.34.5 --dir ${workspaceRoot} rebuild node-pty`,
 				...missing.map((file) => `  missing: ${file}`),
 			].join("\n"),
 		)
@@ -653,11 +714,12 @@ function resolveWindowsNodePtyMissing(
 	const resolveDirectory = (name) =>
 		searchDirectories.find((directory) => existsSync(path.join(directory, name)))
 	const missing = []
-	const ptyDirectory = resolveDirectory("pty.node")
+	const beta = String(version).includes("1.2.0-beta")
+	const primary = beta ? "conpty.node" : "pty.node"
+	const ptyDirectory = resolveDirectory(primary)
 	if (!ptyDirectory) {
-		missing.push(`pty.node (searched: ${searchDirectories.join(", ")})`)
+		missing.push(`${primary} (searched: ${searchDirectories.join(", ")})`)
 	} else {
-		const beta = String(version).includes("1.2.0-beta")
 		const companion = beta ? "conpty_console_list.node" : "winpty-agent.exe"
 		if (!existsSync(path.join(ptyDirectory, companion)))
 			missing.push(path.join(ptyDirectory, companion))

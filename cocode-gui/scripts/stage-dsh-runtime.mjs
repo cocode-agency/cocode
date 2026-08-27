@@ -202,10 +202,17 @@ function materializeDependencyClosure(supervisorRoot, destination, additionalRoo
 
 function recordRootFor(entry, records) {
 	for (const record of records) {
-		if (entry === record.root || entry.startsWith(`${record.root}${path.sep}`))
-			return record.root
+		if (isPathWithin(record.root, entry)) return record.root
 	}
 	return entry
+}
+
+function isPathWithin(root, candidate) {
+	const relative = path.relative(path.resolve(root), path.resolve(candidate))
+	return (
+		relative === "" ||
+		(!relative.startsWith("../") && relative !== ".." && !path.isAbsolute(relative))
+	)
 }
 
 /**

@@ -44,6 +44,7 @@ import {
 	verifyLinuxReleaseManifest,
 	writeLinuxReleaseManifest,
 } from "./verify-linux-packages.mjs"
+import { hashDirectory, hashJson } from "../runtime-build-helpers.mjs"
 import { signLinuxPackages } from "./sign-linux-packages.mjs"
 import {
 	createReleaseEvidence,
@@ -131,8 +132,14 @@ export async function stageBuilderApplication(context: AfterPackContext): Promis
 	const nodeExecutable = path.join(resourcesRoot, packagedNodeExecutableName(target.platform))
 	await fs.copyFile(process.execPath, nodeExecutable)
 	await fs.chmod(nodeExecutable, 0o755)
-	if (target.platform === "win32" && process.platform === "win32" && isReleaseSigningRequired())
+	if (target.platform === "win32" && process.platform === "win32" && isReleaseSigningRequired()) {
 		await signPackagedWindowsExecutables(resourcesRoot, signFile)
+		// Authenticode appends a certificate table to PE files. Runtime binaries
+		// are part of the signed resources tree, so their bytes (and therefore the
+		// precomputed runtimeContentHash) change during signing. Refresh the staged
+		// manifest after signing so the integrity check validates the final bytes.
+		refreshStagedRuntimeManifest(path.join(resourcesRoot, "dsh-runtime"))
+	}
 	try {
 		await closePackagedAppStage(appStage)
 		if (target.platform === "linux") await hardenLinuxSandboxHelper(context.appOutDir)
@@ -142,6 +149,19 @@ export async function stageBuilderApplication(context: AfterPackContext): Promis
 	}
 }
 
+function refreshStagedRuntimeManifest(runtimeRoot: string): void {
+	const manifestPath = path.join(runtimeRoot, "runtime-manifest.json")
+	if (!existsSync(manifestPath))
+		throw new Error("Runtime manifest is missing after Windows signing: " + manifestPath)
+	const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>
+	manifest.dependencyClosureHash = hashDirectory(path.join(runtimeRoot, "node_modules"))
+manifest.runtimeContentHash = hashDirectory(runtimeRoot, {
+		ignore: (relative) => relative === "runtime-manifest.json",
+	})
+	delete manifest.fingerprint
+	manifest.fingerprint = hashJson(manifest)
+	writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
+}
 async function hardenLinuxSandboxHelper(appOutDir: string): Promise<void> {
 	const sandboxHelper = path.join(appOutDir, "chrome-sandbox")
 	if (!existsSync(sandboxHelper))
