@@ -1,16 +1,13 @@
 /** Registers the sidebar shell into the layout-owned slot. */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: pulls the appearance service and change event into this program.
-import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { SidebarRootInjected } from './contract/slots.ts'
-import { createSidebarLogoStore } from './logo-store.ts'
 import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
+  SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps,
   SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarRootInjected,
   SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
@@ -27,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'sidebar'
 
 /** Services required by the sidebar plugin. */
-export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale', 'theme']
+export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale']
 
 /** Registers the sidebar shell and its service callbacks.
  * @param ctx - Client root context.
@@ -35,32 +32,23 @@ export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale', 't
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
 
-  const store = createSidebarLogoStore()
-  let bound: BoundActions<typeof store> | undefined
-  const syncLogo = (snapshot: ThemeSnapshot): void => {
-    bound?.sync(snapshot.logoPreference, snapshot.revision)
-  }
-  ctx.on('theme/change', syncLogo)
-
-  const injectProps = (actions: BoundActions<typeof store>): SidebarRootInjected => {
-    bound = actions
-    syncLogo(ctx.theme.getTheme())
-    return {
-      // The shell's New Session button rides the runtime's shared action
-      // (current Session Workspace, then recent Workspace).
-      startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
-      toggleSidebar: () => { ctx.layout.toggleSidebar() },
-    }
-  }
+  const injectProps = (): SidebarRootInjected => ({
+    // The shell's New Session button rides the runtime's shared action
+    // (current Session Workspace, then recent Workspace).
+    startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
+    toggleSidebar: () => { ctx.layout.toggleSidebar() },
+  })
   ctx.effect(
     () => ctx.slots.register({
       name: 'sidebar',
       locale: NS,
-      store,
       // The shell owns geometry; ui-workspace registers the whole browsing
       // region (header, search, session list, workspace dialogs), ui-settings
-      // registers the foot trigger + settings panel.
+      // registers the foot trigger + settings panel. Brand holes are filled
+      // by a deployment package (Cocode: cocode-brand).
       children: {
+        'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+        'sidebar.brand.name': { kind: 'single', scope: 'root' },
         'sidebar.workspaces': { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },

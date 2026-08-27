@@ -196,12 +196,32 @@
   min-width: 0;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   overflow: hidden;
   padding: 0;
   border: none;
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+.localBuild {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.buildHash {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .iconButton {
@@ -242,12 +262,6 @@
 
 .collapsed .toggle:hover .railLogo {
   display: none;
-}
-
-/* The pixel C has built-in left and bottom whitespace. Its element is
-   geometrically centered, so optically offset only the visible mark. */
-.cocodeRailLogo {
-  transform: translate(-1px, 1px);
 }
 
 /* Rail icons ride the primary ink (figma rail spec); expanded keeps the

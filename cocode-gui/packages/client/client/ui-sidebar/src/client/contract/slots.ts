@@ -7,15 +7,25 @@
  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
  * actions in `sidebar.footer.action`.
  */
-import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
 // program that sees this contract, so PropsRuntime<'sidebar'> resolves.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { createSidebarLogoStore } from '../logo-store.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /**
+     * Brand mark rendered in the expanded brand row and collapsed rail.
+     * Declared by this package's `sidebar` entry; deployments may replace
+     * the shell's fish fallback without replacing the surrounding controls.
+     */
+    'sidebar.brand.mark': { kind: 'single'; scope: 'root'; owner: SidebarBrandMarkOwnerProps }
+    /**
+     * Brand name rendered beside the expanded mark. Declared by this
+     * package's `sidebar` entry; the shell supplies a generic text fallback.
+     */
+    'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
     /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
@@ -63,6 +73,20 @@ export interface SidebarFooterActionOwnerProps {
   wide: boolean
 }
 
+/** Geometry supplied to the sidebar brand-mark occupant. */
+export interface SidebarBrandMarkOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+  /** Host CSS class for rail hover interchange and expanded brand ink. */
+  className?: string | undefined
+}
+
+/** Empty owner share for the sidebar brand-name occupant. */
+export interface SidebarBrandNameOwnerProps {
+  /** Marker field: the occupant owns its own content and width. */
+  children?: never
+}
+
 /**
  * Registrant-private injected share (arrives via the register inject
  * factory). The shell keeps only its own controls: starting a Session from
@@ -86,6 +110,8 @@ export type SidebarRootInjected = {
  */
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
-  & PropsRenderSlots<'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'>
-  & PropsStore<ReturnType<typeof createSidebarLogoStore>>
+  & PropsRenderSlots<
+    | 'sidebar.brand.mark' | 'sidebar.brand.name'
+    | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'
+  >
   & SidebarRootInjected & PropsLocale<'sidebar'>

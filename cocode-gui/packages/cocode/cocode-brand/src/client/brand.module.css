@@ -1,0 +1,77 @@
+.railMark {
+  transform: translate(-1px, 1px);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.cubeRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.logoCube {
+  box-sizing: border-box;
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 16px 24px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--ds-radius-lg);
+  background: var(--cocode-surface-raised, transparent);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.logoCube:hover:not(.selected) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.selected {
+  background: var(--cocode-accent-soft, var(--dsw-alias-bg-module-platform));
+  border-color: color-mix(in srgb, var(--cocode-accent, var(--dsw-static-neutral-bluish-400)) 24%, var(--cocode-border, var(--dsw-alias-border-l2)));
+}
+
+.logoPreview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Hide DSH hero fish + Preview when the product logo is selected. */
+:global(html[data-cocode-logo="cocode"]) :global([class*="headline"]:not([class*="headlineText"])) {
+  grid-template-columns: auto;
+}
+
+:global(html[data-cocode-logo="cocode"]) :global([class*="headlineText"]) {
+  grid-column: 1;
+}
+
+:global(html[data-cocode-logo="cocode"]) :global([class*="fishHitbox"]),
+:global(html[data-cocode-logo="cocode"]) :global([class*="previewBadge"]) {
+  display: none;
+}

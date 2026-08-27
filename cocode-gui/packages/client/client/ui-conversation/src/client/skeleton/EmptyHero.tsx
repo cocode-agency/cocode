@@ -7,7 +7,6 @@
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
-import type { LogoPreference } from '@deepseek-ai/dsh-client-ui-theme/client'
 import {
   FishLogo, IconChevronDownOutline14, IconCloseFill14, IconFolderClose16, IconFolderOpen16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -120,8 +119,8 @@ export function HeroGlow({ className }: { className?: string | undefined }) {
 export interface HeroShellProps {
   /** The owner's locale seat, passed down as a plain prop. */
   t: HeroTranslate
-  /** Sidebar logo preference — DeepSeek branding rides only the deepseek choice. */
-  logoPreference: LogoPreference
+  /** Slot renderer for the independent hero brand-mark hole. */
+  renderSlot: ConversationSlotProps['renderSlot']
   /** Overlay content after the stack (modals). */
   children?: ReactNode
 }
@@ -132,21 +131,18 @@ export interface HeroShellProps {
  * @param props - see {@link HeroShellProps}.
  * @returns the centered hero element tree.
  */
-export function HeroShell({ t, logoPreference, children }: HeroShellProps) {
-  const showDeepseekBranding = logoPreference === 'deepseek'
+export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   return (
     <div className={css.root}>
       <div className={css.stack}>
-        <div className={clsx(css.headline, !showDeepseekBranding && css.headlineCocode)}>
-          {showDeepseekBranding && (
-            <span className={css.fishHitbox}>
-              <FishLogo size={34} className={css.fish} />
-            </span>
-          )}
+        <div className={css.headline}>
+          <span className={css.fishHitbox}>
+            {renderSlot('conversation.hero.brand.mark', { size: 34, className: css.fish }, {
+              fallback: <FishLogo size={34} className={css.fish} />,
+            })}
+          </span>
           <span className={css.headlineText}>{t('hero.headline')}</span>
-          {showDeepseekBranding && (
-            <span className={css.previewBadge}>{t('hero.preview')}</span>
-          )}
+          <span className={css.previewBadge}>{t('hero.preview')}</span>
         </div>
         <div className={css.body}>
           {/* The resident composer (ConversationRoot's root-owned scrollport;

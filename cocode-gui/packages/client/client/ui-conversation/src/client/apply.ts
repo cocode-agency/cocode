@@ -10,8 +10,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: pulls the appearance service and change event into this program.
-import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { ViewTab } from './contract/views.ts'
 import type {
   ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
@@ -37,7 +35,6 @@ import { ApprovalPanel } from './skeleton/ApprovalPanel.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { queueDockEntry } from './queue/QueueDock.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
-import { createHeroLogoStore } from './skeleton/hero-logo-store.ts'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
@@ -55,7 +52,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Services required by the conversation plugin. */
 export const inject = [
   'slots', 'layout', 'sessions', 'workspaces', 'locale', 'connection', 'remote', 'settingsScope',
-  'conversationEvents', 'conversationViews', 'theme',
+  'conversationEvents', 'conversationViews',
 ]
 
 // Static no-session sources for the composer-bar hooks compartment: module
@@ -251,17 +248,9 @@ export function apply(ctx: Context): void {
 
   // Resident current-session-optional shell. It owns the stable Hero/composer
   // frame while strict session slots fill only their session-bound regions.
-  const heroLogoStore = createHeroLogoStore()
-  let heroLogoBound: BoundActions<typeof heroLogoStore> | undefined
-  const syncHeroLogo = (snapshot: ThemeSnapshot): void => {
-    heroLogoBound?.sync(snapshot.logoPreference, snapshot.revision)
-  }
-  ctx.on('theme/change', syncHeroLogo)
-
   slots.register({
     name: 'conversation',
     locale: NS,
-    store: heroLogoStore,
     children: {
       'conversation.session': { kind: 'single', scope: 'session' },
       'conversation.session.header': { kind: 'single', scope: 'session' },
@@ -272,13 +261,11 @@ export function apply(ctx: Context): void {
       'conversation.composer.dock': { kind: 'list', scope: 'session' },
       'conversation.input.left': { kind: 'list', scope: 'session' },
       'conversation.input.right': { kind: 'list', scope: 'session' },
+      'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
+      'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
-    inject: (sessionId: SessionId | undefined, actions): ConversationInjected => {
-      if (actions !== undefined) {
-        heroLogoBound = actions
-        syncHeroLogo(ctx.theme.getTheme())
-      }
+    inject: (sessionId: SessionId | undefined): ConversationInjected => {
       return {
         hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
         selectWorkspace: async (workspaceId) => {

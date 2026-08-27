@@ -92,14 +92,15 @@ describe("Cocode Web runtime health", () => {
 			{ id: "cocode-workbench", url: "/plugins/cocode-workbench/client.js", rev: "a" },
 			{ id: "cocode-account", url: "/plugins/cocode-account/client.js", rev: "b" },
 			{ id: "cocode-shortcuts", url: "/plugins/cocode-shortcuts/client.js", rev: "c" },
+			{ id: "cocode-brand", url: "/plugins/cocode-brand/client.js", rev: "d" },
 		],
 	} as const
 
 	it("requires all Desktop-owned Cocode entries", () => {
 		assertRequiredCocodeWebEntries(boot)
 		assert.throws(
-			() => assertRequiredCocodeWebEntries({ ...boot, entries: boot.entries.slice(0, 2) }),
-			/missing boot entry: cocode-shortcuts/,
+			() => assertRequiredCocodeWebEntries({ ...boot, entries: boot.entries.slice(0, 3) }),
+			/missing boot entry: cocode-brand/,
 		)
 	})
 
@@ -111,6 +112,7 @@ describe("Cocode Web runtime health", () => {
 		})
 		assert.deepEqual(requested.sort(), [
 			"http://127.0.0.1:3080/plugins/cocode-account/client.js",
+			"http://127.0.0.1:3080/plugins/cocode-brand/client.js",
 			"http://127.0.0.1:3080/plugins/cocode-shortcuts/client.js",
 			"http://127.0.0.1:3080/plugins/cocode-workbench/client.js",
 		])

@@ -63,11 +63,10 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
   })
 
-  it('keeps the Cocode brand artwork and Electron drag contract', () => {
+  it('keeps the Electron drag contract', () => {
     expect(declarations('.brandLogo')?.get('display')).toBe('block')
     expect(css).toMatch(/\.titlebarDragRegion[\s\S]*-webkit-app-region:\s*drag/)
     expect(css).toMatch(/html\[data-dsh-desktop='true'\][\s\S]*-webkit-app-region:\s*no-drag/)
-    expect(css).toMatch(/\.cocodeRailLogo\s*\{[\s\S]*transform:/)
   })
 
   it('opts the titlebar drag strip out of hit-testing while the Settings panel is open', () => {

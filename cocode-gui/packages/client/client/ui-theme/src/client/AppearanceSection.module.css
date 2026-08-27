@@ -53,24 +53,10 @@
   cursor: pointer;
 }
 
-/* Size override on top of `.themeCube` (same pattern as `.logoCube`). */
+/* Size override on top of `.themeCube`. */
 .fontCube {
   flex: 1 1 96px;
   padding: 16px 20px;
-}
-
-.logoCube {
-  padding: 16px 24px 14px;
-}
-
-.logoPreview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 24px;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--dsw-alias-label-primary);
 }
 
 .fontSample {

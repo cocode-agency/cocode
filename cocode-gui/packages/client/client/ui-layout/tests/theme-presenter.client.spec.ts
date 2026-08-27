@@ -24,7 +24,6 @@ function snapshot(
   const active = { id: `${colorScheme}-test`, colorScheme, tokens }
   return {
     preference: colorScheme,
-    logoPreference: 'cocode',
     messageFontSize,
     active,
     themes: [active],

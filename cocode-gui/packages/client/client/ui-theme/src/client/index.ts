@@ -21,9 +21,6 @@ import { createAppearanceSectionStore } from './settings-store.ts'
 import { installThemeStyles } from './styles.ts'
 import { en, zh, type ThemeKey } from './locales.ts'
 import {
-  isLogoPreference, readLogoPreference, writeLogoPreference, type LogoPreference,
-} from './logo-settings.ts'
-import {
   DEFAULT_MESSAGE_FONT_SIZE, DEFAULT_PREFERENCE, isMessageFontSize, isThemePreference,
   MESSAGE_FONT_SIZE_FIELD, THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
   type MessageFontSize, type ThemePreference, type ThemeSettings,
@@ -32,7 +29,6 @@ import {
 export type { AppearanceSectionComponentProps, AppearanceSectionInjected } from './AppearanceSection.tsx'
 export type { AppearanceSectionState } from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
-export type { LogoPreference } from './logo-settings.ts'
 export type { MessageFontSize, ThemePreference, ThemeSettings } from '../theme-settings.ts'
 
 /** Namespace owning this feature's settings-row copy. */
@@ -80,8 +76,6 @@ export interface ThemeDefinition {
 export interface ThemeSnapshot {
   /** The persisted preference (may be `system`). */
   preference: ThemePreference
-  /** Persisted sidebar logo style. */
-  logoPreference: LogoPreference
   /** Conversation message-list font size in pixels. */
   messageFontSize: MessageFontSize
   /**
@@ -162,7 +156,6 @@ export class ThemeRuntime {
   private readonly host: SettingsScope<ThemeSettings>
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
   private preference: ThemePreference
-  private logoPreference: LogoPreference
   private messageFontSize: MessageFontSize
   private revision = 0
   private snapshot: ThemeSnapshot
@@ -180,7 +173,6 @@ export class ThemeRuntime {
     this.ctx = ctx
     this.host = host
     this.preference = DEFAULT_PREFERENCE
-    this.logoPreference = readLogoPreference()
     this.messageFontSize = DEFAULT_MESSAGE_FONT_SIZE
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
@@ -243,15 +235,6 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Switch the sidebar logo style and persist the accepted preference. */
-  setLogo(id: string): void {
-    if (!isLogoPreference(id)) throw new Error(`logo "${id}" is not supported`)
-    if (this.logoPreference === id) return
-    this.logoPreference = id
-    writeLogoPreference(id)
-    this.publish()
-  }
-
   /** Switch the conversation message-list font size and persist the choice. */
   setMessageFontSize(size: string): void {
     if (!isMessageFontSize(size)) throw new Error(`message font size "${size}" is not supported`)
@@ -261,7 +244,7 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Adopt the Host-backed appearance preferences without touching device-local logo state. */
+  /** Adopt the Host-backed appearance preferences. */
   private adopt(): void {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
@@ -340,7 +323,6 @@ export class ThemeRuntime {
     if (active === undefined) throw new Error(`theme registry lost "${resolvedId}"`)
     return Object.freeze({
       preference: this.preference,
-      logoPreference: this.logoPreference,
       messageFontSize: this.messageFontSize,
       active: this.composeActive(active),
       themes: Object.freeze([...this.themes]),
@@ -440,7 +422,6 @@ export function apply(ctx: ClientContext): void {
     bound?.sync(
       snapshot.preference,
       snapshot.active.colorScheme,
-      snapshot.logoPreference,
       snapshot.messageFontSize,
       snapshot.revision,
     )
@@ -453,7 +434,6 @@ export function apply(ctx: ClientContext): void {
     sync(theme.getTheme())
     return {
       setTheme: (id) => { theme.setTheme(id) },
-      setLogo: (id) => { theme.setLogo(id) },
       setMessageFontSize: (size) => { theme.setMessageFontSize(size) },
     }
   }

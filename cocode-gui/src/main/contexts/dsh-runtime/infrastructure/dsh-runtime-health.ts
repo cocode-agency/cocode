@@ -8,6 +8,7 @@ export const REQUIRED_COCODE_WEB_CLIENTS = [
 	"cocode-workbench",
 	"cocode-account",
 	"cocode-shortcuts",
+	"cocode-brand",
 ] as const
 
 export type DshRuntimeFetch = typeof fetch

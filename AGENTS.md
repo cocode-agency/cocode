@@ -87,6 +87,12 @@ pnpm install && pnpm run build
 pnpm dsh web          # GUI 联调
 ```
 
+## DSH 定制分层（cocode-gui）
+
+`packages/client` 是上游 DSH 客户端快照，**禁止**再往里面写产品改动。产品能力进 `packages/cocode/*`，由 Electron `--patch` overlay 挂载（见 `createDshDesktopPatch`）。没有扩展点的内部洞才用 `patches/*.patch`（钉版本，上游合入即删）。
+
+升级 DSH：换 `packages/client` 快照 / bump npm，再 rebase 那一小撮 patch，不要在快照上叠产品 commit。
+
 ## 约定
 
 - **包名**：GUI 用 `@cocode/gui-*`、`@cocode/ui`；TUI 用 `@cocode/tui-*`；harness 用 `@deepseek-ai/dsh-*`。

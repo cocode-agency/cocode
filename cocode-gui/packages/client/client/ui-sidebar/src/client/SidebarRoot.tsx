@@ -18,12 +18,11 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  BrandWordmark, FishLogo,
+  FishLogo,
   IconNewChatOutline16, IconPanelLeftOutline16,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
-import { CocodeLogo } from './CocodeLogo.tsx'
 import css from './SidebarRoot.module.css'
 
 /** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
@@ -49,9 +48,7 @@ export function SidebarRoot({
   toggleSidebar,
   t,
   renderSlot,
-  useStore,
 }: SidebarRootComponentProps) {
-  const logoPreference = useStore(state => state.logoPreference)
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   const [settled, setSettled] = useState(collapsed)
@@ -141,12 +138,15 @@ export function SidebarRoot({
             aria-label={t('session.new.label')}
             onClick={() => { startSession() }}
           >
-            {logoPreference === 'cocode'
-              ? <CocodeLogo className={css.brandLogo} size={18} />
-              : <BrandWordmark className={css.brandLogo} size={18} />}
+            {renderSlot('sidebar.brand.mark', { size: 18, className: css.brandLogo }, {
+              fallback: <FishLogo className={css.brandLogo} size={18} />,
+            })}
+            {renderSlot('sidebar.brand.name', {}, {
+              fallback: <LocalBuildName />,
+            })}
           </button>
         )}
-        {/* Rail resting state is the Cocode mark; hovering swaps in the panel
+        {/* Rail resting state is the brand mark; hovering swaps in the panel
             icon (the expand affordance, figma sidebar-hover flow). */}
         <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
           <button
@@ -155,9 +155,9 @@ export function SidebarRoot({
             aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
             onClick={() => { toggleSidebar() }}
           >
-            {!wide && (logoPreference === 'cocode'
-              ? <CocodeLogo className={clsx(css.railLogo, css.cocodeRailLogo)} variant="mark" size={18} />
-              : <FishLogo className={css.railLogo} size={24} />)}
+            {!wide && renderSlot('sidebar.brand.mark', { size: 24, className: css.railLogo }, {
+              fallback: <FishLogo className={css.railLogo} size={24} />,
+            })}
             {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
             <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
           </button>
@@ -196,5 +196,16 @@ export function SidebarRoot({
         </div>
       </div>
     </div>
+  )
+}
+
+/** Generic name fallback when no deployment package fills `sidebar.brand.name`. */
+function LocalBuildName() {
+  const hash = process.env.DSH_CLIENT_COMMIT_HASH
+  return (
+    <span className={css.localBuild}>
+      <span>DSH Local Build</span>
+      {hash !== undefined && hash !== '' ? <span className={css.buildHash}>{hash}</span> : null}
+    </span>
   )
 }

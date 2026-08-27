@@ -9,7 +9,6 @@ import {
   type MessageFontSize,
   type ThemePreference,
 } from '../theme-settings.ts'
-import type { LogoPreference } from './logo-settings.ts'
 
 /** Store state mirrored from the theme snapshot. */
 export interface AppearanceSectionState {
@@ -17,8 +16,6 @@ export interface AppearanceSectionState {
   preference: ThemePreference
   /** Resolved scheme while preference is `system`. */
   activeColorScheme: 'light' | 'dark'
-  /** Selected sidebar logo style. */
-  logoPreference: LogoPreference
   /** Conversation message-list font size in pixels. */
   messageFontSize: MessageFontSize
   /** Service revision; -1 until first sync so revision 0 lands as a change. */
@@ -31,7 +28,6 @@ type AppearanceSectionActions = {
     draft: AppearanceSectionState,
     preference: ThemePreference,
     activeColorScheme: 'light' | 'dark',
-    logoPreference: LogoPreference,
     messageFontSize: MessageFontSize,
     revision: number,
   ) => void
@@ -46,7 +42,6 @@ export function createAppearanceSectionStore(): EngineStoreHandle<AppearanceSect
     init: (): AppearanceSectionState => ({
       preference: 'system',
       activeColorScheme: 'light',
-      logoPreference: 'cocode',
       messageFontSize: DEFAULT_MESSAGE_FONT_SIZE,
       revision: -1,
     }),
@@ -55,14 +50,12 @@ export function createAppearanceSectionStore(): EngineStoreHandle<AppearanceSect
         d,
         preference: ThemePreference,
         activeColorScheme: 'light' | 'dark',
-        logoPreference: LogoPreference,
         messageFontSize: MessageFontSize,
         revision: number,
       ) => {
         if (revision <= d.revision) return
         d.preference = preference
         d.activeColorScheme = activeColorScheme
-        d.logoPreference = logoPreference
         d.messageFontSize = messageFontSize
         d.revision = revision
       },
