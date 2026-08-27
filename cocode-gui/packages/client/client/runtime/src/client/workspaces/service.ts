@@ -55,6 +55,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly manager: WorkspaceManager
   /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  /** In-flight ordinary-chat creates keyed by their configured storage directory. */
+  private readonly connectingDefault = new Map<string | undefined, Promise<SessionId>>()
   /** User-configured directory for sessions that do not belong to a Workspace. */
   private defaultStoragePath: string | undefined
   /** Guards the runtime-owned one-shot initial-selection subscription. */
@@ -117,11 +119,51 @@ export class WorkspaceRuntime implements IWorkspaces {
     return attempt
   }
 
-  /** Create one ordinary chat session without attaching it to a Workspace. */
+  /**
+   * Reuse an eligible blank ordinary chat, or create one without attaching it
+   * to a project Workspace. The current client contract keeps the configured
+   * directory as the session cwd; it is not a session-id-derived subdirectory.
+   * Concurrent connects for one storage setting share root lookup, reuse scan,
+   * and Host create.
+   */
   connectDefaultSession(): Promise<SessionId> {
-    return this.sessions.create(this.defaultStoragePath === undefined
-      ? {}
-      : { cwd: this.defaultStoragePath })
+    const configuredRoot = this.defaultStoragePath
+    const inflight = this.connectingDefault.get(configuredRoot)
+    if (inflight !== undefined) return inflight
+
+    const attempt = (async (): Promise<SessionId> => {
+      let root = configuredRoot
+      if (root === undefined) {
+        const description = await this.api.host.describe({})
+        if (!description.result.ok) {
+          throw new Error(`host describe failed: ${description.result.error.message}`)
+        }
+        root = description.result.value.cwd
+      }
+      const storageRoot = root
+
+      const workspace = this.list.getSnapshot()
+      const grouped = new Set(workspace.items.flatMap(item => item.sessionIds))
+      const archived = new Set(workspace.archivedSessionIds)
+      const sessions = this.sessions.list.getSnapshot()
+      const reusable = (id: SessionId): boolean => {
+        const summary = sessions.byId[id]
+        return summary?.blank === true
+          && !grouped.has(id)
+          && !archived.has(id)
+          && summary.cwd === storageRoot
+      }
+
+      const current = sessions.current
+      if (current !== undefined && reusable(current)) return current
+      for (const id of sessions.ids) {
+        if (id !== current && reusable(id)) return id
+      }
+
+      return this.sessions.create({ cwd: storageRoot })
+    })().finally(() => { this.connectingDefault.delete(configuredRoot) })
+    this.connectingDefault.set(configuredRoot, attempt)
+    return attempt
   }
 
   /** Set the directory used by future ordinary chat sessions. */
