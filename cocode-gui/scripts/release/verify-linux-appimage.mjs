@@ -159,6 +159,8 @@ function verifyAppDir(appDir, arch) {
 	if (tuiManifest.schemaVersion !== 1 || tuiManifest.entry !== "tui/cocode-cli.mjs")
 		throw new Error("TUI manifest schema is invalid.")
 	const tuiRoot = path.join(appDir, "resources", "tui")
+	const headlessEntry = path.join(tuiRoot, "headless-run.mjs")
+	if (!existsSync(headlessEntry)) throw new Error(`AppImage TUI is missing: ${headlessEntry}`)
 	const cliSha256 = createHash("sha256")
 		.update(readFileSync(path.join(tuiRoot, "cocode-cli.mjs")))
 		.digest("hex")

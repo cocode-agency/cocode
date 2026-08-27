@@ -56,6 +56,14 @@
   user-select: none;
 }
 
+/* A fixed Settings overlay is rendered from the sidebar and can cover this
+   titlebar drag strip; while the panel is open, opt the strip out of
+   hit-testing so Electron routes clicks on the mask to the panel instead of
+   window dragging. */
+:global(html[data-dsh-desktop='true'] body:has([data-settings-panel])) .titlebarDragRegion {
+  -webkit-app-region: no-drag;
+}
+
 :global(html[data-dsh-desktop='true']) .root button,
 :global(html[data-dsh-desktop='true']) .root a,
 :global(html[data-dsh-desktop='true']) .root input,

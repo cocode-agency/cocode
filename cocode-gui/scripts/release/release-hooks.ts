@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
 import {
@@ -834,9 +834,10 @@ async function verifyTuiArtifact(root: string): Promise<void> {
 	const entry = path.join(root, "cocode-tui.mjs")
 	const cliEntry = path.join(root, "cocode-cli.mjs")
 	const cliModule = path.join(root, "cli.mjs")
+	const headlessEntry = path.join(root, "headless-run.mjs")
 	const meta = path.join(root, "cocode-tui.meta.json")
 	const manifestPath = path.join(root, "manifest.json")
-	for (const file of [entry, cliEntry, cliModule, meta, manifestPath]) {
+	for (const file of [entry, cliEntry, cliModule, headlessEntry, meta, manifestPath]) {
 		try {
 			await fs.access(file)
 		} catch {
@@ -856,6 +857,12 @@ async function verifyTuiArtifact(root: string): Promise<void> {
 	const runtimeHash = createHash("sha256").update(await fs.readFile(entry)).digest("hex")
 	if (cliHash !== manifest.sha256 || runtimeHash !== manifest.runtimeSha256) {
 		throw new Error("TUI artifact hash does not match its manifest.")
+	}
+	const smoke = spawnSync(process.execPath, [entry], { encoding: "utf8" })
+	if (smoke.status !== 1 || !String(smoke.stderr).includes("Cocode TUI requires a TTY.")) {
+		throw new Error(
+			`TUI artifact failed to start: ${smoke.stderr || smoke.stdout || `exit ${String(smoke.status)}`}`,
+		)
 	}
 }
 

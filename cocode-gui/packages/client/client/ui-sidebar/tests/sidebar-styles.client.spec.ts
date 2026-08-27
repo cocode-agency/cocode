@@ -69,4 +69,10 @@ describe('SidebarRoot.module.css', () => {
     expect(css).toMatch(/html\[data-dsh-desktop='true'\][\s\S]*-webkit-app-region:\s*no-drag/)
     expect(css).toMatch(/\.cocodeRailLogo\s*\{[\s\S]*transform:/)
   })
+
+  it('opts the titlebar drag strip out of hit-testing while the Settings panel is open', () => {
+    expect(css).toMatch(
+      /:global\(html\[data-dsh-desktop='true'\] body:has\(\[data-settings-panel\]\)\) \.titlebarDragRegion\s*\{[\s\S]*-webkit-app-region:\s*no-drag;/,
+    )
+  })
 })
