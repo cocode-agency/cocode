@@ -47,6 +47,13 @@ export class DirectoryBrowseError extends Error {
   }
 }
 
+/** Canonical per-session directory below an ordinary-chat storage root. */
+function ordinarySessionCwd(root: string, sessionId: SessionId): string {
+  const base = root.replace(/[/\\]+$/, '')
+  const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  return `${base}${separator}${sessionId}`
+}
+
 /** Real Workspace object layer and Host actions. */
 export class WorkspaceRuntime implements IWorkspaces {
   /** UI-facing immutable projection; the manager remains wire truth. */
@@ -121,10 +128,10 @@ export class WorkspaceRuntime implements IWorkspaces {
 
   /**
    * Reuse an eligible blank ordinary chat, or create one without attaching it
-   * to a project Workspace. The current client contract keeps the configured
-   * directory as the session cwd; it is not a session-id-derived subdirectory.
-   * Concurrent connects for one storage setting share root lookup, reuse scan,
-   * and Host create.
+   * to a project Workspace. Each ordinary chat stays isolated below the
+   * configured (or Host-default) storage root by its session id. Concurrent
+   * connects for one storage setting share root lookup, reuse scan, and Host
+   * create.
    */
   connectDefaultSession(): Promise<SessionId> {
     const configuredRoot = this.defaultStoragePath
@@ -151,7 +158,7 @@ export class WorkspaceRuntime implements IWorkspaces {
         return summary?.blank === true
           && !grouped.has(id)
           && !archived.has(id)
-          && summary.cwd === storageRoot
+          && summary.cwd === ordinarySessionCwd(storageRoot, id)
       }
 
       const current = sessions.current
@@ -160,7 +167,8 @@ export class WorkspaceRuntime implements IWorkspaces {
         if (id !== current && reusable(id)) return id
       }
 
-      return this.sessions.create({ cwd: storageRoot })
+      const sessionId = `session-${crypto.randomUUID()}` as SessionId
+      return this.sessions.create({ sessionId, cwd: ordinarySessionCwd(storageRoot, sessionId) })
     })().finally(() => { this.connectingDefault.delete(configuredRoot) })
     this.connectingDefault.set(configuredRoot, attempt)
     return attempt

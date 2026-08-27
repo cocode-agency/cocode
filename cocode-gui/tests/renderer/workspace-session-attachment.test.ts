@@ -83,14 +83,37 @@ test("new session without a project workspace creates and opens an ordinary chat
 			}),
 		},
 	}
-	const createCalls: Array<{ workspaceId?: string; cwd?: string }> = []
-	let opened: string | undefined
-	const sessions = createSessionsPort(async (input) => {
-		createCalls.push(input)
-		return "session-ordinary" as never
+	const sessionsList = createSnapshotStore({
+		ids: [] as never[],
+		byId: {},
+		current: undefined,
+		phase: "ready" as const,
 	})
-	sessions.open = (sessionId) => {
-		opened = sessionId
+	let opened: string | undefined
+	let receivedCwd: string | undefined
+	let receivedSessionId: string | undefined
+	const sessions: SessionsPort = {
+		list: sessionsList,
+		async create({ cwd, sessionId }) {
+			receivedCwd = cwd
+			receivedSessionId = sessionId
+			assert.match(sessionId ?? "", /^session-[0-9a-f-]{36}$/)
+			assert.equal(cwd, `/tmp/cocode-default/${sessionId}`)
+			sessionsList.update((draft) => {
+				draft.ids = [sessionId!]
+				draft.byId[sessionId!] = {
+					id: sessionId!,
+					blank: true,
+					cwd,
+					updatedAt: Date.now(),
+				}
+			})
+			return sessionId!
+		},
+		open: (sessionId) => {
+			opened = sessionId
+		},
+		clear: () => {},
 	}
 	const runtime = new WorkspaceRuntime(new Context(), api as never, sessions)
 
@@ -98,23 +121,27 @@ test("new session without a project workspace creates and opens an ordinary chat
 	runtime.startSession()
 	await new Promise((resolve) => setImmediate(resolve))
 
-	assert.deepEqual(createCalls, [{ cwd: "/tmp/cocode-default" }])
-	assert.equal(opened, "session-ordinary")
+	assert.equal(receivedCwd, `/tmp/cocode-default/${receivedSessionId}`)
+	assert.equal(opened, receivedSessionId)
 })
 
 test("ordinary chats use the configured default storage path", async () => {
-	const createCalls: Array<{ workspaceId?: string; cwd?: string }> = []
-	const sessions = createSessionsPort(async (input) => {
-		createCalls.push(input)
-		return "session-configured" as never
+	let receivedCwd: string | undefined
+	let receivedSessionId: string | undefined
+	const sessions = createSessionsPort(async ({ cwd, sessionId }) => {
+		receivedCwd = cwd
+		receivedSessionId = sessionId
+		assert.match(sessionId ?? "", /^session-[0-9a-f-]{36}$/)
+		assert.equal(cwd, `/tmp/recent-cocode/${sessionId}`)
+		return sessionId!
 	})
 	const runtime = new WorkspaceRuntime(new Context(), {} as never, sessions)
 
 	runtime.configureDefaultStorage("/tmp/recent-cocode")
 	const sessionId = await runtime.connectDefaultSession()
 
-	assert.equal(sessionId, "session-configured")
-	assert.deepEqual(createCalls, [{ cwd: "/tmp/recent-cocode" }])
+	assert.equal(sessionId, receivedSessionId)
+	assert.equal(receivedCwd, `/tmp/recent-cocode/${sessionId}`)
 })
 
 test("ordinary chats reuse the selected blank ungrouped session", async () => {
@@ -124,7 +151,7 @@ test("ordinary chats reuse the selected blank ungrouped session", async () => {
 			"session-blank": {
 				id: "session-blank",
 				blank: true,
-				cwd: "/tmp/cocode-default",
+				cwd: "/tmp/cocode-default/session-blank",
 				updatedAt: Date.now(),
 			},
 		},
@@ -168,13 +195,13 @@ test("ordinary chats reuse a hidden non-current blank ungrouped session", async 
 			"session-current": {
 				id: "session-current",
 				blank: false,
-				cwd: "/tmp/cocode-default",
+				cwd: "/tmp/cocode-default/session-current",
 				updatedAt: Date.now(),
 			},
 			"session-hidden-blank": {
 				id: "session-hidden-blank",
 				blank: true,
-				cwd: "/tmp/cocode-default",
+				cwd: "/tmp/cocode-default/session-hidden-blank",
 				updatedAt: Date.now() - 1,
 			},
 		},
@@ -222,14 +249,15 @@ test("ordinary chats coalesce concurrent creates and retry after failure", async
 	let rejectFirst: ((reason: Error) => void) | undefined
 	const sessions: SessionsPort = {
 		list: sessionsList,
-		create: () => {
+		create: ({ sessionId }) => {
 			attempts++
+			assert.match(sessionId ?? "", /^session-[0-9a-f-]{36}$/)
 			if (attempts === 1) {
 				return new Promise<string>((_resolve, reject) => {
 					rejectFirst = reject
 				})
 			}
-			return Promise.resolve("session-new")
+			return Promise.resolve(sessionId!)
 		},
 		open: () => {},
 		clear: () => {},
@@ -256,7 +284,8 @@ test("ordinary chats coalesce concurrent creates and retry after failure", async
 	assert.equal(attempts, 1)
 	rejectFirst?.(new Error("create failed"))
 	await assert.rejects(first, /create failed/)
-	assert.equal(await runtime.connectDefaultSession(), "session-new")
+	await assert.rejects(duplicate, /create failed/)
+	assert.match(await runtime.connectDefaultSession(), /^session-[0-9a-f-]{36}$/)
 	assert.equal(attempts, 2)
 })
 
@@ -266,16 +295,19 @@ test("ordinary chats do not reuse project, archived, or differently stored blank
 			workspaceSessionIds: ["session-blank"] as string[],
 			archivedSessionIds: [] as string[],
 			configuredRoot: "/tmp/cocode-default",
+			cwd: "/tmp/cocode-default/session-blank",
 		},
 		{
 			workspaceSessionIds: [] as string[],
 			archivedSessionIds: ["session-blank"] as string[],
 			configuredRoot: "/tmp/cocode-default",
+			cwd: "/tmp/cocode-default/session-blank",
 		},
 		{
 			workspaceSessionIds: [] as string[],
 			archivedSessionIds: [] as string[],
 			configuredRoot: "/tmp/new",
+			cwd: "/tmp/old/session-blank",
 		},
 	]
 
@@ -286,8 +318,7 @@ test("ordinary chats do not reuse project, archived, or differently stored blank
 				"session-blank": {
 					id: "session-blank",
 					blank: true,
-					cwd:
-						scenario.configuredRoot === "/tmp/new" ? "/tmp/old" : "/tmp/cocode-default",
+					cwd: scenario.cwd,
 					updatedAt: Date.now(),
 				},
 			},
@@ -296,12 +327,14 @@ test("ordinary chats do not reuse project, archived, or differently stored blank
 		})
 		let createdCount = 0
 		let receivedCwd: string | undefined
+		let receivedSessionId: string | undefined
 		const sessions: SessionsPort = {
 			list: sessionsList,
 			async create(input) {
 				createdCount++
 				receivedCwd = input.cwd
-				return "session-new"
+				receivedSessionId = input.sessionId
+				return input.sessionId!
 			},
 			open: () => {},
 			clear: () => {},
@@ -334,8 +367,10 @@ test("ordinary chats do not reuse project, archived, or differently stored blank
 		await runtime.refresh()
 		runtime.configureDefaultStorage(scenario.configuredRoot)
 
-		assert.equal(await runtime.connectDefaultSession(), "session-new")
+		const sessionId = await runtime.connectDefaultSession()
+		assert.equal(sessionId, receivedSessionId)
+		assert.match(sessionId, /^session-[0-9a-f-]{36}$/)
 		assert.equal(createdCount, 1)
-		assert.equal(receivedCwd, scenario.configuredRoot)
+		assert.equal(receivedCwd, `${scenario.configuredRoot}/${sessionId}`)
 	}
 })
