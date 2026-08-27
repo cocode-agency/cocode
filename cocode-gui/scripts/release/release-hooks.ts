@@ -834,9 +834,10 @@ async function verifyTuiArtifact(root: string): Promise<void> {
 	const entry = path.join(root, "cocode-tui.mjs")
 	const cliEntry = path.join(root, "cocode-cli.mjs")
 	const cliModule = path.join(root, "cli.mjs")
+	const headlessEntry = path.join(root, "headless-run.mjs")
 	const meta = path.join(root, "cocode-tui.meta.json")
 	const manifestPath = path.join(root, "manifest.json")
-	for (const file of [entry, cliEntry, cliModule, meta, manifestPath]) {
+	for (const file of [entry, cliEntry, cliModule, headlessEntry, meta, manifestPath]) {
 		try {
 			await fs.access(file)
 		} catch {

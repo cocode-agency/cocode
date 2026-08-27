@@ -30,11 +30,14 @@ export function buildTui({ output = defaultOutput() } = {}) {
 	const sourceMeta = path.join(tuiRoot, "dist", "cocode-tui.meta.json")
 	const sourceCli = path.join(tuiRoot, "bin", "cocode-tui.mjs")
 	const sourceCliModule = path.join(tuiRoot, "bin", "cli.mjs")
+	const sourceHeadless = path.join(tuiRoot, "bin", "headless-run.mjs")
 	if (!existsSync(sourceEntry)) throw new Error(`TUI build did not emit ${sourceEntry}`)
 	if (!existsSync(sourceMeta)) throw new Error(`TUI build did not emit ${sourceMeta}`)
 	if (!existsSync(sourceCli)) throw new Error(`TUI CLI entry is missing: ${sourceCli}`)
 	if (!existsSync(sourceCliModule))
 		throw new Error(`TUI CLI module is missing: ${sourceCliModule}`)
+	if (!existsSync(sourceHeadless))
+		throw new Error(`TUI headless runner is missing: ${sourceHeadless}`)
 
 	rmSync(output, { recursive: true, force: true })
 	mkdirSync(output, { recursive: true })
@@ -42,6 +45,7 @@ export function buildTui({ output = defaultOutput() } = {}) {
 	copyFileSync(sourceMeta, path.join(output, "cocode-tui.meta.json"))
 	copyFileSync(sourceCli, path.join(output, "cocode-cli.mjs"))
 	copyFileSync(sourceCliModule, path.join(output, "cli.mjs"))
+	copyFileSync(sourceHeadless, path.join(output, "headless-run.mjs"))
 
 	const guiPackage = readJson(path.join(guiRoot, "package.json"))
 	const tuiPackage = readJson(path.join(tuiRoot, "package.json"))

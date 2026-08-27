@@ -181,6 +181,7 @@ export function verifyLinuxUnpackedApplication(appRoot) {
 		throw new Error("Packaged DSH runtime manifest is not linux/arm64.")
 
 	const tuiRoot = path.join(resourcesRoot, "tui")
+	assertFile(path.join(tuiRoot, "headless-run.mjs"), "packaged ARM64 application asset")
 	const tuiManifest = JSON.parse(readFileSync(path.join(tuiRoot, "manifest.json"), "utf8"))
 	if (tuiManifest.schemaVersion !== 1 || tuiManifest.entry !== "tui/cocode-cli.mjs")
 		throw new Error("Packaged TUI manifest schema is invalid.")

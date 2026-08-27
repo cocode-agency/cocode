@@ -21,6 +21,7 @@ const required = [
 	"Cocode.app/Contents/Resources/cocode-node",
 	"Cocode.app/Contents/Resources/tui/cocode-cli.mjs",
 	"Cocode.app/Contents/Resources/tui/cli.mjs",
+	"Cocode.app/Contents/Resources/tui/headless-run.mjs",
 	"Cocode.app/Contents/Resources/tui/cocode-tui.mjs",
 	"Cocode.app/Contents/Resources/dsh-runtime/packages/host-supervisor/lib/bin.js",
 ]
