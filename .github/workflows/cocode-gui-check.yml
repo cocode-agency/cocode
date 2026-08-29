@@ -68,6 +68,10 @@ jobs:
         working-directory: cocode-host-supervisor
         run: corepack pnpm@10.34.5 run build
 
+      - name: Prepare Host Supervisor native helpers
+        working-directory: cocode-host-supervisor
+        run: corepack pnpm@10.34.5 rebuild node-pty
+
       - name: Install TUI dependencies
         working-directory: cocode-tui
         run: corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
