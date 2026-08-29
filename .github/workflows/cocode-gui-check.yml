@@ -215,7 +215,7 @@ jobs:
         run: corepack pnpm@10.34.5 run build:runtime -- --clean
 
       - name: Verify DSH runtime
-        run: corepack pnpm@10.34.5 run verify:runtime
+        run: corepack pnpm@10.34.5 run verify:runtime -- --runtime-root .cache/cocode/release-runtime
 
       - name: Build staged TUI runtime
         run: corepack pnpm@10.34.5 run build:tui
