@@ -1,5 +1,10 @@
 import { deviceKeyExpiry, deviceKeyName } from "./device-name"
 import { guiClientIdentity } from "./client-identity"
+import type {
+	AccountMessageFeedback,
+	AccountMessageFeedbackDeleteResult,
+	AccountMessageFeedbackPutResult,
+} from "../../../../contracts/ipc/account.contract"
 
 type AgencyResponse<T> = { readonly status: number; readonly value: T }
 
@@ -26,6 +31,26 @@ function problemDetail(value: unknown): string | undefined {
 			.slice(0, 200)
 	}
 	return undefined
+}
+
+function feedbackVersionConflict(
+	value: unknown,
+):
+	| { readonly code: "version-conflict"; readonly current: AccountMessageFeedback | null }
+	| undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+	const record = value as Record<string, unknown>
+	if (record.code !== "version-conflict") return undefined
+	const current = record.current
+	if (
+		current !== null &&
+		(typeof current !== "object" || current === null || Array.isArray(current))
+	)
+		return undefined
+	return {
+		code: "version-conflict",
+		current: current as AccountMessageFeedback | null,
+	}
 }
 
 export type TokenPair = {
@@ -64,6 +89,7 @@ export type AgencyMessageFeedback = {
 	readonly message_id: string
 	readonly rating: "positive" | "negative"
 	readonly note?: string | null
+	readonly version?: string | number
 	readonly created_at?: string
 	readonly updated_at?: string
 }
@@ -309,7 +335,8 @@ export class AgencyClient {
 			.map((row) => ({
 				id: row.id,
 				name: row.name?.trim() || row.id,
-				...(row.reasoning_efforts !== undefined && Object.keys(row.reasoning_efforts).length > 0
+				...(row.reasoning_efforts !== undefined &&
+				Object.keys(row.reasoning_efforts).length > 0
 					? { reasoningEfforts: row.reasoning_efforts }
 					: {}),
 			}))
@@ -442,8 +469,9 @@ export class AgencyClient {
 			readonly messageId: string
 			readonly rating: "positive" | "negative"
 			readonly note?: string
+			readonly ifVersion: string | number | null
 		},
-	): Promise<AgencyMessageFeedback> {
+	): Promise<AccountMessageFeedbackPutResult> {
 		const response = await this.request<AgencyMessageFeedback>("/v1/me/message-feedback", {
 			method: "PUT",
 			token: accessToken,
@@ -452,31 +480,45 @@ export class AgencyClient {
 				message_id: input.messageId,
 				rating: input.rating,
 				...(input.note === undefined ? {} : { note: input.note }),
+				if_version: input.ifVersion,
 			},
 		})
+		if (response.status === 409) {
+			const conflict = feedbackVersionConflict(response.value)
+			if (conflict !== undefined) return { ok: false, error: conflict }
+		}
 		if (
 			response.status !== 200 ||
 			typeof response.value !== "object" ||
 			response.value === null
 		)
 			throw new AgencyHttpError("could not save message feedback", response.status)
-		return response.value
+		return { ok: true, value: response.value }
 	}
 
 	async deleteMessageFeedback(
 		accessToken: string,
-		sessionId: string,
-		messageId: string,
-	): Promise<{ readonly deleted: true }> {
+		input: {
+			readonly sessionId: string
+			readonly messageId: string
+			readonly ifVersion: string | number
+		},
+	): Promise<AccountMessageFeedbackDeleteResult> {
 		const response = await this.request<{ readonly deleted?: boolean }>(
 			`/v1/me/message-feedback?session_id=${encodeURIComponent(
-				sessionId,
-			)}&message_id=${encodeURIComponent(messageId)}`,
+				input.sessionId,
+			)}&message_id=${encodeURIComponent(input.messageId)}&if_version=${encodeURIComponent(
+				String(input.ifVersion),
+			)}`,
 			{ method: "DELETE", token: accessToken },
 		)
+		if (response.status === 409) {
+			const conflict = feedbackVersionConflict(response.value)
+			if (conflict !== undefined) return { ok: false, error: conflict }
+		}
 		if (response.status !== 200 || response.value.deleted !== true)
 			throw new AgencyHttpError("could not delete message feedback", response.status)
-		return { deleted: true }
+		return { ok: true, value: { deleted: true } }
 	}
 
 	async revoke(refreshToken: string): Promise<void> {

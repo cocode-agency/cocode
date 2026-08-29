@@ -2,18 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
 
 describe('settings.theme dictionaries', () => {
-  it('cover every key consumed by the current Appearance section', () => {
+  it('cover every key consumed by the current Appearance row', () => {
     const keys = [
-      'nav',
       'appearance.title',
-      'appearance.auto',
       'appearance.light',
       'appearance.dark',
-      'appearance.font.title',
-      'appearance.font.14',
-      'appearance.font.16',
-      'appearance.font.18',
-      'appearance.font.20',
+      'appearance.system',
     ] as const
     for (const key of keys) {
       expect(zh[key]).toBeTypeOf('string')

@@ -14,6 +14,7 @@ import {
 	type DshModuleLoaderTarget,
 } from "./dsh-module-loader"
 import { installDshTransport, rebindDshTransport } from "./dsh-transport"
+import { spoofFileLoopbackHostname } from "./file-loopback-hostname"
 import {
 	isDesktopDshBridgeAvailable,
 	isElectronDesktopDevelopment,
@@ -32,6 +33,7 @@ const DESKTOP_DARWIN_TITLEBAR_INSET_PX = 32
 export async function startRenderer(element: HTMLElement): Promise<void> {
 	logger.info("renderer.start.started", { component: "renderer" })
 	try {
+		spoofFileLoopbackHostname()
 		const moduleLoader = ensureDshModuleLoader()
 		const bootstrap = await loadDshBootstrap()
 		applyInitialTheme(bootstrap.themePreference)

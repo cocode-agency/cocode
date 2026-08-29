@@ -34,6 +34,7 @@ function hostOver(core: SlotCore): SlotRendererHost {
     getVersion: key => core.getVersion(key),
     entriesOf: key => core.entries(key),
     entriesOfSlot: key => core.entriesOfSlot(key),
+    childrenOf: key => core.childrenOf(key),
     reportEntryError: (key, entry, error, info) => { core.reportEntryError(key, entry, error, info) },
     specOf: key => core.specDynamic(key),
     isLive: entry => core.isLive(entry),
@@ -124,5 +125,17 @@ describe('createSlotRenderer over the real SlotCore', () => {
     view.unmount()
     dispose()
     expect(() => captured!('spec.single', {})).toThrow(StaleAuthorizationError)
+  })
+
+  it('lets a shadow occupant inherit the incumbent child-slot declaration', () => {
+    const core = new SlotCore()
+    core.register({ name: 'root', children: {
+      'spec.single': { kind: 'single', scope: 'root' },
+    } }, ((props: PropsRenderSlots<'spec.single'>) => <>{props.renderSlot('spec.single', {})}</>) as never)
+    core.register({ name: 'spec.single' }, () => <b>inherited</b>)
+    core.register({ name: 'root', priority: -1 }, ((props: PropsRenderSlots<'spec.single'>) => <>{props.renderSlot('spec.single', {})}</>) as never)
+
+    const view = render(<>{createSlotRenderer().renderRoot(hostOver(core), {})}</>)
+    expect(view.container.textContent).toBe('inherited')
   })
 })

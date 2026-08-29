@@ -952,6 +952,16 @@ export class SlotCore {
   }
 
   /**
+   * Return the child declaration table owned by a live occupant of a slot.
+   * A shadow occupant may reuse this table without redeclaring the child keys;
+   * the declaration lifetime remains owned by the incumbent entry.
+   */
+  childrenOf(key: string): Readonly<Record<string, SlotSpec<SlotEntryDef>>> | undefined {
+    const record = this.records.get(key)
+    return record?.entries.find(entry => entry.children !== undefined)?.children
+  }
+
+  /**
    * Look up a slot's declared spec, narrowed by the SlotMap key.
    * @param key - SlotMap key.
    * @returns the spec, or undefined while undeclared.

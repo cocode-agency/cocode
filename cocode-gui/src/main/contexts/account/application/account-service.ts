@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto"
 import { shell } from "electron"
 import type {
-	AccountMessageFeedback,
+	AccountMessageFeedbackDeleteResult,
 	AccountMessageFeedbackList,
+	AccountMessageFeedbackPutResult,
 	AccountProfile,
 	AccountSnapshot,
 } from "../../../../contracts/ipc/account.contract"
@@ -120,13 +121,13 @@ type AccountAgency = {
 			messageId: string
 			rating: "positive" | "negative"
 			note?: string
+			ifVersion: string | number | null
 		},
-	): Promise<AccountMessageFeedback>
+	): Promise<AccountMessageFeedbackPutResult>
 	deleteMessageFeedback(
 		accessToken: string,
-		sessionId: string,
-		messageId: string,
-	): Promise<{ deleted: true }>
+		input: { sessionId: string; messageId: string; ifVersion: string | number },
+	): Promise<AccountMessageFeedbackDeleteResult>
 	revokeApiKey(accessToken: string, keyId: string): Promise<void>
 	revoke(refreshToken: string): Promise<void>
 }
@@ -522,14 +523,19 @@ export class AccountService {
 		messageId: string
 		rating: "positive" | "negative"
 		note?: string
-	}): Promise<AccountMessageFeedback> {
+		ifVersion: string | number | null
+	}): Promise<AccountMessageFeedbackPutResult> {
 		const state = await this.requireSignedInState()
 		return this.agency.putMessageFeedback(state.accessToken, input)
 	}
 
-	async deleteMessageFeedback(sessionId: string, messageId: string): Promise<{ deleted: true }> {
+	async deleteMessageFeedback(input: {
+		sessionId: string
+		messageId: string
+		ifVersion: string | number
+	}): Promise<AccountMessageFeedbackDeleteResult> {
 		const state = await this.requireSignedInState()
-		return this.agency.deleteMessageFeedback(state.accessToken, sessionId, messageId)
+		return this.agency.deleteMessageFeedback(state.accessToken, input)
 	}
 
 	/**

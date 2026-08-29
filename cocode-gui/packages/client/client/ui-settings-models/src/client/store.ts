@@ -13,7 +13,6 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
-import { isAccountManagedProvider } from './account-gate.ts'
 
 /**
  * Any route key walks a dict schema to the same profile node, so the lookup
@@ -29,8 +28,6 @@ export interface ProviderRow {
   configured: boolean
   /** Whether the user layer alone carries the profile and the page owns its lifecycle. */
   removable: boolean
-  /** Whether the route is provisioned and owned by the signed-in desktop account. */
-  managed?: boolean
   /** The credential reference the resolved profile names, when one does. */
   apiKeyEnv: string | undefined
   /** Credential state for {@link apiKeyEnv}, once described. */
@@ -125,7 +122,6 @@ export class ModelsSettingsStore {
     private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
-    private readonly hostedAllowed: (() => boolean) | undefined = undefined,
   ) {}
 
   /**
@@ -152,10 +148,7 @@ export class ModelsSettingsStore {
       if (mirrored.view === undefined) {
         throw new Error(mirrored.error ?? 'settings are unavailable in this browser')
       }
-      providers = providersResponse.result.value.providers.filter((provider) => {
-        if (this.hostedAllowed?.() !== false) return true
-        return !isAccountManagedProvider(provider.provider)
-      })
+      providers = providersResponse.result.value.providers
       writable = mirrored.view.writable
       views = mirrored.view.namespaces
     } catch (error) {
@@ -169,11 +162,9 @@ export class ModelsSettingsStore {
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
-      const managed = isAccountManagedProvider(entry.provider)
       const configured = namespace !== undefined
         && (entry.settingsPath.length === 0 || this.schema.getPath(namespace.value, entry.settingsPath) !== undefined)
       const removable = namespace !== undefined
-        && !managed
         && entry.settingsPath.length > 0
         && this.schema.hasPath(namespace.user, entry.settingsPath)
         && !this.schema.hasPath(namespace.base, entry.settingsPath)
@@ -181,7 +172,6 @@ export class ModelsSettingsStore {
         entry,
         configured,
         removable,
-        managed,
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
       }

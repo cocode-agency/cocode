@@ -93,14 +93,31 @@ describe("Cocode Web runtime health", () => {
 			{ id: "cocode-account", url: "/plugins/cocode-account/client.js", rev: "b" },
 			{ id: "cocode-shortcuts", url: "/plugins/cocode-shortcuts/client.js", rev: "c" },
 			{ id: "cocode-brand", url: "/plugins/cocode-brand/client.js", rev: "d" },
+			{
+				id: "cocode-input-history",
+				url: "/plugins/cocode-input-history/client.js",
+				rev: "e",
+			},
+			{ id: "cocode-appearance", url: "/plugins/cocode-appearance/client.js", rev: "f" },
+			{ id: "cocode-desktop", url: "/plugins/cocode-desktop/client.js", rev: "g" },
+			{
+				id: "cocode-message-feedback",
+				url: "/plugins/cocode-message-feedback/client.js",
+				rev: "h",
+			},
+			{ id: "cocode-models", url: "/plugins/cocode-models/client.js", rev: "i" },
 		],
 	} as const
 
 	it("requires all Desktop-owned Cocode entries", () => {
 		assertRequiredCocodeWebEntries(boot)
 		assert.throws(
-			() => assertRequiredCocodeWebEntries({ ...boot, entries: boot.entries.slice(0, 3) }),
-			/missing boot entry: cocode-brand/,
+			() =>
+				assertRequiredCocodeWebEntries({
+					...boot,
+					entries: boot.entries.filter((entry) => entry.id !== "cocode-desktop"),
+				}),
+			/missing boot entry: cocode-desktop/,
 		)
 	})
 
@@ -112,7 +129,12 @@ describe("Cocode Web runtime health", () => {
 		})
 		assert.deepEqual(requested.sort(), [
 			"http://127.0.0.1:3080/plugins/cocode-account/client.js",
+			"http://127.0.0.1:3080/plugins/cocode-appearance/client.js",
 			"http://127.0.0.1:3080/plugins/cocode-brand/client.js",
+			"http://127.0.0.1:3080/plugins/cocode-desktop/client.js",
+			"http://127.0.0.1:3080/plugins/cocode-input-history/client.js",
+			"http://127.0.0.1:3080/plugins/cocode-message-feedback/client.js",
+			"http://127.0.0.1:3080/plugins/cocode-models/client.js",
 			"http://127.0.0.1:3080/plugins/cocode-shortcuts/client.js",
 			"http://127.0.0.1:3080/plugins/cocode-workbench/client.js",
 		])

@@ -50,11 +50,26 @@ export type AccountMessageFeedback = {
 	readonly message_id: string
 	readonly rating: "positive" | "negative"
 	readonly note?: string | null
+	/** Opaque compare-and-set token returned by Agency. */
+	readonly version?: string | number
 	readonly created_at?: string
 	readonly updated_at?: string
 }
 
 export type AccountMessageFeedbackList = { readonly data: readonly AccountMessageFeedback[] }
+
+export type AccountMessageFeedbackVersionConflict = {
+	readonly code: "version-conflict"
+	readonly current: AccountMessageFeedback | null
+}
+
+export type AccountMessageFeedbackPutResult =
+	| { readonly ok: true; readonly value: AccountMessageFeedback }
+	| { readonly ok: false; readonly error: AccountMessageFeedbackVersionConflict }
+
+export type AccountMessageFeedbackDeleteResult =
+	| { readonly ok: true; readonly value: { readonly deleted: true } }
+	| { readonly ok: false; readonly error: AccountMessageFeedbackVersionConflict }
 
 export type AccountApi = {
 	readonly snapshot: () => Promise<AccountSnapshot>
@@ -70,10 +85,12 @@ export type AccountApi = {
 			messageId: string
 			rating: "positive" | "negative"
 			note?: string
-		}) => Promise<AccountMessageFeedback>
-		readonly delete: (
-			sessionId: string,
-			messageId: string,
-		) => Promise<{ readonly deleted: true }>
+			readonly ifVersion: string | number | null
+		}) => Promise<AccountMessageFeedbackPutResult>
+		readonly delete: (input: {
+			readonly sessionId: string
+			readonly messageId: string
+			readonly ifVersion: string | number
+		}) => Promise<AccountMessageFeedbackDeleteResult>
 	}
 }

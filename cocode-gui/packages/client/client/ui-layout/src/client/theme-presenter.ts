@@ -12,9 +12,6 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 /** Body attribute selecting the dark base palette in the token stylesheets. */
 export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
 
-/** CSS custom property carrying the conversation message-list font size. */
-export const MESSAGE_FONT_SIZE_VARIABLE = '--dsw-conversation-message-font-size'
-
 /** Applies theme snapshots to the document; one instance per plugin fiber. */
 export class ThemePresenter {
   /** Token names this presenter wrote in the last apply (its retraction set). */
@@ -49,8 +46,6 @@ export class ThemePresenter {
       body.style.setProperty(name, value)
       this.appliedTokens.push(name)
     }
-    body.style.setProperty(MESSAGE_FONT_SIZE_VARIABLE, `${snapshot.messageFontSize}px`)
-    this.appliedTokens.push(MESSAGE_FONT_SIZE_VARIABLE)
     this.themeColorMeta.content = getComputedStyle(body).backgroundColor
     if (!this.themeColorMeta.isConnected) document.head.append(this.themeColorMeta)
   }

@@ -1,0 +1,100 @@
+/* Desktop titlebar drag, sidebar inset, and composer stats hide. */
+
+:global(html[data-dsh-desktop='true'] [data-desktop-titlebar-drag]) {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--dsh-desktop-titlebar-inset, 32px);
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 2;
+}
+
+:global(html[data-dsh-desktop='true'] body:has([data-settings-panel]) [data-desktop-titlebar-drag]) {
+  -webkit-app-region: no-drag;
+}
+
+:global(body:has([data-settings-panel]) [data-conversation-scroll]),
+:global(body:has([data-settings-panel]) [data-conversation-scroll] *),
+:global(body:has([data-settings-panel]) [data-dsh-session-header]),
+:global(body:has([data-settings-panel]) [data-dsh-session-header] *) {
+  -webkit-app-region: no-drag;
+}
+
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar]) {
+  position: relative;
+  padding-top: var(--dsh-desktop-titlebar-inset, 32px);
+}
+
+:global(html[data-dsh-desktop-platform='darwin'] [data-cocode-sidebar]) {
+  background: transparent;
+}
+
+:global(html[data-dsh-desktop-platform='darwin'] :not([data-sidebar-collapsed]) > [data-cocode-sidebar]) {
+  padding-top: calc(var(--dsh-desktop-titlebar-inset, 32px) + 10px);
+}
+
+:global(html[data-dsh-desktop-platform='win32'] [data-cocode-sidebar]) {
+  padding-top: 6px;
+  background: transparent;
+}
+
+:global(html[data-dsh-desktop-platform='win32'] [data-desktop-titlebar-drag]) {
+  display: none;
+}
+
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] button),
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] a),
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] input),
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] select),
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] textarea),
+:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] [role='button']) {
+  -webkit-app-region: no-drag;
+}
+
+.recoveryBanner {
+  position: absolute;
+  top: calc(var(--dsh-shell-header-height, 46px) + 8px);
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(680px, calc(100% - 32px));
+  padding: 7px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  transform: translateX(-50%);
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--ds-shadow-md, 0 4px 16px rgb(0 0 0 / 18%));
+  font-size: 12px;
+  line-height: 18px;
+  pointer-events: auto;
+}
+
+.recoveryBanner button {
+  flex: none;
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 8px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  cursor: pointer;
+  font: inherit;
+}
+
+.recoveryBanner button:hover {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.recoveryBanner button + button {
+  background: var(--dsw-alias-button-tool-bar-fill);
+  color: var(--dsw-alias-label-primary);
+}
+
+.recoveryBanner button + button:hover {
+  background: var(--dsw-alias-button-tool-bar-hover);
+}

@@ -14,16 +14,14 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
-  IconLightOutline16, IconListPenOutline16, IconPersonalizationOutline16, IconSettingsOutline16,
+  IconPersonalizationOutline16, IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
-  if (id === 'appearance') return <IconLightOutline16 className={css.navIcon} size={16} />
   if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
-  if (id === 'cocode-shortcuts') return <IconListPenOutline16 className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
@@ -61,7 +59,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   useEffect(() => { closeButton.current?.focus() }, [])
 
   return (
-    <div className={css.overlay} data-settings-panel="" role="presentation">
+    <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <nav className={css.nav}>
@@ -104,7 +102,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
  * @returns the settings shell element tree.
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
-  const { useSections, useOnboardingSteps, useSessions, renderSlot } = props
+  const { wide, useSections, useOnboardingSteps, useSessions, renderSlot } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
@@ -117,19 +115,6 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     setOpen(true)
   }, [])
 
-  // The account footer owns the visible Settings entry. Keep this shell
-  // triggerless and open it through a product event so there is only one
-  // visible entry while all existing settings sections remain available.
-  useEffect(() => {
-    const onOpenSettings = (event: Event) => {
-      const detail = (event as CustomEvent<{ sectionId?: string }>).detail
-      setActiveId(detail?.sectionId)
-      setOpen(true)
-    }
-    window.addEventListener('cocode:open-settings', onOpenSettings)
-    return () => { window.removeEventListener('cocode:open-settings', onOpenSettings) }
-  }, [])
-
   // The ledger tick keeps the nav rows fresh: registrants re-register with
   // freshly localized text on locale change, and the trigger/header/close
   // seats re-render through their own outlets' subscriptions.
@@ -138,11 +123,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const onboardingActive = useSessions(state =>
     state.phase === 'ready'
     && (state.current === undefined || state.byId[state.current]?.blank === true))
-  // An explicitly opened Settings panel owns the interaction surface. Do not
-  // mount a first-run takeover above it: onboarding may open Models itself
-  // (for example after "稍后再说" on account sign-in), and leaving the next
-  // step mounted would either cover the panel or make its close button inert.
-  const onboardingStep = onboardingActive && !open
+  const onboardingStep = onboardingActive
     ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
     : undefined
 
@@ -160,6 +141,15 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
 
   return (
     <>
+      <button
+        type="button"
+        className={clsx(css.trigger, !wide && css.rail)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => { setOpen(true) }}
+      >
+        {renderSlot('settings.trigger', { wide })}
+      </button>
       {open && (
         <SettingsPanel
           rows={rows}

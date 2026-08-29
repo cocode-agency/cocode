@@ -47,6 +47,10 @@ const LOCAL_CLIENT_BUNDLES = new Map<string, string>([
 	["cocode-shortcuts", "cocode/cocode-shortcuts"],
 	["cocode-brand", "cocode/cocode-brand"],
 	["cocode-input-history", "cocode/cocode-input-history"],
+	["cocode-appearance", "cocode/cocode-appearance"],
+	["cocode-desktop", "cocode/cocode-desktop"],
+	["cocode-message-feedback", "cocode/cocode-message-feedback"],
+	["cocode-models", "cocode/cocode-models"],
 ])
 
 export function resolveLocalDshClientBundleUrl(packageId: string): string | undefined {

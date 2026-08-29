@@ -43,21 +43,4 @@ describe('ConversationRoot drag region styles', () => {
   it('keeps the fallback drag strip inside the scrolling body after transcript scroll', () => {
     expect(block('.scrollBody')).toMatch(/position:\s*relative;/)
   })
-
-  it('disables the conversation drag hit region while the settings panel is open', () => {
-    // The `.root` prefix and `:is()` compound raise specificity above the
-    // phase-scoped drag rule, so the override wins even in the draggable hero
-    // phase.
-    expect(css).toMatch(
-      /:global\(body:has\(\[data-settings-panel\]\)\) \.root :is\(\[data-conversation-scroll\]\)\s*\{[\s\S]*-webkit-app-region:\s*no-drag;/,
-    )
-  })
-
-  it('takes the whole conversation out of drag hit-testing while the settings panel is open', () => {
-    // The header/title drag band and the hero scroll-body fallback strip all
-    // sit under the settings panel's top-right close button.
-    expect(css).toMatch(
-      /:global\(body:has\(\[data-settings-panel\]\)\) \.root :where\(\*\)\s*\{[\s\S]*-webkit-app-region:\s*no-drag;/,
-    )
-  })
 })

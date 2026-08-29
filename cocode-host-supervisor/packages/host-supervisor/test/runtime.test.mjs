@@ -168,7 +168,10 @@ test('createRuntimePatch leaves shared DSH settings and credentials at their def
     [{ name: 'cocode-workbench', entry: '/tmp/cocode-workbench/lib/index.js' }],
   )
   const parsed = YAML.parse(patch)
-  assert.equal(parsed[1].insert[1].id, 'cocode-workbench')
+  const insert = parsed.find((entry) => entry?.insert !== undefined)?.insert
+  assert.equal(insert[1].id, 'cocode-workbench')
+  assert.equal(parsed.some((entry) => entry?.id === 'ui-message-feedback' && entry.disabled === true), true)
+  assert.equal(parsed.some((entry) => entry?.id === 'ui-settings-models' && entry.disabled === true), true)
   assert.equal(parsed.some((entry) => entry?.id === 'settings'), false)
   assert.equal(parsed.some((entry) => entry?.id === 'credentials'), false)
   assert.equal(parsed.some((entry) => entry?.id === 'llm-pi-ai'), false)

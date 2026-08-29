@@ -84,13 +84,6 @@ describe('connection client apply', () => {
     expect((await mount()).isLoopback).toBe(false)
   })
 
-  it('treats packaged file pages as local desktop clients', async () => {
-    ;(globalThis as Win).location = {
-      hostname: '', search: '', protocol: 'file:',
-    }
-    expect((await mount()).isLoopback).toBe(true)
-  })
-
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
     const handle = await mount()

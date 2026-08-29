@@ -287,15 +287,14 @@ describe('design-platform.css scrollbar tokens', () => {
   })
 
   it('resolves every scrollbar token to a palette or semantic token, not to another alias', () => {
-    // Cocode keeps the scrollbar palette semantic (for example
-    // --cocode-border-strong) while the upstream DSH palette uses static steps.
-    // Either is valid; a scrollbar token must not point at another --dsw-alias-*
-    // token because that makes the dark override order-dependent.
+    // The upstream DSH palette resolves scrollbar tokens to static steps.
+    // A scrollbar token must not point at another --dsw-alias-* token because
+    // that makes the dark override order-dependent.
     for (const rule of platformRules) {
       for (const [property, value] of rule.declarations) {
         if (!property.startsWith(TOKEN_PREFIX)) continue
         for (const reference of varReferences(value)) {
-          expect(reference, `${property}: ${value}`).toMatch(/^--(?:dsw-static|cocode)-/)
+          expect(reference, `${property}: ${value}`).toMatch(/^--dsw-static-/)
         }
       }
     }

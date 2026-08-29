@@ -75,6 +75,7 @@ export class HostedProviderGate {
   private readonly account = desktopAccount()
   private visible = true
   private off: (() => void) | undefined
+  private generation = 0
 
   /**
    * @param onChange - called whenever the answer changed.
@@ -88,16 +89,30 @@ export class HostedProviderGate {
   start(): void {
     const account = this.account
     if (account === undefined || this.off !== undefined) return
-    this.off = account.onChanged((snapshot) => { this.set(ownsHostedRoute(snapshot.phase)) })
+    const generation = ++this.generation
+    let eventSequence = 0
+    this.off = account.onChanged((snapshot) => {
+      if (generation !== this.generation) return
+      eventSequence += 1
+      this.set(ownsHostedRoute(snapshot.phase))
+    })
+    const snapshotSequence = eventSequence
     void account.snapshot().then(
-      (snapshot) => { this.set(ownsHostedRoute(snapshot.phase)) },
+      (snapshot) => {
+        if (generation === this.generation && snapshotSequence === eventSequence) {
+          this.set(ownsHostedRoute(snapshot.phase))
+        }
+      },
       // An unreachable bridge says nothing about the account, so the host's own
       // view of the provider directory remains the best answer available.
-      () => { this.set(true) },
+      () => {
+        if (generation === this.generation && snapshotSequence === eventSequence) this.set(true)
+      },
     )
   }
 
   dispose(): void {
+    this.generation += 1
     this.off?.()
     this.off = undefined
   }

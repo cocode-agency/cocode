@@ -295,20 +295,6 @@
   -webkit-app-region: no-drag;
 }
 
-/* A fixed Settings overlay is rendered from the sidebar but can cover this
-   whole conversation surface, and its header/title-band drag hit regions sit
-   under the panel's top-right close button. While it is open, take every
-   conversation descendant out of Electron drag hit-testing so clicks on the
-   popup route to the panel, never to window dragging. `.root` raises
-   specificity above the phase-scoped scroll rule so the override wins even in
-   the draggable hero phase. */
-:global(body:has([data-settings-panel])) .root :is([data-conversation-scroll]) {
-  -webkit-app-region: no-drag;
-}
-:global(body:has([data-settings-panel])) .root :where(*) {
-  -webkit-app-region: no-drag;
-}
-
 .root[data-phase='hero'] :global([data-conversation-scroll]) :where(*) {
   -webkit-app-region: no-drag;
   -webkit-user-select: text;

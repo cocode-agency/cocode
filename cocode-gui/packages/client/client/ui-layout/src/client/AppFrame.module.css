@@ -184,7 +184,7 @@
 .rowHandle::after {
   content: '';
   position: absolute;
-  background: var(--cocode-accent);
+  background: var(--dsw-alias-interactive-bg-primary);
   opacity: 0;
   transition: opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
@@ -220,49 +220,4 @@
      Forcing pointer-events on every child would let a full-size wrapper
      swallow the workbench header. */
   pointer-events: none;
-}
-
-.recoveryBanner {
-  position: absolute;
-  top: calc(var(--dsh-shell-header-height) + 8px);
-  left: 50%;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: min(680px, calc(100% - 32px));
-  padding: 7px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  transform: translateX(-50%);
-  background: var(--dsw-alias-bg-overlay);
-  color: var(--dsw-alias-label-primary);
-  box-shadow: var(--ds-shadow-md, 0 4px 16px rgb(0 0 0 / 18%));
-  font-size: 12px;
-  line-height: 18px;
-  pointer-events: auto;
-}
-
-.recoveryBanner button {
-  flex: none;
-  border: 0;
-  border-radius: 5px;
-  padding: 3px 8px;
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-foreground);
-  cursor: pointer;
-  font: inherit;
-}
-
-.recoveryBanner button:hover {
-  background: var(--dsw-alias-button-primary-hover);
-}
-
-.recoveryBanner button + button {
-  background: var(--dsw-alias-button-tool-bar-fill);
-  color: var(--dsw-alias-label-primary);
-}
-
-.recoveryBanner button + button:hover {
-  background: var(--dsw-alias-button-tool-bar-hover);
 }

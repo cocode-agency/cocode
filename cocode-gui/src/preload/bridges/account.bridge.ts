@@ -2,8 +2,9 @@ import { ipcRenderer } from "electron"
 import {
 	accountChannels,
 	type AccountApi,
-	type AccountMessageFeedback,
 	type AccountMessageFeedbackList,
+	type AccountMessageFeedbackDeleteResult,
+	type AccountMessageFeedbackPutResult,
 	type AccountSnapshot,
 } from "../../contracts/ipc/account.contract"
 import { parseAccountSnapshot } from "../../contracts/schemas/account.schema"
@@ -36,11 +37,10 @@ export const accountBridge: AccountApi = {
 			ipcRenderer.invoke(
 				accountChannels.messageFeedbackPut,
 				input,
-			) as Promise<AccountMessageFeedback>,
-		delete: (sessionId, messageId) =>
+			) as Promise<AccountMessageFeedbackPutResult>,
+		delete: (input) =>
 			ipcRenderer.invoke(accountChannels.messageFeedbackDelete, {
-				sessionId,
-				messageId,
-			}) as Promise<{ readonly deleted: true }>,
+				...input,
+			}) as Promise<AccountMessageFeedbackDeleteResult>,
 	},
 }

@@ -21,7 +21,6 @@ import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
-import { isAccountManagedProviderPath, providerTagKey } from './account-gate.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -105,9 +104,6 @@ export async function removeProviderProfile(
   controller: ModelsSettingsStore,
   target: { settingsNs: string; settingsPath: readonly string[]; credentialRef?: string },
 ): Promise<string | undefined> {
-  if (isAccountManagedProviderPath(target.settingsNs, target.settingsPath)) {
-    return 'Cocode account providers cannot be edited or deleted'
-  }
   try {
     if (target.credentialRef !== undefined) {
       const credential = await api.credentials.unset({ ref: target.credentialRef })
@@ -137,7 +133,6 @@ export async function removeProviderProfile(
  * @returns whether to render the setup card.
  */
 export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
-  if (row.managed) return false
   if (anyUsable) return false
   if (row.entry.settingsPath.length > 0) return false
   return row.credential?.configured !== true
@@ -278,7 +273,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
   const configured = state.rows.filter(row => row.configured)
-  const addable = state.rows.filter(row => !row.managed && !row.configured && row.entry.settingsNs !== '')
+  const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // Hand-declared routes live in the pi-ai namespace, which is also the only
@@ -321,16 +316,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
               </li>
             )
           }
-          const open = !row.managed && !adding && editing?.provider === row.entry.provider
+          const open = !adding && editing?.provider === row.entry.provider
           const credentialConfigured = row.credential?.configured === true
           const credentialMissing = !credentialConfigured
             && row.apiKeyEnv !== undefined
             && row.credential?.configured === false
-          const tag = providerTagKey(
-            row.entry.provider,
-            row.managed === true,
-            row.entry.declared === true,
-          )
           return (
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
@@ -339,9 +329,9 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                   {/* Only the adapter can tell a hand-declared route from a
                       shipped one it also has a stored profile for, so the tag
                       follows its answer and stays off when it gives none. */}
-                  {tag === undefined
-                    ? null
-                    : <span className={styles['rowTag']}>{t(tag)}</span>}
+                  {row.entry.declared === true
+                    ? <span className={styles['rowTag']}>{t('customTag')}</span>
+                    : null}
                   {credentialConfigured
                     ? (
                       <span
@@ -363,45 +353,39 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                       : null}
                 </span>
                 <span className={styles['rowActions']}>
-                  {row.managed
-                    ? <span className={styles['notice']} />
-                    : (
-                      <>
-                        <button
-                          type="button"
-                          className={styles['secondaryButton']}
-                          aria-label={providerCopy(t('editProvider'), target)}
-                          onClick={() => {
-                            setSavedTarget(undefined)
-                            // One card at a time: leaving `declaring` set would show
-                            // the create card beside this editor, and closing either
-                            // one discards the other's draft.
-                            setDeclaring(false)
-                            setAdding(false)
-                            setEditing(open ? undefined : target)
-                          }}
-                        >
-                          {t('edit')}
-                        </button>
-                        {row.removable
-                          ? (
-                            <button
-                              type="button"
-                              className={styles['dangerButton']}
-                              aria-label={providerCopy(t('removeProvider'), target)}
-                              disabled={!state.writable}
-                              onClick={() => {
-                                setSavedTarget(undefined)
-                                setDeleteFailure(undefined)
-                                setDeleteTarget(target)
-                              }}
-                            >
-                              {t('remove')}
-                            </button>
-                          )
-                          : null}
-                      </>
-                    )}
+                  <button
+                    type="button"
+                    className={styles['secondaryButton']}
+                    aria-label={providerCopy(t('editProvider'), target)}
+                    onClick={() => {
+                      setSavedTarget(undefined)
+                      // One card at a time: leaving `declaring` set would show
+                      // the create card beside this editor, and closing either
+                      // one discards the other's draft.
+                      setDeclaring(false)
+                      setAdding(false)
+                      setEditing(open ? undefined : target)
+                    }}
+                  >
+                    {t('edit')}
+                  </button>
+                  {row.removable
+                    ? (
+                      <button
+                        type="button"
+                        className={styles['dangerButton']}
+                        aria-label={providerCopy(t('removeProvider'), target)}
+                        disabled={!state.writable}
+                        onClick={() => {
+                          setSavedTarget(undefined)
+                          setDeleteFailure(undefined)
+                          setDeleteTarget(target)
+                        }}
+                      >
+                        {t('remove')}
+                      </button>
+                    )
+                    : null}
                 </span>
               </div>
               {open

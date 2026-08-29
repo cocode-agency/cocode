@@ -29,10 +29,11 @@ export function registerAccountIpc(account: AccountService, logger?: DesktopLogg
 	ipcMain.handle(accountChannels.messageFeedbackDelete, (_event, input: unknown) =>
 		invoke(logger, "account.message-feedback-delete", () => {
 			const value = recordOf(input)
-			return account.deleteMessageFeedback(
-				requireIdentifier(value?.sessionId),
-				requireIdentifier(value?.messageId),
-			)
+			return account.deleteMessageFeedback({
+				sessionId: requireIdentifier(value?.sessionId),
+				messageId: requireIdentifier(value?.messageId),
+				ifVersion: requireVersion(value?.ifVersion),
+			})
 		}),
 	)
 	account.onChanged((snapshot) => {
@@ -77,6 +78,7 @@ function parseFeedbackInput(value: unknown): {
 	messageId: string
 	rating: "positive" | "negative"
 	note?: string
+	ifVersion: string | number | null
 } {
 	const record = recordOf(value)
 	const rating = record?.rating
@@ -84,12 +86,21 @@ function parseFeedbackInput(value: unknown): {
 	if (rating !== "positive" && rating !== "negative")
 		throw new Error("invalid message feedback rating")
 	if (note !== undefined) requireNote(note)
+	const ifVersion = requireVersion(record?.ifVersion, true)
 	return {
 		sessionId: requireIdentifier(record?.sessionId),
 		messageId: requireIdentifier(record?.messageId),
 		rating,
 		...(typeof note === "string" ? { note } : {}),
+		ifVersion,
 	}
+}
+
+function requireVersion(value: unknown, nullable = false): string | number | null {
+	if (nullable && value === null) return null
+	if (typeof value === "string" && value.trim() !== "" && value.length <= 256) return value
+	if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value
+	throw new Error("invalid message feedback version")
 }
 
 function requireNote(value: unknown): asserts value is string {

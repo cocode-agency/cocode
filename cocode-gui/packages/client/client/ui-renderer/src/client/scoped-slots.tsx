@@ -36,7 +36,7 @@ type RenderSlotChainBinding = (key: string, owner: object, opts?: ChainRenderOpt
  */
 const renderSlotCache = new WeakMap<StoredEntry, RenderSlotBinding>()
 
-function boundRenderSlot(host: SlotRendererHost, entry: StoredEntry): RenderSlotBinding {
+function boundRenderSlot(host: SlotRendererHost, entry: StoredEntry, slotKey: string): RenderSlotBinding {
   let binding = renderSlotCache.get(entry)
   if (!binding) {
     binding = (key, owner, opts) => {
@@ -44,7 +44,7 @@ function boundRenderSlot(host: SlotRendererHost, entry: StoredEntry): RenderSlot
         throw new StaleAuthorizationError(`renderSlot('${key}') from a disposed registration`)
       }
       // Plain-JS backstop; typed callers are narrowed to the declared keys.
-      const declared = entry.children?.[key]
+      const declared = (entry.children ?? host.childrenOf?.(slotKey))?.[key]
       if (declared === undefined) {
         throw new SlotOwnershipError(`slot '${key}' is not declared by this entry's children`)
       }
@@ -66,14 +66,14 @@ function boundRenderSlot(host: SlotRendererHost, entry: StoredEntry): RenderSlot
  */
 const renderSlotChainCache = new WeakMap<StoredEntry, RenderSlotChainBinding>()
 
-function boundRenderSlotChain(host: SlotRendererHost, entry: StoredEntry): RenderSlotChainBinding {
+function boundRenderSlotChain(host: SlotRendererHost, entry: StoredEntry, slotKey: string): RenderSlotChainBinding {
   let binding = renderSlotChainCache.get(entry)
   if (!binding) {
     binding = (key, owner, opts) => {
       if (!host.isLive(entry)) {
         throw new StaleAuthorizationError(`renderSlotChain('${key}') from a disposed registration`)
       }
-      const declared = entry.children?.[key]
+      const declared = (entry.children ?? host.childrenOf?.(slotKey))?.[key]
       if (declared === undefined) {
         throw new SlotOwnershipError(`slot '${key}' is not declared by this entry's children`)
       }
@@ -434,17 +434,18 @@ function standardKit(
     kit['useStore'] = observableHook(store, `store:${entry.options.id ?? entry.options.key ?? slotKey}`)
     kit['actions'] = store.actions
   }
-  if (entry.children !== undefined) {
-    kit['renderSlot'] = boundRenderSlot(host, entry)
+  const children = entry.children ?? host.childrenOf?.(slotKey)
+  if (children !== undefined) {
+    kit['renderSlot'] = boundRenderSlot(host, entry, slotKey)
     // renderSlotChain rides the same declaration source: only entries whose
     // children include a chain-kind slot receive the chain dispatch seat.
-    if (Object.values(entry.children).some(spec => spec.kind === 'chain')) {
-      kit['renderSlotChain'] = boundRenderSlotChain(host, entry)
+    if (Object.values(children).some(spec => spec.kind === 'chain')) {
+      kit['renderSlotChain'] = boundRenderSlotChain(host, entry, slotKey)
     }
     // SessionProvider standard seat: entries declaring a session-scope child
     // render the session area, so the framework hands them the self-wired
     // provider (module-level component = stable reference; no value import).
-    if (Object.values(entry.children).some(spec => spec.scope === 'session')) {
+    if (Object.values(children).some(spec => spec.scope === 'session')) {
       kit['SessionProvider'] = SessionProvider
     }
   }

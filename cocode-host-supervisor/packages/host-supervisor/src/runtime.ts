@@ -354,6 +354,10 @@ export function createRuntimePatch(
       '  disabled: true',
     ]),
     ...(providers === undefined ? [] : llmPiAiPatchLines(providers)),
+    '- id: ui-message-feedback',
+    '  disabled: true',
+    '- id: ui-settings-models',
+    '  disabled: true',
     '- insert:',
     ...(credentialsCompatUrl === undefined || dshHome === undefined ? [] : [
       '    - id: cocode-credentials',

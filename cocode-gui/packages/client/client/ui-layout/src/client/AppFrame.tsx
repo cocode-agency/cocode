@@ -10,7 +10,7 @@
  * through the three framework shares — zero cordis or framework imports,
  * zero self-made hooks.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -20,103 +20,7 @@ import {
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
-type RuntimeRecoveryState = 'idle' | 'recovering' | 'ready' | 'failed'
-type RuntimeRecoveryDetail = {
-  state: RuntimeRecoveryState
-  attempt: number
-  maxAttempts: number
-  error?: { code: string; message: string }
-}
-
 type LayoutLocale = { subscribe(listener: () => void): () => void; getSnapshot(): { active: string }; bind(namespace: string): (key: string, params?: Record<string, unknown>) => string }
-
-const EMPTY_LOCALE = { active: 'zh' }
-const EMPTY_SUBSCRIBE = (): (() => void) => () => {}
-const EMPTY_GET_SNAPSHOT = (): { active: string } => EMPTY_LOCALE
-
-function RuntimeRecoveryBanner({ locale, centerStart, centerWidth }: {
-  locale?: LayoutLocale
-  centerStart: number
-  centerWidth: number
-}) {
-  const [detail, setDetail] = useState<RuntimeRecoveryDetail | null>(null)
-  // LocaleRuntime exposes methods that read its private state through `this`.
-  // Passing those methods directly to React loses the receiver and crashes the
-  // whole root slot during startup. Bind once per locale instance instead.
-  const localeStore = useMemo(() => {
-    if (locale === undefined) {
-      return {
-        subscribe: EMPTY_SUBSCRIBE,
-        getSnapshot: EMPTY_GET_SNAPSHOT,
-      }
-    }
-    return {
-      subscribe: locale.subscribe.bind(locale),
-      getSnapshot: locale.getSnapshot.bind(locale),
-    }
-  }, [locale])
-  const localeSnapshot = useSyncExternalStore(
-    localeStore.subscribe,
-    localeStore.getSnapshot,
-    localeStore.getSnapshot,
-  )
-
-  useEffect(() => {
-    const root = document.documentElement
-    const onState = (event: Event): void => {
-      const next = (event as CustomEvent<RuntimeRecoveryDetail>).detail
-      setDetail(next)
-    }
-    window.addEventListener('cocode:dsh-runtime-recovery-state', onState)
-    const initial = root.dataset.dshRuntimeState as RuntimeRecoveryState | undefined
-    if (initial !== undefined && initial !== 'idle' && initial !== 'ready') {
-      setDetail({ state: initial, attempt: 0, maxAttempts: 3 })
-    }
-    return () => window.removeEventListener('cocode:dsh-runtime-recovery-state', onState)
-  }, [])
-
-  if (detail === null || detail.state === 'idle' || detail.state === 'ready') return null
-  const failed = detail.state === 'failed'
-  const retry = (): void => {
-    const desktop = (window as Window & {
-      desktopApi?: { dsh?: { requestRecovery(request: { reason: 'host_unreachable'; endpointGeneration: number }): Promise<unknown> } }
-    }).desktopApi?.dsh
-    if (desktop === undefined) return
-    void desktop.requestRecovery({
-      reason: 'host_unreachable',
-      endpointGeneration: (window as Window & { __DSH_DESKTOP_ENDPOINT_GENERATION__?: number }).__DSH_DESKTOP_ENDPOINT_GENERATION__ ?? 0,
-    })
-  }
-  const diagnostics = (): void => {
-    const api = (window as Window & {
-      desktopApi?: { diagnostics?: { openLogFolder(): Promise<unknown> } }
-    }).desktopApi?.diagnostics
-    if (api !== undefined) void api.openLogFolder()
-  }
-  const english = localeSnapshot.active === 'en'
-  return (
-    <div
-      className={css.recoveryBanner}
-      role={failed ? 'alert' : 'status'}
-      aria-live="polite"
-      style={{
-        left: centerStart + centerWidth / 2,
-        maxWidth: Math.max(0, centerWidth - 32),
-      }}
-    >
-      <span>
-        {failed
-          ? english
-            ? `Local runtime recovery failed (${String(detail.attempt)}/${String(detail.maxAttempts)})`
-            : `本地运行时恢复失败（${String(detail.attempt)}/${String(detail.maxAttempts)}）`
-          : english ? 'Recovering the local runtime; new actions are temporarily disabled…' : '正在恢复本地运行时，暂时禁止发送新操作…'}
-        {failed && detail.error?.message !== undefined ? `：${detail.error.message}` : ''}
-      </span>
-      {failed && <button type="button" onClick={retry}>{english ? 'Retry recovery' : '重试恢复'}</button>}
-      {failed && <button type="button" onClick={diagnostics}>{english ? 'Open diagnostics' : '打开诊断'}</button>}
-    </div>
-  )
-}
 
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
@@ -207,7 +111,6 @@ export function AppFrame({
   useSessions,
   actions,
   renderSlot,
-  locale,
 }: AppFrameProps) {
   const panels = useStore(s => s)
   const detailsSession = useSessions((s) => {
@@ -310,8 +213,7 @@ export function AppFrame({
       data-workbench-bottom-collapsed={bottom === 0 || undefined}
       data-dragging={dragging || undefined}
     >
-      <RuntimeRecoveryBanner locale={locale} centerStart={cols.sidebar} centerWidth={cols.center} />
-      <div className={css.sidebarCol}>
+      <div className={css.sidebarCol} data-dsh-sidebar-column>
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
             component sees its rendered state as owner params decided here

@@ -9,6 +9,11 @@ export const REQUIRED_COCODE_WEB_CLIENTS = [
 	"cocode-account",
 	"cocode-shortcuts",
 	"cocode-brand",
+	"cocode-input-history",
+	"cocode-appearance",
+	"cocode-desktop",
+	"cocode-message-feedback",
+	"cocode-models",
 ] as const
 
 export type DshRuntimeFetch = typeof fetch

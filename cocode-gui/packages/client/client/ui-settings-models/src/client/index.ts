@@ -20,7 +20,6 @@ import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
 import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
 import { ModelsSettingsStore } from './store.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
-import { HostedProviderGate } from './account-gate.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
 
 export type { ModelsSectionInjected, ModelsSectionProps } from './ModelsSection.tsx'
@@ -65,10 +64,7 @@ export function apply(ctx: ClientContext): void {
 
   const connection = ctx.get('connection') as ConnectionHandle
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
-  const hosted = new HostedProviderGate(() => { refreshIfLoaded(controller) })
-  const controller = new ModelsSettingsStore(connection.api, schema, ctx.settingsScope.describe(), hosted.allowed)
-  hosted.start()
-  ctx.effect(() => () => { hosted.dispose() }, 'ui-settings-models: hosted account gate')
+  const controller = new ModelsSettingsStore(connection.api, schema, ctx.settingsScope.describe())
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']

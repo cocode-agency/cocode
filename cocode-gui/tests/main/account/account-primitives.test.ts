@@ -449,8 +449,13 @@ test("Agency message feedback uses the authenticated account API without exposin
 			messageId: "m?1",
 			rating: "negative",
 			note: "<script>alert(1)</script>",
+			ifVersion: null,
 		})
-		await client.deleteMessageFeedback("account-token", "s/1", "m?1")
+		await client.deleteMessageFeedback("account-token", {
+			sessionId: "s/1",
+			messageId: "m?1",
+			ifVersion: 1,
+		})
 
 		assert.equal(
 			requests[0]?.url,
@@ -458,7 +463,7 @@ test("Agency message feedback uses the authenticated account API without exposin
 		)
 		assert.equal(
 			requests[2]?.url,
-			"https://cocode.agency/v1/me/message-feedback?session_id=s%2F1&message_id=m%3F1",
+			"https://cocode.agency/v1/me/message-feedback?session_id=s%2F1&message_id=m%3F1&if_version=1",
 		)
 		for (const request of requests) {
 			assert.equal(request.authorization, "Bearer account-token")
@@ -469,6 +474,7 @@ test("Agency message feedback uses the authenticated account API without exposin
 			message_id: "m?1",
 			rating: "negative",
 			note: "<script>alert(1)</script>",
+			if_version: null,
 		})
 	} finally {
 		globalThis.fetch = originalFetch
@@ -485,9 +491,50 @@ test("Agency message feedback reports non-success responses", async () => {
 				sessionId: "s-1",
 				messageId: "m-1",
 				rating: "positive",
+				ifVersion: null,
 			}),
 			/could not save message feedback/,
 		)
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test("Agency message feedback preserves compare-and-set conflicts", async () => {
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async (_input, init) => {
+		const body = JSON.parse(String(init?.body ?? "{}")) as { if_version?: unknown }
+		assert.equal(body.if_version, 3)
+		return new Response(
+			JSON.stringify({
+				code: "version-conflict",
+				current: {
+					session_id: "s-1",
+					message_id: "m-1",
+					rating: "negative",
+					version: 4,
+				},
+			}),
+			{ status: 409 },
+		)
+	}) as typeof fetch
+	try {
+		const result = await new AgencyClient("https://cocode.agency").putMessageFeedback(
+			"account-token",
+			{
+				sessionId: "s-1",
+				messageId: "m-1",
+				rating: "positive",
+				ifVersion: 3,
+			},
+		)
+		assert.deepEqual(result, {
+			ok: false,
+			error: {
+				code: "version-conflict",
+				current: { session_id: "s-1", message_id: "m-1", rating: "negative", version: 4 },
+			},
+		})
 	} finally {
 		globalThis.fetch = originalFetch
 	}

@@ -8,14 +8,13 @@ const css = readFileSync(
 	"utf8",
 )
 const settingsRoot = readFileSync(
-	resolve(
-		process.cwd(),
-		"packages/client/client/ui-settings-general/src/client/SettingsRoot.tsx",
-	),
+	resolve(process.cwd(), "packages/cocode/cocode-desktop/src/client/SettingsRoot.tsx"),
 	"utf8",
 )
 
 test("Settings is no longer rendered as an independent footer trigger", () => {
 	assert.match(css, /\.settingsArea/)
+	assert.match(settingsRoot, /cocode:open-settings/)
 	assert.doesNotMatch(settingsRoot, /data-dsh-settings-trigger/)
+	assert.doesNotMatch(settingsRoot, /css\.trigger/)
 })

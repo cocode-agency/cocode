@@ -24,7 +24,7 @@
 
 | 场景 | 安装 | 启动 |
 | --- | --- | --- |
-| **GUI** | 从 [GitHub Releases](https://github.com/cocode-agency/cocode/releases) 下载对应平台安装包。 | 打开 Cocode，然后选择 Cocode Nut 或自己的 DeepSeek 兼容 Key。 |
+| **GUI** | 从 [GitHub Releases](https://github.com/cocode-agency/cocode/releases) 下载对应平台安装包。 | 打开 Cocode，然后选择带 Nut 额度的 Cocode Pro，或自己的 DeepSeek 兼容 Key。 |
 | **TUI** | Node.js `22.19.x` 或更高版本（也支持 `24+`），执行 `npm install --global @cocode-agency/tui`。 | 先执行 `cocode doctor`，再执行 `cocode`；需要真实终端。 |
 | **源码开发** | 按下面各组件的 pnpm 说明安装。 | 使用 `make dev gui` 或 `make dev tui`。 |
 
@@ -37,7 +37,7 @@ GUI 安装包从对应的 GitHub Release 单独下载，不通过 npm 安装。�
 
 1. 从 GitHub Releases 安装 GUI，或执行 `npm install --global @cocode-agency/tui`。
 2. 打开 GUI；或者在真实 TTY 中依次执行 `cocode doctor`、`cocode`。
-3. 选择 Cocode Nut，或输入自己的 DeepSeek 兼容 API Key。
+3. 选择 Cocode Pro / Cocode Nut，或输入自己的 DeepSeek 兼容 API Key。
 4. 打开一个工作区，让 Agent 检查一个文件或解释项目。
 5. 如果启动失败，保存 `cocode doctor` 和 `cocode host status --json` 的输出用于排查。
    分享前请删除凭证和私有会话内容。
@@ -58,8 +58,8 @@ GUI 安装包从对应的 GitHub Release 单独下载，不通过 npm 安装。�
 白天在桌面推进的任务，出门 SSH 上去用终端接着做——因为界面呈现态从不写进会话日志，
 换个客户端也能把整条对话完整重建出来。
 
-**模型也是你选的。** DeepSeek 官方 Key、任何 OpenAI 兼容的自建或网关端点，或者直接用
-Cocode 自己的模型服务 Cocode Nut——三条路都在，随时切换。
+**模型也是你选的。** DeepSeek 官方 Key、任何 OpenAI 兼容的自建或网关端点，或者使用
+Cocode Pro 提供的 Cocode Nut 托管模型服务——三条路都在，随时切换。
 
 Cocode 不打算做成又一个聊天窗口，不会把完整思维链当成卖点摆给你看，也不会默认把所有
 工具都放开给模型。它想成为的，是一个你敢把真实工作放进去、并且能按自己的样子改的
@@ -186,16 +186,22 @@ GUI 是私有的 Electron workspace，而不是 npm 应用包。TUI 和 Host Sup
 
 ## 模型接入
 
-Cocode 不内置模型，也不绑定某一家。第一次打开时它只问你一件事：**用 Cocode Nut，
-还是用你自己的 Key。** 两条路都能留在这台机器上，随时切换。
+Cocode 不内置模型，也不绑定某一家。第一次打开时它只问你一件事：**用带 Nut 额度的
+Cocode Pro，还是用你自己的 Key。** 两条路都能留在这台机器上，随时切换。
+
+### Cocode Pro：订阅
+
+Cocode Pro 是面向 Cocode GUI 和 TUI 的订阅计划，提供周期性的 Nut 模型额度、精选模型
+权限、付费调用优先级，以及统一的用量、账单和自动充值管理。周期额度在账期结束时失效；
+单独购买的 Nut 充值额度不会过期。
 
 ### Cocode Nut：不用去申请 API Key
 
-Cocode Nut 是 Cocode 自己的模型服务。注册登录就能在桌面端和终端里直接调模型，不用
-去申请 Key、保管 Key，也不用每换一台设备再配一次。
+Cocode Nut 是工作台背后的托管模型服务。登录后可以从桌面端、终端或 OpenAI-compatible
+个人 API Key 调用模型，不用申请或轮换上游 Key。
 
 - **有免费档，可以直接试。** 不用先付钱，跑通了再决定要不要加额度。
-- **$10 / 月，最多可用价值 $60 的模型额度。** 实际能跑多少取决于你用哪个模型，不是
+- **Cocode Pro 从 $10 / 月起，最多可用价值 $60 的模型额度。** 实际能跑多少取决于你用哪个模型，不是
   一个固定数额。模型跑在我们自建的 B300 集群上，不经第三方转售，所以同样的钱能多跑
   不少任务。
 - **DeepSeek V4 Pro 和 V4 Flash。** 免费档只用 Flash，付费档两个都能用。
@@ -203,8 +209,8 @@ Cocode Nut 是 Cocode 自己的模型服务。注册登录就能在桌面端和�
 - **你的代码不会被拿去训练。** 提示词、代码和模型返回不用于训练、不出售给第三方，
   除完成调用、计费和必要排障外不留存请求内容。
 
-最新套餐、额度窗口和账单入口以 [cocode.agency/nut](https://cocode.agency/nut) 为准，
-随时可以升级或取消。身份令牌存在 `~/.cocode` 下的 `account.yaml`，推理用的个人 Key
+最新 Cocode Pro 套餐以 [cocode.agency/pro](https://cocode.agency/pro) 为准，模型服务和
+API 说明见 [cocode.agency/nut](https://cocode.agency/nut)，随时可以升级或取消。身份令牌存在 `~/.cocode` 下的 `account.yaml`，推理用的个人 Key
 交给 Host 凭据服务管理，两者都不会进入会话日志。
 
 ### 自带 Key
@@ -247,4 +253,4 @@ Cocode 凭据，`DSH_SESSION_ROOT` 用于迁移会话文件位置。
 
 ---
 
-[cocode.agency](https://cocode.agency) · [文档](https://doc.cocode.agency) · [下载](https://cocode.agency/download) · [Cocode Nut](https://cocode.agency/nut)
+[cocode.agency](https://cocode.agency) · [文档](https://doc.cocode.agency) · [下载](https://cocode.agency/download) · [Cocode Pro](https://cocode.agency/pro) · [Cocode Nut](https://cocode.agency/nut)

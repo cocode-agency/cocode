@@ -11,7 +11,6 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  /* Titlebar drag strip is abspos (desktop) or hidden (web); fill the column. */
   flex: 1;
   min-height: 0;
   padding: 0 var(--dsh-sidebar-inline-padding) 6px var(--dsh-sidebar-inline-padding);
@@ -25,79 +24,10 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Web does not reserve title-bar space. The Electron marker reveals this
-   sidebar-owned strip and shifts the column below the frameless controls.
-   Contained by .root (position:relative) so the drag region cannot
-   escape into the workbench header. */
-.titlebarDragRegion {
-  display: none;
-  width: 100%;
-}
-
-:global(html[data-dsh-desktop='true']) .root {
-  /* Stack content below the traffic-light drag strip (logo sits under the lights). */
-  padding-top: var(--dsh-desktop-titlebar-inset, 32px);
-}
-
-/* Expanded macOS: the wordmark needs a little more breathing room below the
-   traffic lights than the rail's 18px inset already provides when collapsed. */
-:global(html[data-dsh-desktop-platform='darwin']) .root:not(.collapsed) {
-  padding-top: calc(var(--dsh-desktop-titlebar-inset, 32px) + 10px);
-}
-
-:global(html[data-dsh-desktop='true']) .titlebarDragRegion {
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: var(--dsh-desktop-titlebar-inset, 32px);
-  -webkit-app-region: drag;
-  user-select: none;
-}
-
-/* A fixed Settings overlay is rendered from the sidebar and can cover this
-   titlebar drag strip; while the panel is open, opt the strip out of
-   hit-testing so Electron routes clicks on the mask to the panel instead of
-   window dragging. */
-:global(html[data-dsh-desktop='true'] body:has([data-settings-panel])) .titlebarDragRegion {
-  -webkit-app-region: no-drag;
-}
-
-:global(html[data-dsh-desktop='true']) .root button,
-:global(html[data-dsh-desktop='true']) .root a,
-:global(html[data-dsh-desktop='true']) .root input,
-:global(html[data-dsh-desktop='true']) .root select,
-:global(html[data-dsh-desktop='true']) .root textarea,
-:global(html[data-dsh-desktop='true']) .root [role='button'] {
-  -webkit-app-region: no-drag;
-}
-
-:global(html[data-dsh-desktop-platform='darwin']) .root {
-  background: transparent;
-}
-
-:global(html[data-dsh-desktop-platform='win32']) .root {
-  padding-top: 6px;
-  background: transparent;
-}
-
-:global(html[data-dsh-desktop-platform='win32']) .titlebarDragRegion {
-  display: none;
-}
-
 /* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top. */
 .root.collapsed {
   padding: 18px 10px 6px;
-}
-
-:global(html[data-dsh-desktop='true']) .root.collapsed {
-  padding-top: calc(18px + var(--dsh-desktop-titlebar-inset, 32px));
-}
-
-:global(html[data-dsh-desktop-platform='win32']) .root.collapsed {
-  padding-top: 18px;
 }
 
 .brandLogo {

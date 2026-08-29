@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import {
   DARK_ATTRIBUTE,
-  MESSAGE_FONT_SIZE_VARIABLE,
   ThemePresenter,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
 
@@ -18,13 +17,11 @@ const DARK_THEME_COLOR = 'rgb(21, 21, 23)'
 function snapshot(
   colorScheme: 'light' | 'dark',
   tokens: Record<string, string> = {},
-  messageFontSize: '14' | '16' | '18' | '20' = '14',
 ): ThemeSnapshot {
   // The presenter must key off colorScheme, not the id — keep them distinct.
   const active = { id: `${colorScheme}-test`, colorScheme, tokens }
   return {
     preference: colorScheme,
-    messageFontSize,
     active,
     themes: [active],
     revision: 1,
@@ -88,18 +85,6 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsw-alias-bg')).toBe('#fff')
     // The old theme's extra variable is gone, not merged.
     expect(document.body.style.getPropertyValue('--dsw-alias-fg')).toBe('')
-  })
-
-  it('projects the selected message font size and retracts it on dispose', () => {
-    const presenter = new ThemePresenter()
-    presenter.apply(snapshot('light', {}, '18'))
-    expect(document.body.style.getPropertyValue(MESSAGE_FONT_SIZE_VARIABLE)).toBe('18px')
-
-    presenter.apply(snapshot('light', {}, '20'))
-    expect(document.body.style.getPropertyValue(MESSAGE_FONT_SIZE_VARIABLE)).toBe('20px')
-
-    presenter.dispose()
-    expect(document.body.style.getPropertyValue(MESSAGE_FONT_SIZE_VARIABLE)).toBe('')
   })
 
   it('dispose removes color-scheme, the attribute, and every applied variable, sparing foreign inline styles', () => {

@@ -129,13 +129,7 @@ export function apply(ctx: Context): void {
   }
   const handle: ConnectionHandle = {
     api,
-    // Packaged Electron renders the client from a `file://` URL. It has no
-    // hostname, but its requests are bridged to the local DSH runtime by the
-    // desktop preload transport, so it must retain the same privileged local
-    // settings surface as a loopback web page.
-    isLoopback: pageLocation === undefined
-      || pageLocation.protocol === 'file:'
-      || isLoopbackHostname(pageLocation.hostname),
+    isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {

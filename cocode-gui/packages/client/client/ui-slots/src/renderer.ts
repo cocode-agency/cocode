@@ -129,6 +129,12 @@ export interface SlotRendererHost {
    */
   entriesOfSlot(key: string): readonly StoredEntry[]
   /**
+   * Child declarations owned by another live occupant of the same slot.
+   * Shadow occupants may inherit this declaration table so replacing a
+   * parent component does not disconnect its existing child contributions.
+   */
+  childrenOf?(key: string): Readonly<Record<string, SlotSpec<SlotEntryDef>>> | undefined
+  /**
    * Report an entry boundary crash. With `info.abdicate` (shadowing kinds)
    * the entry retires from its cell, one-shot, so the next survivor renders;
    * chain crashes report without abdicating. The registration stays on the

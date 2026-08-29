@@ -2,8 +2,8 @@
  * Message feedback plugin, browser half: the Like/Dislike entry in the
  * conversation.chat.assistant-actions strip. One MessageFeedbackController per
  * Session backs every message control in that Session, so a single list read
- * seeds the whole transcript. Mutations go through the authenticated Cocode
- * account bridge; access tokens remain in Electron Main.
+ * seeds the whole transcript. Mutations go through the generated
+ * messageFeedback Remote; the Host owns per-item compare-and-set.
  * @module @deepseek-ai/dsh-client-ui-message-feedback/client
  */
 
@@ -16,7 +16,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { MessageFeedbackController } from './controller.ts'
 import { MessageFeedbackActions } from './MessageFeedbackActions.tsx'
-import { agencyMessageFeedbackRemote, subscribeAccount } from './account.ts'
 import type { MessageFeedbackInjected } from './slots.ts'
 import { en, zh } from './locales.ts'
 
@@ -29,8 +28,8 @@ export type { MessageFeedbackKey } from './locales.ts'
 /** Dictionary namespace owned by this plugin. */
 const NS = 'feedback'
 
-/** Required services: the slot registry, connection lifecycle, and copy. */
-export const inject = ['slots', 'remote', 'locale']
+/** Required services: the slot registry, the Remote namespace, and the copy. */
+export const inject = ['slots', 'remote', 'remote.messageFeedback', 'locale']
 
 /**
  * Client plugin body: the per-message feedback entry and its per-session
@@ -41,17 +40,10 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-message-feedback: dictionaries')
 
   const controllers = new Map<SessionId, MessageFeedbackController>()
-  let lastSignedIn: boolean | undefined
-  const unsubscribeAccount = subscribeAccount((signedIn) => {
-    if (lastSignedIn !== undefined && lastSignedIn !== signedIn) {
-      for (const controller of controllers.values()) controller.reset()
-    }
-    lastSignedIn = signedIn
-  })
   const controllerFor = (sessionId: SessionId): MessageFeedbackController => {
     let controller = controllers.get(sessionId)
     if (controller === undefined) {
-      controller = new MessageFeedbackController(agencyMessageFeedbackRemote(), sessionId)
+      controller = new MessageFeedbackController(ctx.remote.messageFeedback, sessionId)
       controllers.set(sessionId, controller)
     }
     return controller
@@ -84,7 +76,6 @@ export function apply(ctx: ClientContext): void {
       },
     }, MessageFeedbackActions)
     return () => {
-      unsubscribeAccount()
       dispose()
       for (const controller of controllers.values()) controller.dispose()
       controllers.clear()

@@ -4,7 +4,7 @@ import {
 	DEFAULT_MESSAGE_FONT_SIZE,
 	isMessageFontSize,
 	MESSAGE_FONT_SIZES,
-} from "../../packages/client/client/ui-theme/src/theme-settings"
+} from "../../packages/cocode/cocode-appearance/src/client/font-size.ts"
 
 test("message-list font size defaults to 14 and accepts every displayed option", () => {
 	assert.equal(DEFAULT_MESSAGE_FONT_SIZE, "14")

@@ -42,6 +42,14 @@ test("parses nested Cocode client bundle paths", () => {
 		directory: "cocode/cocode-brand",
 		sourceMap: false,
 	})
+	assert.deepEqual(parseDshClientBundleRequest("/dsh-client/cocode/cocode-desktop/client.js"), {
+		directory: "cocode/cocode-desktop",
+		sourceMap: false,
+	})
+	assert.deepEqual(parseDshClientBundleRequest("/dsh-client/cocode/cocode-models/client.js"), {
+		directory: "cocode/cocode-models",
+		sourceMap: false,
+	})
 })
 
 test("preserves source-map requests for nested client bundles", () => {

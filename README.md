@@ -32,7 +32,7 @@ file.
 
 | Use case | Install | Start |
 | --- | --- | --- |
-| **GUI** | Download the installer for your platform from the [GitHub Releases](https://github.com/cocode-agency/cocode/releases) page. | Launch Cocode, then choose Cocode Nut or your own DeepSeek-compatible key. |
+| **GUI** | Download the installer for your platform from the [GitHub Releases](https://github.com/cocode-agency/cocode/releases) page. | Launch Cocode, then choose Cocode Pro with hosted Nut credits or your own DeepSeek-compatible key. |
 | **TUI** | Node.js `22.19.x` or later (`24+` is also supported), then `npm install --global @cocode-agency/tui`. | Run `cocode doctor`, then `cocode`. A real terminal is required. |
 | **From source** | Follow the component-specific pnpm instructions below. | Use `make dev gui` or `make dev tui`. |
 
@@ -48,7 +48,7 @@ can change.
 
 1. Install the GUI from GitHub Releases, or run `npm install --global @cocode-agency/tui`.
 2. Start the GUI, or run `cocode doctor` followed by `cocode` in a real TTY.
-3. Choose Cocode Nut or enter your own DeepSeek-compatible API key.
+3. Choose Cocode Pro / Cocode Nut, or enter your own DeepSeek-compatible API key.
 4. Open a workspace and ask the agent to inspect a file or explain the project.
 5. If startup fails, save the output of `cocode doctor` and
    `cocode host status --json` for troubleshooting. Remove credentials and
@@ -76,7 +76,7 @@ never enters the session log, so any client can rebuild the full conversation
 from it.
 
 **The model is your call too.** An official DeepSeek key, any OpenAI-compatible
-self-hosted or gateway endpoint, or Cocode's own model service, Cocode Nut — all
+self-hosted or gateway endpoint, or Cocode Pro's hosted Cocode Nut service — all
 three are available, and you can switch between them.
 
 Cocode is not trying to be another chat window. It won't parade a full chain of
@@ -218,18 +218,25 @@ Release and npm release.
 ## Getting a model
 
 Cocode does not bundle a model and is not tied to one vendor. On first launch it
-asks you exactly one thing: **use Cocode Nut, or use your own key.** Both can
-live on the same machine, and you can switch at any time.
+asks you exactly one thing: **use Cocode Pro with hosted Cocode Nut, or use your
+own key.** Both can live on the same machine, and you can switch at any time.
+
+### Cocode Pro: subscription
+
+Cocode Pro is the subscription plan for the Cocode GUI and TUI. It provides
+cycle-based Nut model credits, curated model access, paid-call priority, and one
+place to manage usage, billing, and automatic recharge. Cycle credits expire at
+period end; separately purchased Nut top-ups do not expire.
 
 ### Cocode Nut: no API key to apply for
 
-Cocode Nut is Cocode's own model service. Sign up, sign in, and call models
-directly from the desktop workspace and the terminal — no key to apply for,
-store, or reconfigure on every new device.
+Cocode Nut is the hosted model service available with Cocode Pro. Sign in and
+call models through the desktop workspace, terminal, or an OpenAI-compatible
+personal API key — no upstream key to apply for or rotate.
 
 - **There's a free tier, so you can just try it.** No payment up front; decide
   about more credits after it works in your real workflow.
-- **$10 a month, for up to $60 worth of model usage.** How far that goes depends
+- **Cocode Pro starts at $10 a month, for up to $60 worth of model usage.** How far that goes depends
   on which model you call; it is not a fixed amount. Models run on our own B300
   cluster with no third-party resale, so the same money goes noticeably further.
 - **DeepSeek V4 Pro and V4 Flash.** The free tier is Flash only; paid tiers can
@@ -240,8 +247,9 @@ store, or reconfigure on every new device.
   not used for training or sold to third parties, and request content is not
   retained beyond completing the call, billing, and necessary troubleshooting.
 
-Current plans, credit windows, and billing live at
-[cocode.agency/nut](https://cocode.agency/nut); upgrade or cancel at any time.
+Current Cocode Pro plans live at [cocode.agency/pro](https://cocode.agency/pro);
+model endpoints and pricing live at [cocode.agency/nut](https://cocode.agency/nut).
+Upgrade or cancel at any time.
 Identity tokens are stored in `account.yaml` under `~/.cocode`, and the personal
 inference key is owned by the Host credentials service. Neither enters the
 session log.
@@ -291,4 +299,4 @@ Cordis framework, keep their own licenses. See
 
 ---
 
-[cocode.agency](https://cocode.agency) · [Documentation](https://doc.cocode.agency) · [Download](https://cocode.agency/download) · [Cocode Nut](https://cocode.agency/nut)
+[cocode.agency](https://cocode.agency) · [Documentation](https://doc.cocode.agency) · [Download](https://cocode.agency/download) · [Cocode Pro](https://cocode.agency/pro) · [Cocode Nut](https://cocode.agency/nut)
