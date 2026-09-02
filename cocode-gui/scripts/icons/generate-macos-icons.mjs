@@ -51,11 +51,27 @@ export function validateCanonicalSource(image) {
 	return bounds
 }
 
-export function makeDockImage(mark, { canvas = 512, contentScale = 0.82 } = {}) {
+export function makeDockImage(
+	mark,
+	{
+		canvas = 512,
+		contentScale = 0.82,
+		backgroundColor = undefined,
+		backgroundCornerRadius = Math.round(canvas * 0.22),
+	} = {},
+) {
 	if (!Number.isInteger(canvas) || canvas < 1)
 		throw new Error("Dock canvas must be a positive integer.")
 	if (!(contentScale > 0 && contentScale <= 1))
 		throw new Error("Dock contentScale must be in (0, 1].")
+	if (backgroundColor && backgroundColor.length !== 3)
+		throw new Error("Dock backgroundColor must contain exactly three channels.")
+	if (
+		!Number.isInteger(backgroundCornerRadius) ||
+		backgroundCornerRadius < 0 ||
+		backgroundCornerRadius > canvas / 2
+	)
+		throw new Error("Dock backgroundCornerRadius must be within the canvas bounds.")
 	const cropped = cropRgbaImage(mark)
 	const target = Math.max(1, Math.round(canvas * contentScale))
 	const scale = Math.min(target / cropped.width, target / cropped.height)
@@ -64,7 +80,7 @@ export function makeDockImage(mark, { canvas = 512, contentScale = 0.82 } = {}) 
 		Math.max(1, Math.round(cropped.width * scale)),
 		Math.max(1, Math.round(cropped.height * scale)),
 	)
-	const output = makeSolidRgbaImage(canvas, canvas, [0, 0, 0, 0])
+	const foreground = makeSolidRgbaImage(canvas, canvas, [0, 0, 0, 0])
 	const left = Math.floor((canvas - resized.width) / 2)
 	const top = Math.floor((canvas - resized.height) / 2)
 	for (let y = 0; y < resized.height; y += 1) {
@@ -80,13 +96,36 @@ export function makeDockImage(mark, { canvas = 512, contentScale = 0.82 } = {}) 
 			)
 				continue
 			const destinationOffset = (destinationY * canvas + destinationX) * 4
-			output.data.set(
+			foreground.data.set(
 				resized.data.subarray(sourceOffset, sourceOffset + 4),
 				destinationOffset,
 			)
 		}
 	}
-	return output
+	if (!backgroundColor) return foreground
+	const background = makeRoundedBackground(canvas, backgroundColor, backgroundCornerRadius)
+	return compositeRgba(background, foreground)
+}
+
+function makeRoundedBackground(canvas, [red, green, blue], cornerRadius) {
+	const background = makeSolidRgbaImage(canvas, canvas, [red, green, blue, 0])
+	const right = canvas - 1
+	const bottom = canvas - 1
+	for (let y = 0; y < canvas; y += 1) {
+		for (let x = 0; x < canvas; x += 1) {
+			const inMiddleX = x >= cornerRadius && x <= right - cornerRadius
+			const inMiddleY = y >= cornerRadius && y <= bottom - cornerRadius
+			let coverage = 1
+			if (!inMiddleX && !inMiddleY) {
+				const cornerCenterX = x < cornerRadius ? cornerRadius : right - cornerRadius
+				const cornerCenterY = y < cornerRadius ? cornerRadius : bottom - cornerRadius
+				const distance = Math.hypot(x + 0.5 - cornerCenterX, y + 0.5 - cornerCenterY)
+				coverage = Math.max(0, Math.min(1, cornerRadius + 0.5 - distance))
+			}
+			background.data[(y * canvas + x) * 4 + 3] = Math.round(coverage * 255)
+		}
+	}
+	return background
 }
 
 export function macIconsetEntries() {
@@ -155,7 +194,10 @@ export async function generateMacIcons({ verifyIconComposer = false } = {}) {
 		await atomicWrite(ICNS_PATH, await fs.readFile(temporaryIcns))
 		await verifyIcnsWithIconUtil(ICNS_PATH, temporaryRoot)
 
-		const dock = makeDockImage(source)
+		const dock = makeDockImage(source, {
+			contentScale: 0.6,
+			backgroundColor: [17, 17, 19],
+		})
 		const dockBytes = encodeRgbaPng(dock)
 		await atomicWrite(DOCK_PATH, dockBytes)
 		await atomicWrite(LEGACY_DOCK_ALIAS_PATH, dockBytes)

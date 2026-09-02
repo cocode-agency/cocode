@@ -46,6 +46,19 @@ test("keeps the Dock artwork inside the configured safety region", () => {
 	assert.deepEqual(bounds, { left: 46, top: 46, right: 465, bottom: 465 })
 })
 
+test("supports a rounded black background for the development Dock icon", () => {
+	const source = makeSolidRgbaImage(32, 32, [255, 255, 255, 255])
+	const image = makeDockImage(source, {
+		canvas: 512,
+		contentScale: 0.6,
+		backgroundColor: [17, 17, 19],
+	})
+	const cornerOffset = 0
+	const topCenterOffset = 256 * 4
+	assert.equal(image.data[cornerOffset + 3], 0)
+	assert.deepEqual(Array.from(image.data.slice(topCenterOffset, topCenterOffset + 4)), [17, 17, 19, 255])
+})
+
 test("resizing keeps RGBA image metadata and data length consistent", () => {
 	const source = makeSolidRgbaImage(2, 2, [255, 255, 255, 255])
 	const resized = resizeRgbaImage(source, 8, 4)
@@ -62,8 +75,12 @@ test("generated canonical source and Dock asset satisfy their pixel contracts", 
 	validateCanonicalSource(source)
 	const dockBounds = alphaBounds(dock)
 	assert.ok(dockBounds)
-	assert.ok(dockBounds.left >= 40 && dockBounds.top >= 40)
-	assert.ok(dockBounds.right <= 471 && dockBounds.bottom <= 471)
+	assert.deepEqual(dockBounds, { left: 0, top: 0, right: 511, bottom: 511 })
+	const topCenterOffset = 256 * 4
+	assert.deepEqual(
+		Array.from(dock.data.slice(topCenterOffset, topCenterOffset + 4)),
+		[17, 17, 19, 255],
+	)
 })
 
 test("flattened macOS artwork has opaque square corners without a baked rounded mask", () => {
