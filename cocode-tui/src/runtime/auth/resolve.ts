@@ -11,6 +11,7 @@ import { harnessClientIdentity, tuiClientIdentity, type CocodeClientIdentity } f
 import {
   CLOUD_API,
   CLOUD_DEFAULT_REASONING,
+  CLOUD_DISPLAY_NAME,
   CLOUD_KEY_REF,
   CLOUD_MAX_RETRIES,
   CLOUD_PROVIDER,
@@ -270,7 +271,7 @@ function createCloudProvider(
   cloudModels?: CloudModel[],
 ): CloudProviderProfile {
   return {
-    displayName: 'Cocode Nut',
+    displayName: CLOUD_DISPLAY_NAME,
     api: CLOUD_API,
     baseURL: `${origin.replace(/\/$/, '')}/v1`,
     apiKeyEnv: CLOUD_KEY_REF,

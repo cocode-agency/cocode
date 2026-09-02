@@ -3,6 +3,7 @@ import type {
   TuiModelCatalog,
   TuiModelProviderGroup,
 } from '@cocode/tui-connection'
+import { CLOUD_DISPLAY_NAME, CLOUD_PROVIDER, LEGACY_CLOUD_PROVIDER } from './auth/types.ts'
 
 export type ModelPickerItem = {
   providerId: string
@@ -19,6 +20,10 @@ export type ModelPickerState = {
 }
 
 export const MODEL_PICKER_WINDOW_SIZE = 8
+
+function providerDisplayName(id: string, name: string): string {
+  return id === CLOUD_PROVIDER || id === LEGACY_CLOUD_PROVIDER ? CLOUD_DISPLAY_NAME : name
+}
 
 export function createModelPicker(
   catalog: TuiModelCatalog,
@@ -63,11 +68,12 @@ export function visibleModelItems(state: ModelPickerState): ModelPickerItem[] {
   const query = state.query.trim().toLocaleLowerCase()
   const items: ModelPickerItem[] = []
   for (const group of state.groups) {
+    const providerName = providerDisplayName(group.id, group.name)
     for (const model of group.models) {
-      const item = { providerId: group.id, providerName: group.name, model }
+      const item = { providerId: group.id, providerName, model }
       if (
         query === '' ||
-        `${group.id} ${group.name} ${model.id} ${model.name} ${model.description ?? ''}`
+        `${group.id} ${group.name} ${providerName} ${model.id} ${model.name} ${model.description ?? ''}`
           .toLocaleLowerCase()
           .includes(query)
       ) {

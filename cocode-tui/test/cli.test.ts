@@ -103,7 +103,7 @@ describe('cocode CLI', () => {
   })
 
   it('reads the bundled DSH package version from its resolved entry', () => {
-    expect(resolveDshVersion({ staged: false })).toBe('0.1.1-rc.2')
+    expect(resolveDshVersion({ staged: false })).toBe('0.1.2-alpha.5')
   })
 
   it('passes DSH arguments unchanged and returns its exit code', () => {

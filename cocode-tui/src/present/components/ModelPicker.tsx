@@ -56,7 +56,7 @@ export function ModelPicker(props: {
             >
               {active ? glyphs.optionActive : glyphs.optionInactive} {current ? glyphs.checkDone : ' '} {item.model.name}{' '}
               <Text color={active ? theme.text : theme.dim}>
-                · {item.providerName} · {item.model.id}
+                · {item.providerName}
               </Text>
             </Text>
           )

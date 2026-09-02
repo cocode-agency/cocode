@@ -5,6 +5,7 @@
 import {
   CLOUD_API,
   CLOUD_DEFAULT_REASONING,
+  CLOUD_DISPLAY_NAME,
   CLOUD_KEY_REF,
   CLOUD_MAX_RETRIES,
   CLOUD_PROVIDER,
@@ -133,7 +134,7 @@ async function writeCloudRoute(
   const llm = isRecord(root['llm-pi-ai']) ? root['llm-pi-ai'] : {}
   const providers = isRecord(llm.providers) ? llm.providers : {}
   providers[CLOUD_PROVIDER] = {
-    displayName: 'Cocode Nut',
+    displayName: CLOUD_DISPLAY_NAME,
     api: CLOUD_API,
     baseURL: `${origin.replace(/\/$/, '')}/v1`,
     apiKeyEnv: CLOUD_KEY_REF,
@@ -212,7 +213,7 @@ function migrateLegacyCloudRoot(root: Record<string, unknown>): Record<string, u
   if (!Object.prototype.hasOwnProperty.call(nextProviders, CLOUD_PROVIDER) && legacyRoute !== undefined) {
     nextProviders[CLOUD_PROVIDER] = {
       ...(isRecord(legacyRoute) ? legacyRoute : {}),
-      displayName: 'Cocode Nut',
+      displayName: CLOUD_DISPLAY_NAME,
       apiKeyEnv: CLOUD_KEY_REF,
       retryPolicy: { mode: 'normal', maxRetries: CLOUD_MAX_RETRIES },
     }

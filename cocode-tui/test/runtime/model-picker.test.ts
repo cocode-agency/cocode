@@ -26,6 +26,17 @@ const catalog = {
   failures: [],
 }
 
+const cloudCatalog = {
+  groups: [
+    {
+      id: 'cocode-nut',
+      name: 'Cocode Nut',
+      models: [{ id: 'cloud-model', name: 'Cloud Model' }],
+    },
+  ],
+  failures: [],
+}
+
 describe('model picker state', () => {
   it('selects the current provider and model and searches across groups', () => {
     const state = createModelPicker(catalog, 'provider-a', 'model-b')
@@ -45,5 +56,21 @@ describe('model picker state', () => {
     expect(moveModelSelection(state, -1).selected).toBe(2)
     expect(setModelQuery(state, 'no such model').selected).toBe(0)
     expect(selectedModel(setModelQuery(state, 'no such model'))).toBeUndefined()
+  })
+
+  it('uses the unified Cocode label for hosted models', () => {
+    const state = createModelPicker(cloudCatalog, 'cocode-nut', 'cloud-model')
+    expect(selectedModel(state)).toEqual({
+      providerId: 'cocode-nut',
+      providerName: 'Cocode',
+      model: { id: 'cloud-model', name: 'Cloud Model' },
+    })
+    expect(visibleModelItems(setModelQuery(state, 'cocode nut'))).toEqual([
+      {
+        providerId: 'cocode-nut',
+        providerName: 'Cocode',
+        model: { id: 'cloud-model', name: 'Cloud Model' },
+      },
+    ])
   })
 })

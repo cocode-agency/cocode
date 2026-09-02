@@ -33,8 +33,33 @@ describe('ModelPicker', () => {
     expect(rendered).toContain('Available models')
     expect(rendered).toContain('Model A')
     expect(rendered).toContain('Provider A')
-    expect(rendered).toContain('model-a')
+    expect(rendered).not.toContain('model-a')
     expect(rendered).toContain('✓')
+  })
+
+  it('renders hosted providers as Cocode', () => {
+    const tree = ModelPicker({
+      state: {
+        groups: [
+          {
+            id: 'cocode-nut',
+            name: 'Cocode Nut',
+            models: [{ id: 'cloud-model', name: 'Cloud Model' }],
+          },
+        ],
+        failures: [],
+        query: '',
+        selected: 0,
+        open: true,
+      },
+      currentProvider: 'cocode-nut',
+      currentModel: 'cloud-model',
+      locale: 'en',
+    }) as ReactElement
+
+    expect(textContent(tree)).toContain('Cocode')
+    expect(textContent(tree)).not.toContain('Cocode Nut')
+    expect(textContent(tree)).not.toContain('cloud-model')
   })
 
   it('renders the manual-input message when filtering removes all models', () => {

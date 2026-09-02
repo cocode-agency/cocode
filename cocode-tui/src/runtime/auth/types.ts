@@ -11,6 +11,7 @@ export const CLOUD_PROVIDER = 'cocode-nut'
 export const LEGACY_CLOUD_PROVIDER = 'cocode-cloud'
 export const CLOUD_KEY_REF = 'COCODE_NUT_API_KEY'
 export const LEGACY_CLOUD_KEY_REF = 'COCODE_CLOUD_API_KEY'
+export const CLOUD_DISPLAY_NAME = 'Cocode'
 export const DEEPSEEK_KEY_REF = 'DEEPSEEK_API_KEY'
 export { deviceKeyName } from './device-name.ts'
 export const KEY_NAME = deviceKeyName()
