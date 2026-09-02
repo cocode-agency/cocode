@@ -37,10 +37,52 @@ test('repairs an incomplete DSH runtime slot before booting it', () => {
     for (const file of readdirSync(join(dshRoot, 'lib'))) {
       assert.equal(existsSync(join(slot.root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', file)), true, file)
     }
+    assert.equal(
+      existsSync(join(slot.root, 'node_modules', '@deepseek-ai', 'dsh-client-runtime', 'lib', 'client.js')),
+      true,
+    )
   } finally {
     if (previousRuntimeHome === undefined) delete process.env.COCODE_HOST_RUNTIME_HOME
     else process.env.COCODE_HOST_RUNTIME_HOME = previousRuntimeHome
     rmSync(runtimeHome, { recursive: true, force: true })
+  }
+})
+
+test('stages a Cocode compatibility alias for the retired code preset', () => {
+  const runtimeHome = mkdtempSync(join(tmpdir(), 'cocode-legacy-preset-slot-test-'))
+  const cocodeHome = mkdtempSync(join(tmpdir(), 'cocode-legacy-preset-home-test-'))
+  const previousRuntimeHome = process.env.COCODE_HOST_RUNTIME_HOME
+  const previousCocodeHome = process.env.COCODE_HOME
+  process.env.COCODE_HOST_RUNTIME_HOME = runtimeHome
+  process.env.COCODE_HOME = cocodeHome
+  const scope = {
+    dshHome: join(runtimeHome, 'dsh-home'),
+    profile: 'cocode',
+    hostConfigFingerprint: 'test-legacy-code-preset',
+    runtimeChannel: 'stable',
+  }
+  try {
+    const pluginPath = fileURLToPath(new URL('../lib/host-jsonrpc-plugin.js', import.meta.url))
+    const slot = prepareRuntimeSlot(scope, '/tmp/cocode-legacy-preset-jsonrpc.sock', pluginPath)
+    const compatibilityPreset = join(slot.root, 'compat-agent-presets', 'code', 'agent.cordis.yml')
+    assert.equal(existsSync(compatibilityPreset), true)
+
+    const parsed = YAML.parse(readFileSync(slot.patch, 'utf8'))
+    const agentPresets = parsed.find((entry) => entry?.id === 'agent-presets')
+    assert.deepEqual(agentPresets?.config?.roots, [{
+      path: join(slot.root, 'compat-agent-presets'),
+      trust: 'system',
+    }])
+    assert.equal(agentPresets?.config?.default, 'standard')
+    assert.equal(agentPresets?.config?.includeShippedRoot, true)
+    assert.equal(agentPresets?.config?.includeUserRoot, true)
+  } finally {
+    if (previousRuntimeHome === undefined) delete process.env.COCODE_HOST_RUNTIME_HOME
+    else process.env.COCODE_HOST_RUNTIME_HOME = previousRuntimeHome
+    if (previousCocodeHome === undefined) delete process.env.COCODE_HOME
+    else process.env.COCODE_HOME = previousCocodeHome
+    rmSync(runtimeHome, { recursive: true, force: true })
+    rmSync(cocodeHome, { recursive: true, force: true })
   }
 })
 
@@ -155,6 +197,7 @@ test('createRuntimePatch registers Cocode plugins by package name', () => {
   assert.match(patch, /id: llm-deepseek\n  name: '@deepseek-ai\/dsh-llm-deepseek'/)
   assert.match(patch, /maxRetries: 5/)
   assert.match(patch, /id: cocode-sidebar\n      name: "cocode-sidebar"/)
+  assert.match(patch, /id: cocode-client-runtime\n      name: '@deepseek-ai\/dsh-client-runtime'/)
   assert.match(patch, /id: cocode-account\n      name: "cocode-account"/)
   assert.match(patch, /id: cocode-shortcuts\n      name: "cocode-shortcuts"/)
   assert.doesNotMatch(patch, /cocode-plugin-/)
@@ -169,9 +212,12 @@ test('createRuntimePatch leaves shared DSH settings and credentials at their def
   )
   const parsed = YAML.parse(patch)
   const insert = parsed.find((entry) => entry?.insert !== undefined)?.insert
-  assert.equal(insert[1].id, 'cocode-workbench')
+  assert.equal(insert.find((entry) => entry?.id === 'cocode-workbench')?.id, 'cocode-workbench')
   assert.equal(parsed.some((entry) => entry?.id === 'ui-message-feedback' && entry.disabled === true), true)
   assert.equal(parsed.some((entry) => entry?.id === 'ui-settings-models' && entry.disabled === true), true)
+  assert.equal(parsed.some((entry) => entry?.id === 'ui-agent-preset' && entry.disabled === true), true)
+  assert.equal(parsed.some((entry) => entry?.id === 'ui-trajectory' && entry.disabled === true), true)
+  assert.equal(parsed.some((entry) => entry?.id === 'session-log-download' && entry.disabled === true), true)
   assert.equal(parsed.some((entry) => entry?.id === 'settings'), false)
   assert.equal(parsed.some((entry) => entry?.id === 'credentials'), false)
   assert.equal(parsed.some((entry) => entry?.id === 'llm-pi-ai'), false)
@@ -219,7 +265,7 @@ test('createRuntimePatch mounts COCODE_LLM_PROVIDERS on llm-pi-ai', () => {
   assert.equal(piAi.name, '@deepseek-ai/dsh-llm-pi-ai')
   assert.equal(piAi.config.providers['cocode-nut'].api, 'openai-responses')
   assert.equal(piAi.config.providers['cocode-nut'].apiKeyEnv, 'COCODE_NUT_API_KEY')
-  assert.equal(parsed.find((entry) => entry?.insert !== undefined).insert[1].id, 'cocode-workbench')
+  assert.equal(parsed.find((entry) => entry?.insert !== undefined).insert.find((entry) => entry?.id === 'cocode-workbench')?.id, 'cocode-workbench')
 })
 
 test('mergeHostRuntimeEnv preserves base credentials while overlaying the route', () => {

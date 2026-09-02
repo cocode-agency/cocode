@@ -20,5 +20,9 @@ minimumReleaseAgeExclude:
   - '@smithy/signature-v4@5.7.2'
   - '@smithy/types@4.17.2'
   - 'jose@6.2.9'
+
+overrides:
+  '@earendil-works/pi-ai': 0.84.2
 patchedDependencies:
-  '@earendil-works/pi-ai@0.82.1': patches/@earendil-works__pi-ai@0.82.1.patch
+  '@deepseek-ai/dsh-client-ui-layout@0.1.2-alpha.5': patches/@deepseek-ai__dsh-client-ui-layout@0.1.2-alpha.5.patch
+  '@earendil-works/pi-ai@0.84.2': patches/@earendil-works__pi-ai@0.84.2.patch

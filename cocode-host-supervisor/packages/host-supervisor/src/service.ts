@@ -19,6 +19,11 @@ import { loadCredentials } from './credentials-local.js'
 
 type AcquireRequest = AcquireHostRequest & { clientPid?: number }
 type HostProcess = { child: ReturnType<typeof spawn> | null; descriptor: HostDescriptor; idleTimer?: NodeJS.Timeout }
+type WebServiceStartup = {
+  endpoint: string
+  token?: string
+  authenticatedUrl: string
+}
 
 const SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP']
 /**
@@ -279,13 +284,13 @@ class SupervisorService {
       readyObserved = true
       reject(error)
     }
-    const ready = new Promise<string | undefined>((resolve, reject) => {
+    const ready = new Promise<WebServiceStartup | undefined>((resolve, reject) => {
       const timer = setTimeout(() => rejectStartup(reject, startupFailureError(`DSH Host startup timed out.\n${startupBuffer.value}`, startupBuffer.value)), 60_000)
       const inspect = (chunk: Buffer | string) => {
         consume('stdout', chunk)
         if (!requiresWeb || readyObserved) return
-        const match = startupBuffer.value.match(/dsh web: (http:\/\/127\.0\.0\.1:\d+)/)
-        if (match?.[1]) { readyObserved = true; clearTimeout(timer); resolve(match[1]) }
+        const web = parseWebServiceStartup(startupBuffer.value)
+        if (web !== undefined) { readyObserved = true; clearTimeout(timer); resolve(web) }
       }
       child.stdout?.on('data', inspect)
       child.stderr?.on('data', (chunk) => consume('stderr', chunk))
@@ -326,11 +331,11 @@ class SupervisorService {
         }
       })
     })
-    let webUrl: string | undefined
+    let web: WebServiceStartup | undefined
     try {
-      webUrl = await ready
+      web = await ready
       startupBuffer.clear()
-      if (webUrl !== undefined) await waitHttp(webUrl)
+      if (web !== undefined) await waitHttp(web.authenticatedUrl)
       if (!jsonRpcReady) {
         await waitJsonRpc(jsonRpcEndpoint)
         jsonRpcReady = true
@@ -355,11 +360,17 @@ class SupervisorService {
       hostProtocolRevision: HOST_PROTOCOL_REVISION,
       hostConfigFingerprint: this.scope.hostConfigFingerprint,
       services: [
-        ...(webUrl === undefined ? [] : [{ service: 'web' as const, transport: 'tcp' as const, endpoint: webUrl, protocolRevision: '1.0' as const }]),
+        ...(web === undefined ? [] : [{
+          service: 'web' as const,
+          transport: 'tcp' as const,
+          endpoint: web.endpoint,
+          protocolRevision: '1.0' as const,
+          ...(web.token === undefined ? {} : { token: web.token }),
+        }]),
         { service: 'jsonrpc', transport: process.platform === 'win32' ? 'named-pipe' : 'unix', endpoint: jsonRpcEndpoint, protocolRevision: '1.0' },
       ],
       capabilities: [
-        ...(webUrl === undefined ? [] : ['web']),
+        ...(web === undefined ? [] : ['web']),
         'jsonrpc', 'session', 'event', 'workspace', 'approval', 'question',
       ],
       startedAt: new Date().toISOString(),
@@ -367,7 +378,7 @@ class SupervisorService {
     this.host = { child, descriptor }
     this.hadHost = true
     this.writeDescriptor(descriptor)
-    this.logger.log('info', 'dsh.host.ready', { hostPid: child.pid ?? -1, endpoint: webUrl ?? jsonRpcEndpoint })
+    this.logger.log('info', 'dsh.host.ready', { hostPid: child.pid ?? -1, endpoint: web?.endpoint ?? jsonRpcEndpoint })
   }
 
   private async status(): Promise<HostDescriptor | null> { return this.host?.descriptor ?? this.readDescriptor() }
@@ -525,7 +536,48 @@ class RingBuffer {
   clear(): void { this.buffer = Buffer.alloc(0) }
 }
 
-async function waitHttp(url: string): Promise<void> { const deadline = Date.now() + 30_000; while (Date.now() < deadline) { try { const response = await fetch(url); if (response.ok) return } catch {} await new Promise((resolve) => setTimeout(resolve, 100)) } throw new Error(`DSH Web service did not become ready at ${url}`) }
+function parseWebServiceStartup(output: string): WebServiceStartup | undefined {
+  const match = output.match(/dsh web:\s+(https?:\/\/127\.0\.0\.1:\d+(?:\/\?token=[^\s(]+)?)/)
+  if (match?.[1] === undefined) return undefined
+  try {
+    const authenticated = new URL(match[1])
+    const token = authenticated.searchParams.get('token') ?? undefined
+    authenticated.search = ''
+    authenticated.hash = ''
+    const endpoint = authenticated.href.replace(/\/$/, '')
+    const authenticatedUrl = token === undefined
+      ? endpoint
+      : `${endpoint}/?token=${encodeURIComponent(token)}`
+    return { endpoint, ...(token === undefined ? {} : { token }), authenticatedUrl }
+  } catch {
+    return undefined
+  }
+}
+
+async function waitHttp(url: string): Promise<void> {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { redirect: 'manual' })
+      // Newer DSH releases answer the launch-token URL with a 303 that sets
+      // the browser session cookie. Older releases serve the index directly.
+      if (response.ok || (response.status >= 300 && response.status < 400)) return
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`DSH Web service did not become ready at ${safeWebEndpoint(url)}`)
+}
+
+function safeWebEndpoint(url: string): string {
+  try {
+    const parsed = new URL(url)
+    parsed.search = ''
+    parsed.hash = ''
+    return parsed.href.replace(/\/$/, '')
+  } catch {
+    return '<invalid-endpoint>'
+  }
+}
 async function waitJsonRpc(endpoint: string): Promise<void> {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {

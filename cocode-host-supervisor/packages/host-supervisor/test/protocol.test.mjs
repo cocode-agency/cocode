@@ -29,7 +29,7 @@ function descriptor(overrides = {}) {
     supervisorPid: 456,
     dshHome: scope.dshHome,
     profile: scope.profile,
-    runtimeVersion: '0.1.1-rc.2',
+    runtimeVersion: '0.1.2-alpha.5',
     hostProtocolRevision: '1.0',
     hostConfigFingerprint: scope.hostConfigFingerprint,
     services: [

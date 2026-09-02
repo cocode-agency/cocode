@@ -148,6 +148,41 @@ export function resolveDshPackage(): { root: string; entry: string; version: str
   return { root, entry, version: String(manifest.version), ...(buildId === undefined ? {} : { buildId }) }
 }
 
+/**
+ * The Cocode client bundles keep the shared client runtime external so the
+ * browser can preserve one runtime identity across plugins.  It is not a
+ * dependency of the Node DSH CLI, so it must be added explicitly to each
+ * per-Host runtime slot alongside the CLI closure.
+ */
+function resolveDshClientRuntimePackage(): string {
+  const require = createRequire(import.meta.url)
+  return dirname(require.resolve('@deepseek-ai/dsh-client-runtime/package.json'))
+}
+
+/**
+ * The alpha.2 agent-preset package renamed the shipped `code` preset to
+ * `ptc`. Existing Cocode sessions keep their durable preset id, so stage a
+ * read-only compatibility root that lets the current runtime compose those
+ * sessions without rewriting their logs or user settings.
+ */
+function stageLegacyCodePreset(slot: string): string | undefined {
+  const require = createRequire(import.meta.url)
+  let presetsRoot: string
+  try {
+    presetsRoot = dirname(require.resolve('@deepseek-ai/dsh-agent-presets/package.json'))
+  } catch {
+    return undefined
+  }
+  const source = join(presetsRoot, 'presets', 'ptc')
+  const targetRoot = join(slot, 'compat-agent-presets')
+  const target = join(targetRoot, 'code')
+  if (!existsSync(join(source, 'agent.cordis.yml'))) return undefined
+  rmSync(target, { recursive: true, force: true })
+  mkdirSync(targetRoot, { recursive: true, mode: 0o700 })
+  cpSync(source, target, { recursive: true, dereference: true })
+  return targetRoot
+}
+
 export function prepareRuntimeSlot(
   scope: HostScope,
   jsonRpcEndpoint: string,
@@ -156,6 +191,7 @@ export function prepareRuntimeSlot(
 ): RuntimeSlot {
   if (scope.profile === 'cocode') ensureCocodeProfile(scope.dshHome, resolveCocodeHome())
   const dsh = resolveDshPackage()
+  const dshClientRuntimeRoot = resolveDshClientRuntimePackage()
   const slot = runtimeSlotDirectory(scope, dsh.version)
   const dshSlotRoot = join(slot, 'node_modules', '@deepseek-ai', 'dsh')
   const entry = join(dshSlotRoot, 'lib', 'bin.js')
@@ -165,10 +201,10 @@ export function prepareRuntimeSlot(
       .filter((item) => item.isDirectory())
       .map((item) => join(pluginRoot, item.name))
     : []
-  if (!isRuntimePackageComplete(dsh.root, dshSlotRoot, pluginSources)) {
+  if (!isRuntimePackageComplete(dsh.root, dshSlotRoot, pluginSources, [dshClientRuntimeRoot])) {
     rmSync(slot, { recursive: true, force: true })
     mkdirSync(join(slot, 'node_modules', '@deepseek-ai'), { recursive: true })
-    copyPackageClosure(dsh.root, slot, pluginSources)
+    copyPackageClosure(dsh.root, slot, [...pluginSources, dshClientRuntimeRoot])
     mkdirSync(slot, { recursive: true })
     writeFileSync(join(slot, 'package.json'), JSON.stringify({ type: 'module', private: true }) + '\n')
   }
@@ -199,8 +235,17 @@ export function prepareRuntimeSlot(
   }
   registerRuntimePluginsInDshManifest(slot, pluginEntries)
   restoreNodePtyHelper(slot)
+  const legacyPresetRoot = scope.profile === 'cocode' ? stageLegacyCodePreset(slot) : undefined
   const patch = join(slot, 'cocode-host.patch.yml')
-  const rows = createRuntimePatch(pathToFileURL(pluginTarget).href, jsonRpcEndpoint, pluginEntries, runtimeEnv, pathToFileURL(credentialsCompatTarget).href, scope.dshHome)
+  const rows = createRuntimePatch(
+    pathToFileURL(pluginTarget).href,
+    jsonRpcEndpoint,
+    pluginEntries,
+    runtimeEnv,
+    pathToFileURL(credentialsCompatTarget).href,
+    scope.dshHome,
+    legacyPresetRoot,
+  )
   writeFileSync(patch, rows)
   writeFileSync(join(slot, 'active.json'), `${JSON.stringify({
     schemaVersion: 1,
@@ -215,7 +260,12 @@ export function prepareRuntimeSlot(
   return { root: slot, entry, version: dsh.version, ...(dsh.buildId === undefined ? {} : { buildId: dsh.buildId }), patch, jsonRpcEndpoint }
 }
 
-function isRuntimePackageComplete(sourceRoot: string, targetRoot: string, pluginSources: readonly string[]): boolean {
+function isRuntimePackageComplete(
+  sourceRoot: string,
+  targetRoot: string,
+  pluginSources: readonly string[],
+  additionalRoots: readonly string[] = [],
+): boolean {
   if (!existsSync(targetRoot)) return false
   const sourceManifestPath = join(sourceRoot, 'package.json')
   const targetManifestPath = join(targetRoot, 'package.json')
@@ -231,6 +281,11 @@ function isRuntimePackageComplete(sourceRoot: string, targetRoot: string, plugin
     roots: [
       { root: sourceRoot, destinationSegments: ['@deepseek-ai', 'dsh'], copy: false },
       ...pluginSources.map((root) => ({
+        root,
+        destinationSegments: readManifest(join(root, 'package.json')).name!.split('/'),
+        copy: false,
+      })),
+      ...additionalRoots.map((root) => ({
         root,
         destinationSegments: readManifest(join(root, 'package.json')).name!.split('/'),
         copy: false,
@@ -338,6 +393,7 @@ export function createRuntimePatch(
   runtimeEnv?: HostRuntimeEnv,
   credentialsCompatUrl?: string,
   dshHome?: string,
+  legacyPresetRoot?: string,
 ): string {
   const providers = parseRuntimeProviders(runtimeEnv?.COCODE_LLM_PROVIDERS)
   return [
@@ -358,7 +414,30 @@ export function createRuntimePatch(
     '  disabled: true',
     '- id: ui-settings-models',
     '  disabled: true',
+    // These browser presentation rows belong to the newer DSH Web shell. The
+    // historical Cocode desktop surface never exposed them; disable them at
+    // the Host composition layer so they cannot reappear through slot shadows.
+    '- id: ui-agent-preset',
+    '  disabled: true',
+    '- id: ui-trajectory',
+    '  disabled: true',
+    '- id: session-log-download',
+    '  disabled: true',
+    ...(legacyPresetRoot === undefined ? [] : [
+      '# Keep historical Cocode sessions using the pre-alpha.2 `code` preset mountable.',
+      '- id: agent-presets',
+      "  name: '@deepseek-ai/dsh-agent-presets'",
+      '  config:',
+      '    default: standard',
+      '    roots:',
+      `      - path: ${JSON.stringify(legacyPresetRoot)}`,
+      '        trust: system',
+      '    includeShippedRoot: true',
+      '    includeUserRoot: true',
+    ]),
     '- insert:',
+    '    - id: cocode-client-runtime',
+    "      name: '@deepseek-ai/dsh-client-runtime'",
     ...(credentialsCompatUrl === undefined || dshHome === undefined ? [] : [
       '    - id: cocode-credentials',
       `      name: ${JSON.stringify(credentialsCompatUrl)}`,
