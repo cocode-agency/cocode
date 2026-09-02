@@ -1,6 +1,9 @@
 const CELL_WIDTH = 10
 const ROW_HEIGHT = 16
-const MARK_COLUMNS = 7
+const MARK_START_COLUMN = 1
+const MARK_END_COLUMN = 7
+const MARK_COLUMNS = MARK_END_COLUMN - MARK_START_COLUMN
+const NAME_START_COLUMN = 7
 const WORDMARK_COLUMNS = 42
 const WORDMARK_LINES = [
 	" ▄█████ ▄████▄ ▄█████ ▄████▄ █████▄ ▄█████",
@@ -20,12 +23,12 @@ export function CocodeLogo({ variant = "wordmark", size = 20, className }: Cocod
 	const columnCount = variant === "mark"
 		? MARK_COLUMNS
 		: variant === "name"
-			? WORDMARK_COLUMNS - MARK_COLUMNS
+			? WORDMARK_COLUMNS - NAME_START_COLUMN
 			: WORDMARK_COLUMNS
 	const lines = variant === "mark"
-		? WORDMARK_LINES.map((line) => line.slice(0, MARK_COLUMNS))
+		? WORDMARK_LINES.map((line) => line.slice(MARK_START_COLUMN, MARK_END_COLUMN))
 		: variant === "name"
-			? WORDMARK_LINES.map((line) => line.slice(MARK_COLUMNS))
+			? WORDMARK_LINES.map((line) => line.slice(NAME_START_COLUMN))
 			: WORDMARK_LINES
 	const blocks = lines.flatMap((line, rowIndex) => [...line].flatMap((glyph, columnIndex) => {
 		const x = columnIndex * CELL_WIDTH

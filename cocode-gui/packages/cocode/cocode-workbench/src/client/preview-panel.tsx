@@ -263,6 +263,10 @@ function RegularFilePreview(props: WorkbenchPanelProps) {
   const copyLabel = t("common.copy")
   const copiedLabel = t("common.copied")
   const codeLabels = useMemo(() => ({ copyLabel, copiedLabel }), [copyLabel, copiedLabel])
+  const markdownLabels = useMemo(
+    () => ({ code: codeLabels, footnotes: t("common.footnotes") }),
+    [codeLabels, t],
+  )
 
   const hasSource = file?.kind === "text"
   // A truncated read holds only the first megabytes; writing it back would
@@ -331,7 +335,7 @@ function RegularFilePreview(props: WorkbenchPanelProps) {
     switch (kind) {
       case "markdown":
         return <div className={css.scroll}>
-          <article className={css.document}><MarkdownText text={markdown} codeLabels={codeLabels} /></article>
+          <article className={css.document}><MarkdownText text={markdown} labels={markdownLabels} /></article>
         </div>
       case "html":
         return <iframe className={css.frame} sandbox="allow-forms allow-scripts" srcDoc={text} title={props.instance.title} />
@@ -340,7 +344,7 @@ function RegularFilePreview(props: WorkbenchPanelProps) {
       case "image":
         return <div className={css.canvas}><img className={css.image} src={previewFileUrl(sessionId, path, revision)} alt={props.instance.title} /></div>
       case "code":
-        return <div className={css.scroll}><CodeBlock code={text} lang={extension} className={css.code} /></div>
+        return <div className={css.scroll}><CodeBlock code={text} lang={extension} className={css.code} copyLabel={copyLabel} copiedLabel={copiedLabel} /></div>
       default:
         return <div className={css.unsupported}>
           <PreviewIcon size={28} />

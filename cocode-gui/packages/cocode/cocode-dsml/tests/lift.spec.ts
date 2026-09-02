@@ -55,7 +55,7 @@ describe("liftDsmlToolCalls", () => {
 
     // The recovered call is a real block the loop can execute, numbered after
     // the provider's own indices, and it turns the turn into another step.
-    expect(out.filter(chunk => chunk.index === 1)).toEqual([
+    expect(out.filter(chunk => "index" in chunk && chunk.index === 1)).toEqual([
       { type: "block-start", index: 1, blockType: "tool-call" },
       {
         type: "tool-call-delta",

@@ -43,11 +43,8 @@ function changedFiles() {
 
 const ignoredPrefixes = [
 	"cocode-gui/node_modules/",
-	"cocode-gui/packages/client/",
-	"cocode-gui/packages/cocode/",
 	"cocode-gui/scripts/release/",
 	"cocode-gui/tests/release/",
-	"cocode-gui/vendor/",
 	"cocode-gui/.cache/",
 	"cocode-gui/.vite/",
 	"cocode-gui/dist/",

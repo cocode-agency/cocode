@@ -19,6 +19,7 @@ import {
   IconDislikeOutline16, IconLikeOutline16, Tooltip, useAnchoredPosition,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MessageFeedbackRating } from '@deepseek-ai/dsh-message-feedback/types'
+import type { MessageFeedbackView } from './controller.ts'
 import type { MessageFeedbackActionProps } from './slots.ts'
 import css from './MessageFeedbackActions.module.css'
 
@@ -44,9 +45,9 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * portal-open beneath the trigger while it is open.
  */
 export function MessageFeedbackActions({ messageId, ensure, rate, toggle, clearNote, useFeedback, t }: MessageFeedbackActionProps) {
-  const item = useFeedback(view => view.items.get(messageId))
-  const loadFailed = useFeedback(view => view.status === 'error')
-  const feedbackStatus = useFeedback(view => view.status)
+  const item = useFeedback((view: MessageFeedbackView) => view.items.get(messageId))
+  const loadFailed = useFeedback((view: MessageFeedbackView) => view.status === 'error')
+  const feedbackStatus = useFeedback((view: MessageFeedbackView) => view.status)
   const rating = item?.rating
   const [noteOpen, setNoteOpen] = useState(false)
   const [draft, setDraft] = useState('')

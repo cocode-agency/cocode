@@ -25,7 +25,7 @@ describe("file tree chat insertion", () => {
     expect(entries.find(entry => entry.id === "copyPath")).toMatchObject({ shortcut: undefined })
   })
 
-  it("uses the same file mention projection as the at picker", () => {
+  it("uses the file mention projection for tree insertion", () => {
     expect(fileMentionText("src/main.ts")).toBe("@src/main.ts ")
     expect(fileMentionText("工作周报示例.docx")).toBe("@工作周报示例.docx ")
     expect(fileMentionText("docs/design note.md")).toBe('@"docs/design note.md" ')

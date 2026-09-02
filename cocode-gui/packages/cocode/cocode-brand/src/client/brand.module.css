@@ -1,5 +1,5 @@
 .railMark {
-  transform: translate(-1px, 1px);
+  transform: translateY(1px);
 }
 
 .group {

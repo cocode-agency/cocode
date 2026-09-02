@@ -18,9 +18,16 @@ test("resolves every browser roster alias to a local Electron bundle", () => {
 			resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-client-ui-permission-presets"),
 			"file:///Cocode/dsh-client/ui-permission-presets/client.js",
 		)
+		assert.equal(resolveLocalDshClientBundleUrl("@example/not-packaged"), undefined)
+		assert.equal(resolveLocalDshClientBundleUrl("cocode-dsml"), undefined)
+		assert.equal(resolveLocalDshClientBundleUrl("cocode-future-plugin"), undefined)
 		assert.equal(
-			resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-client-not-packaged"),
-			undefined,
+			resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-api-remotes"),
+			"file:///Cocode/dsh-client/dsh-api-remotes/client.js",
+		)
+		assert.equal(
+			resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-cordis-client-runner"),
+			"file:///Cocode/dsh-client/dsh-cordis-client-runner/client.js",
 		)
 	} finally {
 		if (previousWindow === undefined)

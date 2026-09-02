@@ -7,3 +7,7 @@ onlyBuiltDependencies:
     - electron-winstaller
     - esbuild
     - node-pty
+patchedDependencies:
+    "@deepseek-ai/dsh-client-ui-chat@0.1.2-alpha.5": patches/@deepseek-ai__dsh-client-ui-chat@0.1.2-alpha.5.patch
+    "@deepseek-ai/dsh-client-ui-conversation@0.1.2-alpha.5": patches/@deepseek-ai__dsh-client-ui-conversation@0.1.2-alpha.5.patch
+    "@deepseek-ai/dsh-client-ui-layout@0.1.2-alpha.5": patches/@deepseek-ai__dsh-client-ui-layout@0.1.2-alpha.5.patch

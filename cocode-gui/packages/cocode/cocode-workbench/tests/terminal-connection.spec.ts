@@ -40,13 +40,13 @@ describe("TerminalConnection recovery", () => {
   })
 
   it("automatically retries a workspace-not-ready handshake with the latest cwd", async () => {
-    let cwd: string | undefined
+    const cwdRef: { current: string | undefined } = { current: undefined }
     const statuses: TerminalStatus[] = []
     const connection = new TerminalConnection({
       sessionId: "session-1",
       terminalId: "terminal-1",
       geometry: () => ({ cols: 80, rows: 24 }),
-      cwd: () => cwd,
+      cwd: () => cwdRef.current,
       onOutput: () => {},
       onStatus: status => { statuses.push(status) },
     })
@@ -55,7 +55,7 @@ describe("TerminalConnection recovery", () => {
     expect(FakeWebSocket.instances).toHaveLength(1)
     expect(FakeWebSocket.instances[0]?.url).not.toContain("cwd=")
 
-    cwd = "/tmp/project"
+    cwdRef.current = "/tmp/project"
     FakeWebSocket.instances[0]?.closeFromHost(TERMINAL_RETRYABLE_CODE, "session workspace is not ready")
     expect(statuses.at(-1)).toEqual({ kind: "reconnecting" })
 

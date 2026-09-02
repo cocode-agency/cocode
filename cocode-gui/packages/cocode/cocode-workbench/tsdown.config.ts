@@ -1,4 +1,4 @@
-import { clientBundle } from "../../client/tsdown.client.ts"
+import { clientBundle } from "../tsdown.client.ts"
 
 export default clientBundle("cocode-workbench", ["src/index.ts", "src/file-search-worker.ts"], {
   // The Host runtime stages plugins into a self-contained package tree. Keep

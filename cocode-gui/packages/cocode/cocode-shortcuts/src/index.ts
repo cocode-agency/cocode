@@ -1,4 +1,3 @@
-import { settingsNamespace } from "@deepseek-ai/dsh-settings"
 import type { Context } from "./context-types.ts"
 import {
   registerShortcutsRoute,
@@ -18,7 +17,7 @@ export const inject = ["webServer", "webRuntime"]
 export function apply(ctx: Context): void {
   let settingsFace: ShortcutSettingsFace | undefined
   ctx.inject(["settings"], (settingsCtx) => {
-    const namespace = settingsNamespace(SHORTCUTS_SETTINGS_NAMESPACE)
+    const namespace = SHORTCUTS_SETTINGS_NAMESPACE
     settingsCtx.settings.register(namespace, ShortcutSettingsSchema)
     const read = (): ShortcutSettingsView => {
       const descriptor = settingsCtx.settings

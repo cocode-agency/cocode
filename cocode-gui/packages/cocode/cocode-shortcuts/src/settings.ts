@@ -1,4 +1,5 @@
 import z from "schemastery"
+import type Schema from "schemastery"
 
 export const SHORTCUTS_SETTINGS_NAMESPACE = "cocode-shortcuts"
 export const SHORTCUTS_SETTINGS_VERSION = 1
@@ -16,7 +17,7 @@ export const ShortcutSettingsSchema = z.object({
     scope: z.union(["app", "global"]).required(false),
     disabled: z.boolean().required(false),
   })).default({}),
-})
+}) as unknown as Schema<unknown, ShortcutSettings>
 
 export type ShortcutSettings = {
   readonly version: 1

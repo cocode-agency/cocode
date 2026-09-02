@@ -8,6 +8,7 @@
  *   are handed back to the app untouched — menu navigation keeps working.
  */
 import type {
+  AgentContext,
   ClientContext,
   ConversationNode,
   ISessions,
@@ -26,7 +27,7 @@ interface SessionInputFace {
 }
 interface ConversationFace {
   readonly input?: {
-    for(actx: ClientContext): SessionInputFace | undefined
+    for(actx: AgentContext): SessionInputFace | undefined
   }
 }
 

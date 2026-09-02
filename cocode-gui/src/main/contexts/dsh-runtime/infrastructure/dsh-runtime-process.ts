@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import * as path from "pathe"
-import { app } from "electron"
+import { app, session } from "electron"
 import type {
 	DshRuntimeBootstrapDto,
 	DshRuntimeReboundDto,
@@ -36,6 +36,10 @@ const RECOVERY_BACKOFF_MS = [500, 1_000, 2_000] as const
 export class DshRuntimeProcess {
 	private lease: HostLease | null = null
 	private runtimeUrl: string | null = null
+	private runtimeToken: string | undefined
+	private runtimeCookie: string | null = null
+	private runtimeCookieName: string | undefined
+	private runtimeCookieOrigin: string | undefined
 	private hostLogDirectoryValue: string | undefined
 	private endpointGeneration = 0
 	private recoveryPromise: Promise<DshRuntimeRecoveryStateDto> | null = null
@@ -128,15 +132,17 @@ export class DshRuntimeProcess {
 				hostPid: lease.descriptor.hostPid,
 			},
 		})
+		const normalizedEndpoint = normalizeWebEndpoint(endpoint.endpoint)
 		this.lease = lease
-		this.runtimeUrl = endpoint.endpoint
+		this.runtimeUrl = normalizedEndpoint.endpoint
+		this.runtimeToken = endpoint.token ?? normalizedEndpoint.token
 		this.hostLogDirectoryValue = lease.logDirectory
-		return endpoint.endpoint
+		return normalizedEndpoint.endpoint
 	}
 
 	public async getBootstrap(): Promise<DshRuntimeBootstrapDto> {
 		const runtimeUrl = this.requireRuntimeUrl()
-		const response = await fetch(runtimeUrl)
+		const response = await this.fetchBootstrap(runtimeUrl)
 		if (!response.ok) {
 			throw new Error(
 				`DSH runtime bootstrap request failed with HTTP ${String(response.status)}.`,
@@ -148,7 +154,9 @@ export class DshRuntimeProcess {
 			boot: extractDshBootManifest(html),
 			themePreference: extractDshThemePreference(html),
 		})
-		await assertRequiredCocodeWebEndpoints(bootstrap.origin, bootstrap.boot)
+		await assertRequiredCocodeWebEndpoints(bootstrap.origin, bootstrap.boot, (input, init) =>
+			this.fetchRuntime(input, init),
+		)
 		return bootstrap
 	}
 
@@ -171,6 +179,9 @@ export class DshRuntimeProcess {
 		const headers = new Headers()
 		for (const [name, value] of request.headers) {
 			if (FORWARDED_REQUEST_HEADERS.has(name.toLowerCase())) headers.append(name, value)
+		}
+		if (this.runtimeCookie !== null && !headers.has("cookie")) {
+			headers.set("cookie", this.runtimeCookie)
 		}
 		const response = await fetchDshRuntimeRequest({
 			target,
@@ -265,9 +276,20 @@ export class DshRuntimeProcess {
 
 	public async stop(): Promise<void> {
 		const lease = this.lease
+		const cookieOrigin = this.runtimeCookieOrigin
+		const cookieName = this.runtimeCookieName
 		this.lease = null
 		this.runtimeUrl = null
+		this.runtimeToken = undefined
+		this.runtimeCookie = null
+		this.runtimeCookieName = undefined
+		this.runtimeCookieOrigin = undefined
 		this.hostLogDirectoryValue = undefined
+		if (cookieOrigin !== undefined && cookieName !== undefined) {
+			await session.defaultSession.cookies
+				.remove(cookieOrigin, cookieName)
+				.catch(() => undefined)
+		}
 		await lease?.release().catch(() => undefined)
 	}
 
@@ -282,6 +304,45 @@ export class DshRuntimeProcess {
 	private requireRuntimeUrl(): string {
 		if (this.runtimeUrl === null) throw new Error("DSH runtime is not ready.")
 		return this.runtimeUrl
+	}
+
+	private async fetchBootstrap(runtimeUrl: string): Promise<Response> {
+		if (this.runtimeToken === undefined) return this.fetchRuntime(runtimeUrl)
+		const authenticated = new URL(runtimeUrl)
+		authenticated.searchParams.set("token", this.runtimeToken)
+		const challenge = await fetch(authenticated, { redirect: "manual" })
+		const cookie = extractSetCookie(challenge)
+		if (challenge.status !== 303 || cookie === undefined) return challenge
+		await this.installRuntimeCookie(runtimeUrl, cookie)
+		this.runtimeCookie = cookie
+		return this.fetchRuntime(runtimeUrl)
+	}
+
+	private fetchRuntime(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+		const headers = new Headers(init?.headers)
+		if (this.runtimeCookie !== null && !headers.has("cookie")) {
+			headers.set("cookie", this.runtimeCookie)
+		}
+		return fetch(input, { ...init, headers })
+	}
+
+	private async installRuntimeCookie(runtimeUrl: string, cookie: string): Promise<void> {
+		const separator = cookie.indexOf("=")
+		if (separator <= 0)
+			throw new Error("DSH Web authentication returned an invalid session cookie")
+		const name = cookie.slice(0, separator)
+		const value = cookie.slice(separator + 1)
+		const origin = new URL(runtimeUrl).origin
+		await session.defaultSession.cookies.set({
+			url: origin,
+			name,
+			value,
+			path: "/",
+			httpOnly: true,
+			sameSite: "strict",
+		})
+		this.runtimeCookieName = name
+		this.runtimeCookieOrigin = origin
 	}
 
 	private async performRecovery(
@@ -410,6 +471,32 @@ function safeOrigin(value: string): string {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
+}
+
+function normalizeWebEndpoint(endpoint: string): { endpoint: string; token?: string } {
+	const parsed = new URL(endpoint)
+	const token = parsed.searchParams.get("token") ?? undefined
+	parsed.search = ""
+	parsed.hash = ""
+	return {
+		endpoint: parsed.href.replace(/\/$/, ""),
+		...(token === undefined ? {} : { token }),
+	}
+}
+
+function extractSetCookie(response: Response): string | undefined {
+	const headers = response.headers as Headers & { getSetCookie?: () => string[] }
+	const values =
+		typeof headers.getSetCookie === "function"
+			? headers.getSetCookie()
+			: headers.get("set-cookie") === null
+			? []
+			: [headers.get("set-cookie") as string]
+	for (const value of values) {
+		const first = value.split(";", 1)[0]?.trim()
+		if (first !== undefined && first.includes("=")) return first
+	}
+	return undefined
 }
 
 function resolveSupervisorServiceEntry(): string | undefined {

@@ -14,6 +14,7 @@ import { forkClientWatcher } from "./lib/client-watcher.mjs"
 import { buildDevRuntime } from "./lib/dev-build.mjs"
 import { acquireDevLock } from "./lib/dev-lock.mjs"
 import { createDevHostEnvironment, resolveDevSupervisorEntry } from "./lib/dev-runtime-entry.mjs"
+import { establishDshWebAuth } from "./lib/dsh-web-auth.mjs"
 import { cleanupRuntime, prepareRuntime, resolveRuntimeRoot } from "./lib/runtime-cache.mjs"
 
 const ENTRY_SCRIPT = "start-web-dev.mjs"
@@ -52,7 +53,7 @@ async function run() {
 	await watcher.ready
 	if (children.isStopping()) return 0
 
-	const runtimeUrl = await acquireHostEndpoint(supervisorEntry, devHostEnvironment)
+	const webRuntime = await acquireHostEndpoint(supervisorEntry, devHostEnvironment)
 
 	let watcherFailure
 	watcher.child.once("exit", (code, signal) => {
@@ -65,7 +66,7 @@ async function run() {
 		void children.stopAll()
 	})
 
-	const exitCode = await waitForExit(startVite(runtimeUrl, devHostEnvironment))
+	const exitCode = await waitForExit(startVite(webRuntime, devHostEnvironment))
 	if (watcherFailure) throw watcherFailure
 	// A shutdown this runner initiated is what the developer asked for, so the
 	// signal-derived exit code of the child it killed is not a failure to report.
@@ -95,11 +96,12 @@ async function acquireHostEndpoint(supervisorEntry, devHostEnvironment) {
 	hostLease = lease
 	const web = lease.descriptor.services.find((service) => service.service === "web")
 	if (web === undefined) throw new Error("shared Host did not advertise its Web service")
-	console.log(`[dsh-runtime] web endpoint ${web.endpoint}`)
-	return web.endpoint.replace(/\/$/, "")
+	const webRuntime = await establishDshWebAuth(web.endpoint, web.token, "localhost:5273")
+	console.log(`[dsh-runtime] web endpoint ${webRuntime.endpoint}`)
+	return webRuntime
 }
 
-function startVite(runtimeUrl, devHostEnvironment) {
+function startVite(webRuntime, devHostEnvironment) {
 	return children.track(
 		spawn(
 			corepackCommand,
@@ -118,7 +120,9 @@ function startVite(runtimeUrl, devHostEnvironment) {
 				env: {
 					...devHostEnvironment,
 					DSH_RUNTIME_ROOT: runtime.root,
-					COCODE_DSH_RUNTIME_URL: runtimeUrl,
+					COCODE_DSH_RUNTIME_URL: webRuntime.endpoint,
+					COCODE_DSH_RUNTIME_COOKIE: webRuntime.cookie,
+					COCODE_DSH_RUNTIME_AUTHORITY: webRuntime.authority,
 					COCODE_NODE_EXECUTABLE: process.execPath,
 				},
 			}),

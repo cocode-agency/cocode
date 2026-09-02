@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import * as path from "pathe"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { buildSupervisor } from "./build-supervisor.mjs"
+import { assertDshCompatibility } from "./check-dsh-compatibility.mjs"
 import { hashDirectory, hashFiles, hashJson } from "./runtime-build-helpers.mjs"
 import { collectRuntimeNativeInventory } from "./lib/native-binary-inspection.mjs"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
@@ -10,6 +11,7 @@ import { shellCommandOptions } from "./lib/child-process-options.mjs"
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
 export async function buildRuntime({ clean = false, output = defaultOutput() } = {}) {
+	assertDshCompatibility()
 	const command = process.platform === "win32" ? "corepack.cmd" : "corepack"
 	execFileSync(command, ["pnpm@10.34.5", "run", "build:cocode-plugins"], {
 		...shellCommandOptions({ cwd: repositoryRoot, stdio: "inherit" }),

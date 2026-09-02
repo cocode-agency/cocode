@@ -22,6 +22,7 @@ import * as path from "pathe"
 
 const CACHE_MARKER = ".cocode-runtime-cache.json"
 const FINGERPRINT_VERSION = 3
+const RUNTIME_ENTRY = path.join("packages", "host-supervisor", "lib", "bin.js")
 
 export function resolveRuntimeRoot(temporaryPrefix) {
 	const configured = process.env.DSH_RUNTIME_ROOT
@@ -72,7 +73,7 @@ function ensureRuntimeStaged(destination) {
 	const fingerprint = createRuntimeFingerprint()
 	if (
 		process.env.DSH_FORCE_RESTAGE !== "1" &&
-		existsSync(path.join(destination, "lib", "bin.js"))
+		existsSync(path.join(destination, RUNTIME_ENTRY))
 	) {
 		try {
 			const metadata = JSON.parse(readFileSync(path.join(destination, CACHE_MARKER), "utf8"))

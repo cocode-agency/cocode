@@ -21,5 +21,12 @@
 		"moduleResolution": "node",
 		"resolveJsonModule": true
 	},
-	"exclude": ["packages/client", "packages/cocode", "vendor"]
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"electron-builder.config.ts",
+		"electron.vite.config.ts",
+		"vite*.config.ts"
+	],
+	"exclude": ["node_modules", "packages/cocode", ".cache", "release"]
 }

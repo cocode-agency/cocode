@@ -132,6 +132,36 @@ Cocode GUI ─┐
 Cocode TUI ─┘
 ```
 
+### Upgrading DSH
+
+DSH is released as one exact release train in Cocode. The canonical target is
+`cocode-host-supervisor/package.json`'s `@deepseek-ai/dsh` dependency; the GUI
+client packages and every `packages/cocode/*` plugin peer dependency must use
+that same version.
+
+After changing the DSH package versions and refreshing both lockfiles, run the
+fast contract check first:
+
+```sh
+cd cocode-gui
+corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+corepack pnpm@10.34.5 run check:dsh-contract
+```
+
+It checks all DSH declarations, installed package manifests, Cocode plugin
+manifests, browser plugin entrypoints, and every `dsh.client.inject` target.
+The complete gate rebuilds the plugins and Electron app, runs GUI/Host tests,
+stages a clean npm DSH runtime, and verifies its closure and hashes:
+
+```sh
+corepack pnpm@10.34.5 run check:dsh-compatibility
+```
+
+Do not treat a successful TypeScript build alone as compatibility proof. A DSH
+upgrade can change slot names, plugin injection, exported client entrypoints,
+or runtime dependency closure; the clean staging and runtime verification are
+what catch those integration breaks before release.
+
 ## Requirements
 
 The three components do not share a toolchain baseline. Check the one you plan
@@ -293,8 +323,8 @@ opening a public issue.
 
 [MIT](LICENSE) © 2026 Cocode Agency.
 
-Third-party components, including DeepSeek Harness and the source-vendored
-Cordis framework, keep their own licenses. See
+Third-party components, including the npm-delivered DeepSeek Harness and Cordis
+framework, keep their own licenses. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---

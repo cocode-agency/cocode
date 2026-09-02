@@ -11,5 +11,5 @@
 		"electron.vite.config.ts",
 		"vite*.config.ts"
 	],
-	"exclude": ["node_modules", "packages/client", "packages/cocode", "vendor", ".cache", "release"]
+	"exclude": ["node_modules", "packages/cocode", ".cache", "release"]
 }

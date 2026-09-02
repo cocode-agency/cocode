@@ -161,6 +161,18 @@ export const zh = {
   "git.checkout": "切换分支…",
   "git.branchCreate": "新建分支…",
   "git.branchDelete": "删除分支…",
+  "git.branchPicker": "Git 分支",
+  "git.branchPickerCurrent": "当前分支：{branch}",
+  "git.branchPickerSearch": "搜索 {project} 分支",
+  "git.branchPickerTitle": "分支",
+  "git.branchPickerDirty": "未提交：{count} 个文件",
+  "git.branchPickerClean": "工作区无未提交更改",
+  "git.branchPickerNoMatch": "没有匹配的分支",
+  "git.branchPickerCreate": "创建并检出新分支…",
+  "git.branchPickerName": "新分支名称",
+  "git.branchPickerNamePlaceholder": "输入新分支名称",
+  "git.branchPickerNameRequired": "请输入新分支名称。",
+  "git.branchPickerCreateAction": "创建并检出",
   "git.stash": "Stash（暂存）",
   "git.stashPush": "Stash 更改",
   "git.stashPushUntracked": "Stash 更改（含未跟踪）",
@@ -385,6 +397,7 @@ export const zh = {
   "common.retry": "重试",
   "common.copy": "复制",
   "common.copied": "已复制",
+  "common.footnotes": "脚注",
 } as const
 
 export type WorkbenchKey = keyof typeof zh
@@ -539,6 +552,18 @@ export const en: Record<WorkbenchKey, string> = {
   "git.checkout": "Checkout to…",
   "git.branchCreate": "Create Branch…",
   "git.branchDelete": "Delete Branch…",
+  "git.branchPicker": "Git branch",
+  "git.branchPickerCurrent": "Current branch: {branch}",
+  "git.branchPickerSearch": "Search {project} branches",
+  "git.branchPickerTitle": "Branches",
+  "git.branchPickerDirty": "Uncommitted: {count} files",
+  "git.branchPickerClean": "Working tree clean",
+  "git.branchPickerNoMatch": "No matching branches",
+  "git.branchPickerCreate": "Create and check out new branch…",
+  "git.branchPickerName": "New branch name",
+  "git.branchPickerNamePlaceholder": "Enter a new branch name",
+  "git.branchPickerNameRequired": "Enter a new branch name.",
+  "git.branchPickerCreateAction": "Create and check out",
   "git.stash": "Stash",
   "git.stashPush": "Stash Changes",
   "git.stashPushUntracked": "Stash Changes (Include Untracked)",
@@ -763,6 +788,7 @@ export const en: Record<WorkbenchKey, string> = {
   "common.retry": "Retry",
   "common.copy": "Copy",
   "common.copied": "Copied",
+  "common.footnotes": "Footnotes",
 }
 
 /** locale 服务中本模块真正用到的部分，避免值依赖 locale 包（客户端包纯度）。 */

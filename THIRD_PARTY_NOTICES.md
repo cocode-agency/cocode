@@ -13,26 +13,16 @@ is recorded in the per-component `pnpm-lock.yaml` files; inspect it with
 
 ## Redistributed source
 
-### DeepSeek Harness client packages
+### No source-vendored DSH components
 
-`cocode-gui/packages/client/` contains modified copies of the DeepSeek Harness
-client packages (`@deepseek-ai/dsh-client-*`). The upstream MIT license and
-copyright notice are preserved in
-[`cocode-gui/packages/client/LICENSE`](cocode-gui/packages/client/LICENSE).
+No DeepSeek Harness, Cordis, or DSH client source is redistributed from this
+repository. Cocode-owned product behavior is implemented in
+`cocode-gui/packages/cocode/*` and uses the published DSH plugin ABI.
 
-| | |
-| --- | --- |
-| Upstream | [github.com/deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) |
-| Copyright | Copyright (c) 2026 DeepSeek |
-| License | MIT |
-| Modifications | Cocode-specific UI, theming, and integration changes |
+### npm-delivered Cordis dependencies
 
-### Cordis framework and foundation libraries
-
-`cocode-gui/vendor/` contains the Cordis framework and its foundation libraries
-in source form, republished under the `@deepseek-ai` scope by DeepSeek Harness
-rather than consumed from npm. Each directory preserves its upstream `LICENSE`
-file.
+Cordis and its foundation libraries are consumed from npm under the
+`@deepseek-ai` scope; no source copy is kept in this repository.
 
 | Package | Upstream name | Upstream | License |
 | --- | --- | --- | --- |
@@ -41,20 +31,20 @@ file.
 | `@deepseek-ai/cosmokit` | `cosmokit` | [github.com/cordiverse/cosmokit](https://github.com/cordiverse/cosmokit) | MIT |
 | `@deepseek-ai/schemastery` | `schemastery` | [github.com/shigma/schemastery](https://github.com/shigma/schemastery) | MIT |
 
-All four are MIT, Copyright (c) 2021-present Shigma.
+These packages are MIT, Copyright (c) 2021-present Shigma.
 
 ## Runtime dependencies
 
-### DeepSeek Harness
+### DeepSeek Harness and DSH client packages
 
-`@cocode-agency/host-supervisor` pins the DeepSeek Harness runtime from npm. These
-packages are not vendored into this repository; they are resolved at install
-time.
+`@cocode-agency/host-supervisor` pins the DeepSeek Harness runtime from npm. The
+GUI's DSH client packages and the Cordis foundation packages are also resolved
+from npm at install time; none are vendored into this repository.
 
 | | |
 | --- | --- |
-| Packages | `@deepseek-ai/dsh` and its `dsh-*` siblings |
-| Upstream | [github.com/deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) |
+| Packages | `@deepseek-ai/dsh`, its `dsh-*` siblings, `@deepseek-ai/cordis`, `@deepseek-ai/cordis-plugin-loader`, `@deepseek-ai/cosmokit`, and `@deepseek-ai/schemastery` |
+| Upstream | [github.com/deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness); [github.com/cordiverse/cordis](https://github.com/cordiverse/cordis); [github.com/shigma/schemastery](https://github.com/shigma/schemastery) |
 | License | MIT |
 
 DeepSeek Harness carries its own transitive dependency closure under a mix of

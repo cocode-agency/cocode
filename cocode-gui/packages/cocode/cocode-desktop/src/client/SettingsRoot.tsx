@@ -17,6 +17,8 @@ import {
   IconLightOutline16, IconListPenOutline16, IconPersonalizationOutline16, IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
+import type { SettingsOnboardingStep } from './shell-contract.ts'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import css from './SettingsRoot.module.css'
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
@@ -133,9 +135,9 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   // The ledger tick keeps the nav rows fresh: registrants re-register with
   // freshly localized text on locale change, and the header/close seats
   // re-render through their own outlets' subscriptions.
-  const rows = useSections(s => s)
-  const onboardingSteps = useOnboardingSteps(s => s)
-  const onboardingActive = useSessions(state =>
+  const rows = useSections((s: readonly SettingsSectionRow[]) => s)
+  const onboardingSteps = useOnboardingSteps((s: readonly SettingsOnboardingStep[]) => s)
+  const onboardingActive = useSessions((state: SessionListState) =>
     state.phase === 'ready'
     && (state.current === undefined || state.byId[state.current]?.blank === true))
   // An explicitly opened Settings panel owns the interaction surface. Do not
@@ -143,7 +145,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   // (for example after "稍后再说" on account sign-in), and leaving the next
   // step mounted would either cover the panel or make its close button inert.
   const onboardingStep = onboardingActive && !open
-    ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
+    ? onboardingSteps.find((step: SettingsOnboardingStep) => !completedOnboarding.has(step.id))
     : undefined
 
   useEffect(() => {

@@ -13,11 +13,19 @@ import { createRequire } from "node:module"
 import * as path from "pathe"
 import { fileURLToPath } from "node:url"
 import { shellCommandOptions } from "./lib/child-process-options.mjs"
+import { hashDirectory, hashFiles, hashJson } from "./runtime-build-helpers.mjs"
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const pluginsRoot = path.join(repositoryRoot, "packages", "cocode")
 const corepackCommand = process.platform === "win32" ? "corepack.cmd" : "corepack"
 const pinnedPnpmArgs = ["pnpm@10.34.5"]
+const defaultBuildManifestPath = path.join(
+	repositoryRoot,
+	".cache",
+	"cocode",
+	"plugin-build-manifest.json",
+)
+const BUILD_MANIFEST_VERSION = 1
 
 export function discoverCocodePlugins(root = pluginsRoot) {
 	const plugins = []
@@ -46,8 +54,35 @@ export function discoverCocodePlugins(root = pluginsRoot) {
 	return plugins.sort((left, right) => left.name.localeCompare(right.name))
 }
 
-export function buildCocodePlugins() {
-	for (const plugin of discoverCocodePlugins()) {
+export function buildCocodePlugins({
+	incremental = false,
+	manifestPath = defaultBuildManifestPath,
+} = {}) {
+	const plugins = discoverCocodePlugins()
+	const toolchainHash = hashFiles(repositoryRoot, [
+		"package.json",
+		"pnpm-lock.yaml",
+		"tsconfig.base.json",
+		"tsconfig.base.client.json",
+		"packages/cocode/tsdown.client.ts",
+		"scripts/cocode-plugins.mjs",
+		"scripts/runtime-build-helpers.mjs",
+	])
+	const previous = incremental ? readBuildManifest(manifestPath) : undefined
+	const reusable = previous?.toolchainHash === toolchainHash ? previous.plugins : undefined
+	const nextPlugins = {}
+	let rebuilt = 0
+	let reused = 0
+
+	for (const plugin of plugins) {
+		const inputHash = pluginInputHash(plugin, toolchainHash)
+		const cached = reusable?.[plugin.name]
+		if (cached?.inputHash === inputHash && outputsMatch(plugin, cached.outputHash)) {
+			nextPlugins[plugin.name] = cached
+			reused += 1
+			continue
+		}
+
 		rmSync(path.join(plugin.root, "lib"), { recursive: true, force: true })
 		execFileSync(
 			corepackCommand,
@@ -73,6 +108,65 @@ export function buildCocodePlugins() {
 				stdio: "inherit",
 			}),
 		)
+		assertBuiltPlugin(plugin)
+		nextPlugins[plugin.name] = {
+			inputHash,
+			outputHash: hashDirectory(path.join(plugin.root, "lib")),
+		}
+		rebuilt += 1
+	}
+
+	mkdirSync(path.dirname(manifestPath), { recursive: true })
+	writeFileSync(
+		manifestPath,
+		`${JSON.stringify(
+			{
+				schemaVersion: BUILD_MANIFEST_VERSION,
+				toolchainHash,
+				plugins: nextPlugins,
+			},
+			null,
+		)}\n`,
+	)
+	if (incremental && reused > 0) {
+		console.log(`[cocode-build] reused ${String(reused)} plugin${reused === 1 ? "" : "s"}`)
+	}
+	if (incremental && rebuilt > 0) {
+		console.log(`[cocode-build] rebuilt ${String(rebuilt)} plugin${rebuilt === 1 ? "" : "s"}`)
+	}
+}
+
+function pluginInputHash(plugin, toolchainHash) {
+	return hashJson({
+		version: BUILD_MANIFEST_VERSION,
+		toolchainHash,
+		package: hashFiles(plugin.root, [
+			"package.json",
+			"tsconfig.json",
+			"tsconfig.build.json",
+			"tsdown.config.ts",
+		]),
+		source: hashDirectory(path.join(plugin.root, "src")),
+	})
+}
+
+function outputsMatch(plugin, cachedOutputHash) {
+	if (typeof cachedOutputHash !== "string") return false
+	if (!existsSync(path.join(plugin.root, "lib", "index.js"))) return false
+	if (plugin.manifest.dsh?.client || plugin.manifest.exports?.["./client"]) {
+		if (!existsSync(path.join(plugin.root, "lib", "client.js"))) return false
+	}
+	return cachedOutputHash === hashDirectory(path.join(plugin.root, "lib"))
+}
+
+function readBuildManifest(manifestPath) {
+	try {
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+		if (manifest?.schemaVersion !== BUILD_MANIFEST_VERSION) return undefined
+		if (!manifest.plugins || typeof manifest.plugins !== "object") return undefined
+		return manifest
+	} catch {
+		return undefined
 	}
 }
 

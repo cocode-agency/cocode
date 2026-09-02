@@ -3,6 +3,7 @@ import type { ClientContext, ISessions, SessionId } from "@deepseek-ai/dsh-clien
 import type {} from "@deepseek-ai/dsh-client-locale/client"
 import { DockSurface } from "./DockSurface.tsx"
 import { Launcher } from "./Launcher.tsx"
+import { GitHeroAction } from "./GitHeroAction.tsx"
 import { WorkbenchController, type WorkbenchLayoutFace } from "./controller.ts"
 import { builtInPanels } from "./builtins.tsx"
 import { LOCALE_NS, attachLocale, en, zh, t, type WorkbenchKey } from "./locales.ts"
@@ -11,7 +12,7 @@ import { CommandLineSection } from "./command-line-section.tsx"
 import { DiagnosticsSection } from "./diagnostics-section.tsx"
 import { VersionSection } from "./version-section.tsx"
 import type { WorkbenchPanelProps } from "./model.ts"
-import { fileMentionText, registerFileMention } from "./file-mention.ts"
+import { fileMentionText } from "./file-mention.ts"
 import { bindFileShortcutRegistry, fileShortcutCommands, type FileShortcutRegistryFace } from "./file-shortcuts.ts"
 
 export type * from "./model.ts"
@@ -49,7 +50,7 @@ export const inject = ["slots", "layout", "sessions", "locale", "shortcuts"]
 
 interface ConversationInputInsertion {
   readonly input: {
-    for(scope: ClientContext): {
+    for(scope: Omit<ClientContext, "remote">): {
       insertDraftText(text: string): boolean
     }
   }
@@ -71,7 +72,6 @@ export function apply(ctx: ClientContext): void {
   // through the module-level translate instead of an injected `t` seat.
   attachLocale(ctx.locale)
   ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), "cocode-workbench: dictionaries")
-  ctx.inject(["inputTriggers"], (scope: ClientContext) => { registerFileMention(scope) })
   ctx.inject(["shortcuts"], (shortcutCtx: ClientContext) => {
     const shortcuts = shortcutCtx.get("shortcuts")
     if (shortcuts === undefined) return
@@ -104,6 +104,12 @@ export function apply(ctx: ClientContext): void {
     order: 10,
     inject: () => ({ controller }),
   }, Launcher))
+  // Source control belongs beside the New Session workspace selector, where a
+  // project-scoped action can be found before opening the right workbench.
+  slots.inject("conversation.hero.agentPreset", () => slots.register({
+    name: "conversation.hero.agentPreset",
+    priority: -2,
+  }, GitHeroAction))
   // 提交消息模型是一项全局偏好，排在通用设置的既有条目之后。
   slots.inject("settings.general.item", () => slots.register({
     name: "settings.general.item",

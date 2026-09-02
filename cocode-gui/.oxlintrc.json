@@ -21,10 +21,7 @@
 		"**/dist-electron/**",
 		"**/out/**",
 		"**/release/**",
-		"docs/**",
-		"packages/client/**",
-		"packages/cocode/**",
-		"vendor/**"
+		"docs/**"
 	],
 	"rules": {
 		"no-var": "error",

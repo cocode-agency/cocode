@@ -1,0 +1,22 @@
+diff --git a/lib/client.js b/lib/client.js
+index 7bb92562f13d9e52c5ab049acc3257b797578b8e..6a811d20d546efdc61411321c2c2794c4dfde924 100644
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -2316,6 +2316,17 @@ window.__ModuleLoader__.load({
+ 					el.scrollTop = el.scrollHeight;
+ 					observedTopRef.current = el.scrollTop;
+ 					chatScroll.save(null);
++					return;
++				}
++				if (local !== null) {
++					const el = scrollerOf(local);
++					if (el.scrollHeight - el.scrollTop - el.clientHeight <= 25) {
++						anchorRef.current = null;
++						atBottomRef.current = true;
++						observedTopRef.current = el.scrollTop;
++						chatScroll.save(null);
++						setAtBottom(true);
++					}
+ 				}
+ 			};
+ 			(0, react.useEffect)(() => {

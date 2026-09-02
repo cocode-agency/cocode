@@ -1,4 +1,4 @@
-import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings"
+import { SettingsConflictError } from "@deepseek-ai/dsh-settings"
 import { describe, expect, it } from "vitest"
 import type {
   ShortcutsHttpRequest,
@@ -45,7 +45,7 @@ function createFakeSettings() {
       if (entry === undefined) throw new Error("namespace is not registered")
       if (expectedRevision !== undefined && expectedRevision !== entry.revision) {
         throw new SettingsConflictError(
-          settingsNamespace(namespace),
+          namespace as never,
           expectedRevision,
           entry.revision,
         )
@@ -216,4 +216,3 @@ describe("cocode shortcuts settings route", () => {
     expect(foreignNamespace.body.error?.message).toMatch(/unknown request field/)
   })
 })
-

@@ -439,7 +439,7 @@ cocode-gui/src/renderer/components/ui/sidebar.tsx
 
 ~~~text
 cocode-tui/
-cocode-harness/（本次最终状态无修改）
+cocode-host-supervisor/（本次最终状态无修改）
 设置壳 core
 ~~~
 

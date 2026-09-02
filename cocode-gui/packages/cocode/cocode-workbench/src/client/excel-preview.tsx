@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react"
 import {
-  AlignCenter, AlignLeft, AlignRight, Bold, Check, Clipboard, ClipboardPaste, Columns3, Copy, Eraser, Filter,
+  AlignCenter, AlignLeft, AlignRight, Bold, Check, ClipboardPaste, Columns3, Copy, Eraser, Filter,
   FunctionSquare, Grid3X3, Italic, Merge, Minus, Paintbrush, Percent, Plus, Redo2, Rows3, Save, Scissors,
   Search, Sigma, SortAsc, Underline, Undo2, WrapText, ZoomIn, ZoomOut,
 } from "lucide-react"
@@ -46,19 +46,6 @@ const EXCEL_STYLE_PROPERTIES = new Set([
   "line-height", "max-width", "min-height", "min-width", "padding", "padding-bottom", "padding-left", "padding-right", "padding-top",
   "text-align", "text-decoration", "vertical-align", "white-space", "width",
 ])
-
-function decodeHtmlAttribute(value: string): string {
-  return value
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&amp;/gi, "&")
-}
-
-function escapeHtmlText(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-}
 
 /** Keep Calc's workbook HTML inert while retaining the presentation Excel exports. */
 function sanitizeExcelHtml(html: string): string {

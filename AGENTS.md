@@ -9,10 +9,10 @@ Cocode 产品由三个 **同级目录** 组成：桌面/Web GUI、终端 TUI、A
   AGENTS.md           ← 本文件
   cocode-gui/         桌面 / Web GUI（含 .dev/guide、.dev/rfc）
   cocode-tui/         终端 TUI（含 .dev/rfc）
-  cocode-harness/     harness 运行时（gitignore，勿提交嵌套副本）
+  cocode-host-supervisor/  DSH Host 生命周期与 runtime staging
 ```
 
-`cocode-harness/` 亦可用与其 **同级** 的独立 clone（例如 `~/www/cocode-harness`）。不要在 GUI/TUI 目录中修改 harness 插件或 agent loop。
+不要在 GUI/TUI 目录中修改 DSH agent loop；Host 生命周期与 runtime staging 统一在 `cocode-host-supervisor/` 维护。
 
 ## 仓库边界
 
@@ -20,9 +20,11 @@ Cocode 产品由三个 **同级目录** 组成：桌面/Web GUI、终端 TUI、A
 | --- | --- | --- |
 | **cocode-gui/** | 品牌 UI、设计系统、Host 客户端 | HTTP POST + 双 WebSocket → `dsh web` |
 | **cocode-tui/** | 终端 UI、JSON-RPC 客户端 | stdio NDJSON-RPC → jsonrpc-agent 子进程 |
-| **cocode-harness/** | Cordis 插件树、`@deepseek-ai/dsh-*` 运行时 | — |
+| **cocode-host-supervisor/** | DSH Host 生命周期、runtime staging、Cocode Host 插件 | — |
 
-跨目录需求：harness 侧实现能力，GUI/TUI 侧消费 wire API。
+跨目录需求：上游 DSH 负责通用运行时能力，Cocode Host Supervisor 负责 Host 组合与
+staging，GUI/TUI 侧消费 wire API；Cocode 产品行为统一落在 GUI 的插件包或 Host
+插件中。
 
 ## cocode-gui/
 
@@ -49,9 +51,9 @@ pnpm run dev:web      # browser-only, e.g. design-system.html
 pnpm run typecheck
 ```
 
-联调：`cd ../cocode-harness && pnpm dsh web`（默认 `http://127.0.0.1:3080`）。
+联调：`cd ../cocode-host-supervisor && pnpm dsh web`（默认 `http://127.0.0.1:3080`）。
 
-Harness 参考：`cocode-harness/packages/host/apiproxy/`、`cocode-harness/packages/client/connection/`。
+Host 参考：`cocode-host-supervisor/packages/host-supervisor/`。
 
 ## cocode-tui/
 
@@ -73,25 +75,28 @@ pnpm run dev
 pnpm run typecheck
 ```
 
-Harness 参考：`cocode-harness/packages/sdk/client/`、`cocode-harness/examples/jsonrpc-agent/`。
+Host 参考：`cocode-host-supervisor/packages/host-supervisor/`。
 
-**不适用**：`cocode-harness/packages/terminal/*` 是 Agent PTY 工具，不是 TUI 客户端。
+**不适用**：Host Supervisor 内的 terminal/runtime 工具不是 TUI 客户端。
 
-## cocode-harness/
+## cocode-host-supervisor/
 
-Agent 运行时 fork，规范见 [cocode-harness/AGENTS.md](cocode-harness/AGENTS.md)（或独立 clone 内同名文件）。
+共享 DSH Host 生命周期与 runtime staging，规范见该目录的 README 和 package scripts。
 
 ```sh
-cd cocode-harness
+cd cocode-host-supervisor
 pnpm install && pnpm run build
 pnpm dsh web          # GUI 联调
 ```
 
 ## DSH 定制分层（cocode-gui）
 
-`packages/client` 是上游 DSH 客户端快照，**禁止**再往里面写产品改动。产品能力进 `packages/cocode/*`，由 Electron `--patch` overlay 挂载（见 `createDshDesktopPatch`）。没有扩展点的内部洞才用 `patches/*.patch`（钉版本，上游合入即删）。
+上游 DSH 客户端、Cordis 和相关运行时均通过 npm 依赖加载；仓库不保留 `packages/client` 或 `vendor` 源码快照。所有 Cocode 产品能力必须进 `cocode-gui/packages/cocode/*`，由 Electron `--patch` overlay 挂载（见 `createDshDesktopPatch`）。没有扩展点的内部洞才用 `patches/*.patch`（钉版本，上游合入即删）。
 
-升级 DSH：换 `packages/client` 快照 / bump npm，再 rebase 那一小撮 patch，不要在快照上叠产品 commit。
+Overlay 与 runtime staging 代码只负责组合接线（禁用冲突的上游插件、插入 Cocode
+插件、提供 transport/bootstrap）；不得在这些基础设施里复制产品 UI 或业务逻辑。
+
+升级 DSH：直接 bump npm 版本并重新验证插件 ABI、runtime staging 和 Electron bundle；不要重新引入本地 DSH 源码快照或把产品 commit 叠到上游包里。
 
 ## 约定
 
@@ -110,10 +115,9 @@ pnpm dsh web          # GUI 联调
 | --- | --- |
 | GUI 组件 / 令牌 | `cd cocode-gui && pnpm run dev:web` + `.dev/guide/design-system.html` 对照 |
 | TUI 交互 | `cd cocode-tui && pnpm run dev` + JSON-RPC 联调 |
-| harness API | 先在 harness 落地，再更新对应 `packages/connection` |
+| DSH Host API | 先在 `cocode-host-supervisor/` 落地，再更新对应 `packages/connection` |
 
 ## 相关文档
 
-- Harness 架构：`cocode-harness/docs/architecture.md`
-- Host API：`cocode-harness/packages/host/apiproxy/README.md`
-- SDK 客户端：`cocode-harness/packages/sdk/client/README.md`
+- Host Supervisor：`cocode-host-supervisor/README.md`
+- Host API / runtime staging：`cocode-host-supervisor/packages/host-supervisor/`

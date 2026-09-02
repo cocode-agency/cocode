@@ -7,11 +7,17 @@
  */
 import { spawnSync } from "node:child_process"
 import * as path from "pathe"
+import { buildSupervisor } from "../build-supervisor.mjs"
+import { buildCocodePlugins } from "../cocode-plugins.mjs"
 
 export function buildDevRuntime({ hardenElectron = false } = {}) {
 	if (hardenElectron) runScript("scripts/harden-electron-default-app.mjs")
-	runScript("scripts/cocode-plugins.mjs", ["build"])
-	runScript("scripts/build-supervisor.mjs")
+	// The Supervisor build script can compile GUI plugins for release builds,
+	// but doing that here would compile every plugin a second time. Development
+	// uses the incremental plugin builder above and asks Supervisor to consume
+	// those artifacts as-is.
+	buildCocodePlugins({ incremental: true })
+	buildSupervisor({ buildGuiPlugins: false })
 }
 
 function runScript(relativePath, args = []) {

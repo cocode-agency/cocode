@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type { MessageId, SessionId } from "../../packages/client/client/connection/src/client/api"
+import type { MessageId, SessionId } from "@deepseek-ai/dsh-client-connection/client"
 import {
 	agencyMessageFeedbackRemote,
 	subscribeAccount,

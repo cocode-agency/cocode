@@ -1,0 +1,165 @@
+diff --git a/lib/client.js b/lib/client.js
+index cf573281c9248bd21fcdbd81e0b91ba922980578..324761777178475d3eb842f061cf36a7a59de276 100644
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -13343,6 +13343,7 @@ window.__ModuleLoader__.load({
+ 			"hero.headline": "探索未至之境",
+ 			"hero.preview": "预览版",
+ 			"hero.chooseWorkspace": "选择工作区",
++			"hero.clearWorkspace": "清除工作区",
+ 			"session.hierarchy": "会话层级",
+ 			"todo.title": "任务",
+ 			"todo.progress.done": "{done} 已完成",
+@@ -13489,6 +13490,7 @@ window.__ModuleLoader__.load({
+ 			"hero.headline": "Into the Unknown",
+ 			"hero.preview": "Preview",
+ 			"hero.chooseWorkspace": "Choose workspace",
++			"hero.clearWorkspace": "Clear workspace",
+ 			"session.hierarchy": "Session hierarchy",
+ 			"todo.title": "To-dos",
+ 			"todo.progress.done": "{done} completed",
+@@ -14074,32 +14076,46 @@ window.__ModuleLoader__.load({
+ 		* @param props.label - chip label (see {@link workspaceLabel}); omitted → placeholder.
+ 		* @param props.menuOpen - menu expansion echo.
+ 		* @param props.onClick - menu toggle.
++		* @param props.onClear - clear the workspace selection.
+ 		* @returns the chip button element.
+ 		*/
+-		function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }) {
+-			return (0, react_jsx_runtime.jsxs)("button", {
+-				ref: buttonRef,
+-				type: "button",
+-				className: HeroShell_module_css_default.workspace,
+-				"aria-label": t("hero.chooseWorkspace"),
+-				"aria-haspopup": "menu",
+-				"aria-expanded": menuOpen,
+-				onClick,
++		function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, onClear, t }) {
++			return (0, react_jsx_runtime.jsxs)("span", {
++				className: onClear !== void 0 ? "cocode-workspace-wrap cocode-workspace-wrap-clearable" : "cocode-workspace-wrap",
+ 				children: [
+-					label === void 0 ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderClose16, {
+-						className: HeroShell_module_css_default.folder,
+-						size: 16
+-					}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {
+-						className: HeroShell_module_css_default.folder,
+-						size: 16
+-					}),
+-					(0, react_jsx_runtime.jsx)("span", {
+-						className: HeroShell_module_css_default.workspaceLabel,
+-						children: label ?? t("hero.chooseWorkspace")
++					(0, react_jsx_runtime.jsxs)("button", {
++						ref: buttonRef,
++						type: "button",
++						className: `${HeroShell_module_css_default.workspace} cocode-workspace`,
++						"aria-label": t("hero.chooseWorkspace"),
++						"aria-haspopup": "menu",
++						"aria-expanded": menuOpen,
++						onClick,
++						children: [
++							(0, react_jsx_runtime.jsx)("span", {
++								className: "cocode-workspace-icon",
++								children: label === void 0 ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderClose16, {
++									className: `${HeroShell_module_css_default.folder} cocode-workspace-folder`,
++									size: 16
++								}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {
++									className: `${HeroShell_module_css_default.folder} cocode-workspace-folder`,
++									size: 16
++								})
++							}),
++							(0, react_jsx_runtime.jsx)("span", {
++								className: HeroShell_module_css_default.workspaceLabel,
++								children: label ?? t("hero.chooseWorkspace")
++							}),
++						]
+ 					}),
+-					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {
+-						className: HeroShell_module_css_default.chevron,
+-						size: 12
++					onClear !== void 0 && (0, react_jsx_runtime.jsx)("button", {
++						type: "button",
++						className: "cocode-workspace-clear",
++						"aria-label": t("hero.clearWorkspace"),
++						onClick: onClear,
++						children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseFill14, {
++							size: 12
++						})
+ 					})
+ 				]
+ 			});
+@@ -14413,6 +14429,10 @@ window.__ModuleLoader__.load({
+ 						onClick: () => {
+ 							setPickerOpen((open) => !open);
+ 						},
++						onClear: sessionWorkspace !== void 0 ? () => {
++							setPickerOpen(false);
++							selectWorkspace().catch(() => {});
++						} : void 0,
+ 						t
+ 					}),
+ 					renderSlot("conversation.hero.workspace", {
+@@ -16094,6 +16114,10 @@ window.__ModuleLoader__.load({
+ 				inject: (sessionId) => ({
+ 					hooks: { composerBlock: sessionId === void 0 ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+ 					selectWorkspace: async (workspaceId) => {
++						if (workspaceId === void 0) {
++							sessions.clear();
++							return;
++						}
+ 						const nextId = await workspaceNavigation.connectWorkspace(workspaceId);
+ 						if (sessionId !== void 0 && nextId !== sessionId) {
+ 							const from = inputHub.shell(sessionId);
+diff --git a/lib/types/client/contract/slots.d.ts b/lib/types/client/contract/slots.d.ts
+index 2d41cdaa8afd18770ae4628eccbe688f27cb6e68..e06e375336de3241873fcff31e7e7c69f9751e42 100644
+--- a/lib/types/client/contract/slots.d.ts
++++ b/lib/types/client/contract/slots.d.ts
+@@ -247,7 +247,7 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>;
+ /** Business callbacks injected into the resident Conversation shell. */
+ export interface ConversationInjected {
+     /** Connect and open a blank Session in the selected Workspace. */
+-    selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>;
++    selectWorkspace: (workspaceId?: WorkspaceId) => Promise<void>;
+     /** Session-addressed composer block source, or the stable absent source. */
+     hooks: {
+         composerBlock: ObservableSnapshot<ComposerBlock | undefined>;
+diff --git a/lib/types/client/locales.d.ts b/lib/types/client/locales.d.ts
+index 624ed0d6ffe1853f7312551e3867b174fe6f5081..4e64e844d2730cea6250d9cde8d1bbdef6846eac 100644
+--- a/lib/types/client/locales.d.ts
++++ b/lib/types/client/locales.d.ts
+@@ -60,6 +60,7 @@ export declare const zh: {
+     'hero.headline': string;
+     'hero.preview': string;
+     'hero.chooseWorkspace': string;
++    'hero.clearWorkspace': string;
+     'session.hierarchy': string;
+     'todo.title': string;
+     'todo.progress.done': string;
+@@ -208,6 +209,7 @@ export declare const en: {
+     'hero.headline': string;
+     'hero.preview': string;
+     'hero.chooseWorkspace': string;
++    'hero.clearWorkspace': string;
+     'session.hierarchy': string;
+     'todo.title': string;
+     'todo.progress.done': string;
+diff --git a/lib/types/client/skeleton/EmptyHero.d.ts b/lib/types/client/skeleton/EmptyHero.d.ts
+index 71cb4437af8db3e93734485c859b808324cb8787..f3f689c70e9d3be74f3f78d99af661c884d2df18 100644
+--- a/lib/types/client/skeleton/EmptyHero.d.ts
++++ b/lib/types/client/skeleton/EmptyHero.d.ts
+@@ -18,13 +18,15 @@ export declare function workspaceLabel(cwd: string): string;
+  * @param props.label - chip label (see {@link workspaceLabel}); omitted → placeholder.
+  * @param props.menuOpen - menu expansion echo.
+  * @param props.onClick - menu toggle.
++ * @param props.onClear - clear the workspace selection.
+  * @returns the chip button element.
+  */
+-export declare function WorkspaceChip({ buttonRef, label, menuOpen, onClick, t }: {
++export declare function WorkspaceChip({ buttonRef, label, menuOpen, onClick, onClear, t }: {
+     buttonRef?: RefObject<HTMLButtonElement>;
+     label?: string | undefined;
+     menuOpen?: boolean;
+     onClick?: () => void;
++    onClear?: (() => void) | undefined;
+     t: HeroTranslate;
+ }): import("react").JSX.Element;
+ /** Hero chrome props. The workspace row rides the InputBar accessory hole, not here. */

@@ -43,6 +43,7 @@ const LEGACY_CLOUD_PATH = ["providers", LEGACY_CLOUD_PROVIDER] as const
 const CLOUD_CREDENTIAL = "COCODE_NUT_API_KEY"
 const LEGACY_CLOUD_CREDENTIAL = "COCODE_CLOUD_API_KEY"
 const CLOUD_API = "openai-responses"
+const CLOUD_DISPLAY_NAME = "Cocode"
 const CLOUD_MAX_RETRIES = 5
 const CLOUD_KEY_PATTERN = /^ck_[A-Za-z0-9_-]+$/
 const CLOUD_READY_ATTEMPTS = 6
@@ -235,6 +236,7 @@ function routeIsCurrent(
 	return (
 		isManagedCloudRoute(route, managedRoute) &&
 		route?.api === CLOUD_API &&
+		route.displayName === CLOUD_DISPLAY_NAME &&
 		retryPolicy?.mode === "normal" &&
 		retryPolicy.maxRetries === CLOUD_MAX_RETRIES &&
 		cocodeClient?.product === "cocode" &&
@@ -250,7 +252,7 @@ function cloudRouteValue(
 	cocodeClient: Record<string, string>,
 ): Record<string, unknown> {
 	return {
-		displayName: "Cocode Nut",
+		displayName: CLOUD_DISPLAY_NAME,
 		api: CLOUD_API,
 		baseURL,
 		apiKeyEnv: CLOUD_CREDENTIAL,
@@ -1401,7 +1403,7 @@ export class AccountService {
 				path: [...CLOUD_PATH],
 				value: {
 					...legacyRoute,
-					displayName: "Cocode Nut",
+					displayName: CLOUD_DISPLAY_NAME,
 					apiKeyEnv: CLOUD_CREDENTIAL,
 					retryPolicy: { mode: "normal", maxRetries: CLOUD_MAX_RETRIES },
 				},

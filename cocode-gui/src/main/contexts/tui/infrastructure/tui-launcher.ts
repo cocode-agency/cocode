@@ -259,7 +259,7 @@ async function readDevelopmentDshVersion(): Promise<string | undefined> {
 		if (app.isPackaged) return undefined
 		const packagePath = path.resolve(
 			app.getAppPath(),
-			"../cocode-harness/apps/cli/package.json",
+			"../cocode-host-supervisor/node_modules/@deepseek-ai/dsh/package.json",
 		)
 		const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as { version?: unknown }
 		return typeof packageJson.version === "string" ? packageJson.version : undefined

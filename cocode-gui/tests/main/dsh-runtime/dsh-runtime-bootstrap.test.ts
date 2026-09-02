@@ -20,7 +20,16 @@ describe("extractDshBootManifest", () => {
 						url: "/plugins/runtime/client.js",
 						rev: "abc",
 						inject: ["connection"],
+						external: ["connection/client"],
 						immediately: true,
+					},
+				],
+				batches: [
+					{
+						phase: "bootstrap",
+						url: "/plugins/bootstrap.js",
+						rev: "batch",
+						entries: ["@deepseek-ai/dsh-client-runtime"],
 					},
 				],
 			})}</script>`,
@@ -31,8 +40,17 @@ describe("extractDshBootManifest", () => {
 			url: "/plugins/runtime/client.js",
 			rev: "abc",
 			inject: ["connection"],
+			external: ["connection/client"],
 			immediately: true,
 		})
+		assert.deepEqual(manifest.batches, [
+			{
+				phase: "bootstrap",
+				url: "/plugins/bootstrap.js",
+				rev: "batch",
+				entries: ["@deepseek-ai/dsh-client-runtime"],
+			},
+		])
 	})
 
 	it("parses the globalThis bracket form emitted by the DSH webserver", () => {
@@ -40,10 +58,11 @@ describe("extractDshBootManifest", () => {
 			`<script>globalThis["__DSH_BOOT__"] = ${JSON.stringify({
 				rev: "globalThis",
 				entries: [],
+				batches: [],
 			})}</script>`,
 		)
 
-		assert.deepEqual(manifest, { rev: "globalThis", entries: [] })
+		assert.deepEqual(manifest, { rev: "globalThis", entries: [], batches: [] })
 	})
 
 	it("rejects a page without the boot script", () => {
@@ -106,6 +125,24 @@ describe("Cocode Web runtime health", () => {
 				rev: "h",
 			},
 			{ id: "cocode-models", url: "/plugins/cocode-models/client.js", rev: "i" },
+		],
+		batches: [
+			{
+				phase: "application",
+				url: "/plugins/cocode-all.js",
+				rev: "batch",
+				entries: [
+					"cocode-workbench",
+					"cocode-account",
+					"cocode-shortcuts",
+					"cocode-brand",
+					"cocode-input-history",
+					"cocode-appearance",
+					"cocode-desktop",
+					"cocode-message-feedback",
+					"cocode-models",
+				],
+			},
 		],
 	} as const
 

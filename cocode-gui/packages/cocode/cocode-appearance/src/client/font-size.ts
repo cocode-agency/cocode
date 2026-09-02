@@ -4,7 +4,14 @@ export type MessageFontSize = typeof MESSAGE_FONT_SIZES[number]
 
 export const DEFAULT_MESSAGE_FONT_SIZE: MessageFontSize = "14"
 
-export const MESSAGE_FONT_SIZE_VARIABLE = "--dsw-conversation-message-font-size"
+/** Cocode-owned value used by the appearance plugin's DSH variable bridge. */
+export const MESSAGE_FONT_SIZE_VARIABLE = "--cocode-message-font-size"
+
+/** DSH's shared content axis drives both conversation text and the composer. */
+export const DSH_CONTENT_FONT_SIZE_VARIABLE = "--dsh-content-font-size"
+
+/** Attribute enabling the Cocode-to-DSH font-size bridge. */
+export const MESSAGE_FONT_SIZE_ATTRIBUTE = "data-cocode-message-font-size"
 
 export const FONT_SIZE_STORAGE_KEY = "cocode.message.fontSize"
 
@@ -44,9 +51,11 @@ export function writeStoredMessageFontSize(size: MessageFontSize): void {
 export function applyMessageFontSize(size: MessageFontSize): void {
 	if (typeof document === "undefined") return
 	document.body.style.setProperty(MESSAGE_FONT_SIZE_VARIABLE, `${size}px`)
+	document.body.setAttribute(MESSAGE_FONT_SIZE_ATTRIBUTE, "")
 }
 
 export function clearMessageFontSize(): void {
 	if (typeof document === "undefined") return
 	document.body.style.removeProperty(MESSAGE_FONT_SIZE_VARIABLE)
+	document.body.removeAttribute(MESSAGE_FONT_SIZE_ATTRIBUTE)
 }

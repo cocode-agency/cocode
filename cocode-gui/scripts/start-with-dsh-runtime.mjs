@@ -16,6 +16,7 @@ import { forkClientWatcher } from "./lib/client-watcher.mjs"
 import { buildDevRuntime } from "./lib/dev-build.mjs"
 import { acquireDevLock } from "./lib/dev-lock.mjs"
 import { createDevHostEnvironment, resolveDevSupervisorEntry } from "./lib/dev-runtime-entry.mjs"
+import { establishDshWebAuth } from "./lib/dsh-web-auth.mjs"
 import { stopProcessesMatching } from "./lib/process-control.mjs"
 import { cleanupRuntime, prepareRuntime, resolveRuntimeRoot } from "./lib/runtime-cache.mjs"
 import { reconcile as reconcileOwnedProcesses } from "./reconcile-owned-processes.mjs"
@@ -90,8 +91,8 @@ async function run() {
 		void children.stopAll()
 	})
 
-	const runtimeUrl = await acquireHostEndpoint(supervisorEntry, devHostEnvironment)
-	const exitCode = await waitForExit(startElectron(runtimeUrl, devHostEnvironment))
+	const webRuntime = await acquireHostEndpoint(supervisorEntry, devHostEnvironment)
+	const exitCode = await waitForExit(startElectron(webRuntime, devHostEnvironment))
 	if (watcherFailure) throw watcherFailure
 	// A shutdown this runner initiated is what the developer asked for, so the
 	// signal-derived exit code of the child it killed is not a failure to report.
@@ -120,19 +121,19 @@ async function acquireHostEndpoint(supervisorEntry, devHostEnvironment) {
 	})
 	const web = hostLease.descriptor.services.find((service) => service.service === "web")
 	if (web === undefined) throw new Error("development Host did not advertise its Web service")
-	const endpoint = web.endpoint.replace(/\/$/, "")
+	const webRuntime = await establishDshWebAuth(web.endpoint, web.token, "localhost:5173")
 	console.log(
 		`[gui-dev] host=${String(hostLease.descriptor.hostPid)} runtime=${
 			hostLease.descriptor.runtimeVersion
-		} endpoint=${endpoint}`,
+		} endpoint=${webRuntime.endpoint}`,
 	)
-	return endpoint
+	return webRuntime
 }
 
-function startElectron(runtimeUrl, devHostEnvironment) {
+function startElectron(webRuntime, devHostEnvironment) {
 	console.log(
 		`[gui-dev] source=${workspace} build=${devBuildId} userData=${devUserData} ` +
-			`runtime=${runtimeUrl}`,
+			`runtime=${webRuntime.endpoint}`,
 	)
 	const electron = children.track(
 		spawn(
@@ -146,7 +147,9 @@ function startElectron(runtimeUrl, devHostEnvironment) {
 					COCODE_DEV_MODE: "1",
 					COCODE_DEV_USER_DATA_DIR: devUserData,
 					COCODE_BUILD_ID: devBuildId,
-					COCODE_DSH_RUNTIME_URL: runtimeUrl,
+					COCODE_DSH_RUNTIME_URL: webRuntime.endpoint,
+					COCODE_DSH_RUNTIME_COOKIE: webRuntime.cookie,
+					COCODE_DSH_RUNTIME_AUTHORITY: webRuntime.authority,
 					COCODE_DSH_HOME: resolveCocodeDshHome(),
 					DSH_RUNTIME_ROOT: runtime.root,
 					COCODE_NODE_EXECUTABLE: process.execPath,

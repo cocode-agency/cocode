@@ -29,7 +29,7 @@ export function createAppearanceSectionStore(): EngineStoreHandle<AppearanceSect
 		}),
 		actions: {
 			sync: (
-				d,
+				d: AppearanceSectionState,
 				preference: ThemePreference,
 				activeColorScheme: "light" | "dark",
 				messageFontSize: MessageFontSize,

@@ -7,7 +7,8 @@
    * variables. Light is the default; body[data-ds-dark-theme] selects dark.
    */
 
-  body {
+  body,
+  body[data-ds-dark-theme] {
     /* ---------- Cocode semantic tokens: light ---------- */
     --cocode-background: #ffffff;
     --cocode-surface: #fafafa;
@@ -239,6 +240,17 @@
     --dsw-specific-sidebar-nav-item-active: var(--cocode-secondary);
     --dsw-specific-sidebar-nav-item-hover: var(--cocode-secondary);
     --dsw-specific-tip: var(--cocode-surface-sunken);
+  }
+
+  /*
+   * DSH's ThemePresenter owns the inline content axis. Cocode keeps its
+   * product-specific local preference separate, then projects it through this
+   * bridge so the conversation and Composer placeholder use the same size.
+   * The important declaration intentionally wins over DSH's normal inline
+   * write, while removing the attribute restores DSH's own value unchanged.
+   */
+  body[data-cocode-message-font-size] {
+    --dsh-content-font-size: var(--cocode-message-font-size) !important;
   }
 
   body[data-ds-dark-theme] {

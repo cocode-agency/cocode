@@ -11,6 +11,8 @@ import {
 import { collectRuntimeNativeInventory } from "./lib/native-binary-inspection.mjs"
 import { resolveNativeRuntimeMatrix } from "./lib/native-runtime-matrix.mjs"
 
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+
 export function verifyRuntime(
 	runtimeRoot,
 	{ expectedInputFingerprint = undefined, platform = process.platform, arch = process.arch } = {},
@@ -408,7 +410,12 @@ function assertPeArchitecture(file, arch) {
 const invokedPath = process.argv[1]
 if (invokedPath && path.resolve(invokedPath) === path.resolve(fileURLToPath(import.meta.url))) {
 	const index = process.argv.indexOf("--runtime-root")
-	if (index < 0)
-		throw new Error("Usage: node scripts/verify-dsh-runtime.mjs --runtime-root <directory>")
-	verifyRuntime(process.argv[index + 1])
+	const runtimeRoot =
+		index >= 0
+			? process.argv[index + 1]
+			: process.env.COCODE_RUNTIME_ARTIFACT_ROOT?.trim() ||
+			  path.join(repositoryRoot, ".cache", "cocode", "release-runtime")
+	if (!runtimeRoot)
+		throw new Error("Usage: node scripts/verify-dsh-runtime.mjs [--runtime-root <directory>]")
+	verifyRuntime(runtimeRoot)
 }

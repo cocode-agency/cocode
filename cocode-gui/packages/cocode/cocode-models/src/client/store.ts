@@ -6,14 +6,13 @@
  * re-renders from the next describe, pushed or refetched.
  */
 
-import type {
-  ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView,
-} from '@deepseek-ai/dsh-api-remotes/client'
+import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
-import { isAccountManagedProvider } from './account-gate.ts'
+import { isAccountManagedProvider, providerDisplayName } from './account-gate.ts'
+import type { ConfigurableProviderView, CredentialView, ModelsApi } from './api.ts'
 
 /**
  * Any route key walks a dict schema to the same profile node, so the lookup
@@ -122,7 +121,7 @@ export class ModelsSettingsStore {
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
-    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
+    private readonly api: ModelsApi,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
     private readonly hostedAllowed: (() => boolean) | undefined = undefined,
@@ -168,6 +167,10 @@ export class ModelsSettingsStore {
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
+      const visibleEntry = {
+        ...entry,
+        displayName: providerDisplayName(entry.provider, entry.displayName),
+      }
       const namespace = namespaces.get(entry.settingsNs)
       const managed = isAccountManagedProvider(entry.provider)
       const configured = namespace !== undefined
@@ -178,7 +181,7 @@ export class ModelsSettingsStore {
         && this.schema.hasPath(namespace.user, entry.settingsPath)
         && !this.schema.hasPath(namespace.base, entry.settingsPath)
       return {
-        entry,
+        entry: visibleEntry,
         configured,
         removable,
         managed,

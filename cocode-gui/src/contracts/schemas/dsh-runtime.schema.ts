@@ -13,12 +13,21 @@ const dshBootEntrySchema = z.object({
 	url: z.string().min(1),
 	rev: z.string().min(1),
 	inject: z.array(z.string()).optional(),
+	external: z.array(z.string()).optional(),
 	immediately: z.boolean().optional(),
+})
+
+const dshBootBatchSchema = z.object({
+	phase: z.enum(["bootstrap", "application"]),
+	url: z.string().min(1),
+	rev: z.string().min(1),
+	entries: z.array(z.string().min(1)),
 })
 
 const dshBootManifestSchema = z.object({
 	rev: z.string().min(1),
 	entries: z.array(dshBootEntrySchema),
+	batches: z.array(dshBootBatchSchema),
 })
 
 const dshRuntimeBootstrapSchema = z.object({

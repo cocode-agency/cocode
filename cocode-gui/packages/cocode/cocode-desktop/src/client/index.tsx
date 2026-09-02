@@ -2,12 +2,13 @@ import type { ClientContext } from "@deepseek-ai/dsh-client-runtime/client"
 import { resolveSlotLabel } from "@deepseek-ai/dsh-client-ui-slots"
 import type {} from "@deepseek-ai/dsh-client-locale/client"
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
+import type {} from "@deepseek-ai/dsh-client-ui-chat/client"
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client"
 import type {} from "@deepseek-ai/dsh-client-ui-settings/client"
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client"
 import { RecoveryBanner } from "./RecoveryBanner.tsx"
+import { SidebarRoot } from "./SidebarRoot.tsx"
 import { SettingsRoot } from "./SettingsRoot.tsx"
-import { findSidebarColumn } from "./titlebar.ts"
 import type { SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow } from "./shell-contract.ts"
 import "./chrome.module.css"
 
@@ -17,34 +18,66 @@ function HiddenStats(): null {
 	return null
 }
 
-function mountTitlebar(ctx: ClientContext): void {
-	if (typeof document === "undefined") return
-	ctx.effect(() => {
-		const strip = document.createElement("div")
-		strip.dataset.desktopTitlebarDrag = ""
-		strip.setAttribute("aria-hidden", "true")
-		let attached: Element | undefined
-		const attach = (): boolean => {
-			const overlay = document.querySelector("[data-shell-overlay]")
-			const sidebar = overlay === null ? null : findSidebarColumn(overlay)
-			if (sidebar == null || sidebar === overlay) return false
-			if (attached !== sidebar) {
-				sidebar.setAttribute("data-cocode-sidebar", "")
-				sidebar.prepend(strip)
-				attached = sidebar
-			}
-			return true
-		}
-		const timer = window.setInterval(() => {
-			if (attach()) window.clearInterval(timer)
-		}, 50)
-		attach()
-		return () => {
-			window.clearInterval(timer)
-			strip.remove()
-			attached?.removeAttribute("data-cocode-sidebar")
-		}
-	}, "cocode-desktop: titlebar")
+function HiddenDiagnostic(): null {
+	return null
+}
+
+/**
+ * The 62686e0 desktop surface keeps DSH diagnostics out of chats. Keep the
+ * underlying agent-preset/session services available, but shadow the newer
+ * presentation entries that expose implementation details in every Electron
+ * surface (development and packaged alike).
+ */
+function mountDesktopDiagnosticsHidden(ctx: ClientContext): void {
+	if (typeof document === "undefined" || document.documentElement.dataset.dshDesktop !== "true") return
+
+	ctx.slots.inject("conversation.chat.node", function* () {
+		yield ctx.slots.register({
+			name: "conversation.chat.node",
+			key: "context",
+			priority: -1,
+		}, HiddenDiagnostic)
+		yield ctx.slots.register({
+			name: "conversation.chat.node",
+			key: "system-prompt",
+			priority: -1,
+		}, HiddenDiagnostic)
+	})
+
+	ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({
+		name: "conversation.session.header.actions",
+		id: "agent-preset",
+		priority: -1,
+	}, HiddenDiagnostic))
+	ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({
+		name: "conversation.session.header.actions",
+		id: "session-log-download",
+		priority: -1,
+	}, HiddenDiagnostic))
+	ctx.slots.inject("conversation.hero.agentPreset", () => ctx.slots.register({
+		name: "conversation.hero.agentPreset",
+		priority: -1,
+	}, HiddenDiagnostic))
+}
+
+/**
+ * Shadow the dependency's newer sidebar shell with the `62686e0` shell while
+ * retaining its already-declared child slots and service injection face.
+ */
+function mountSidebar(ctx: ClientContext): void {
+	ctx.slots.inject("sidebar", () => {
+		const declaringEntry = ctx.slots.entries("sidebar").find((entry) => entry.children !== undefined)
+		if (declaringEntry === undefined) return () => {}
+		const dispose = ctx.slots.register({
+			name: "sidebar",
+			priority: -1,
+			locale: "sidebar",
+			inject: (() => declaringEntry.inject?.() ?? {}) as never,
+		} as never, SidebarRoot as never)
+		const shadow = [...ctx.slots.entries("sidebar")].reverse().find((entry) => entry.component === SidebarRoot)
+		if (shadow !== undefined && declaringEntry.children !== undefined) shadow.children = declaringEntry.children
+		return dispose
+	})
 }
 
 /**
@@ -52,7 +85,8 @@ function mountTitlebar(ctx: ClientContext): void {
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
-	mountTitlebar(ctx)
+	mountDesktopDiagnosticsHidden(ctx)
+	mountSidebar(ctx)
 
 	let rowsVersion = -1
 	let rowsRevision = -1
@@ -78,7 +112,7 @@ export function apply(ctx: ClientContext): void {
 					}
 					return rows
 				},
-				subscribe: (listener) => {
+				subscribe: (listener: () => void) => {
 					const offLedger = ctx.slots.subscribe("settings.section", listener)
 					const offLocale = ctx.locale.subscribe(listener)
 					return () => {
@@ -101,7 +135,7 @@ export function apply(ctx: ClientContext): void {
 					}
 					return onboardingSteps
 				},
-				subscribe: (listener) => ctx.slots.subscribe("settings.onboarding", listener),
+				subscribe: (listener: () => void) => ctx.slots.subscribe("settings.onboarding", listener),
 			},
 		},
 	})
@@ -109,12 +143,23 @@ export function apply(ctx: ClientContext): void {
 	ctx.slots.inject("sidebar.settings", () =>
 		ctx.slots.inject("shell.overlay", () =>
 			ctx.slots.inject("conversation.composer.dock", function* () {
-				yield ctx.slots.register({
+				const disposeSettings = ctx.slots.register({
 					name: "sidebar.settings",
 					priority: -1,
 					inject: shellInjected,
 					// Children stay declared by ui-settings-general; repeating them here collides.
 				} as never, SettingsRoot)
+				// A shadow occupant does not inherit the declaring entry's render face
+				// automatically. Reuse the live declaration so the replacement receives
+				// the same renderSlot binding without claiming the child slots twice.
+				const settingsEntry = ctx.slots.entries("sidebar.settings")
+					.find((entry) => entry.component === SettingsRoot && entry.options.priority === -1)
+				const declaringEntry = ctx.slots.entries("sidebar.settings")
+					.find((entry) => entry !== settingsEntry && entry.children !== undefined)
+				if (settingsEntry !== undefined && declaringEntry?.children !== undefined) {
+					settingsEntry.children = declaringEntry.children
+				}
+				yield disposeSettings
 				yield ctx.slots.register({
 					name: "shell.overlay",
 					id: "cocode-recovery",

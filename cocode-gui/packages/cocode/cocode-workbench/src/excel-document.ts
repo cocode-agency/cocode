@@ -75,7 +75,7 @@ function escapeHtmlText(value: string): string {
 
 /** Calc's HTML exporter annotates formulas, but its HTML importer only parses =… text. */
 function materializeExcelFormulas(html: string): string {
-  return html.replace(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (full, tag: string, rawAttributes: string, content: string) => {
+  return html.replace(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (full, tag: string, rawAttributes: string, _content: string) => {
     const formulaMatch = rawAttributes.match(/\sdata-sheets-formula\s*=\s*(["'])([\s\S]*?)\1/i)
     if (formulaMatch === null || formulaMatch[2] === undefined) return full
     const formula = decodeHtmlAttribute(formulaMatch[2])

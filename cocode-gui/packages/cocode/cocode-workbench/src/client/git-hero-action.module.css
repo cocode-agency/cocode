@@ -1,0 +1,92 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.trigger:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.trigger:disabled {
+  color: var(--dsw-alias-label-quaternary);
+  cursor: default;
+}
+
+.trigger svg {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.triggerLabel {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
+  line-height: 1;
+  text-overflow: ellipsis;
+  transform: translateY(-1px);
+  white-space: nowrap;
+}
+
+.triggerChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  display: block;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 148px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.search input {
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.search input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.search input::-webkit-search-cancel-button {
+  opacity: .6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger { transition: none; }
+}

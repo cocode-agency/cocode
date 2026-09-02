@@ -7,9 +7,10 @@ Development and production resolve the independent `@cocode-agency/host-supervis
 The sidecar owns the existing DSH Web HTTP and WebSocket protocol. Electron loads
 the local Vite Renderer build, while Main reads the sidecar's
 `window.__DSH_BOOT__` manifest and returns it through the narrow `desktopApi.dsh`
-bridge. Local `packages/client/*/lib/client.js` artifacts are emitted under the
-Renderer build's `dsh-client/` tree; non-copied host bundles continue to resolve
-against the sidecar origin.
+bridge. Published DSH client bundles are loaded from npm packages and emitted
+under the Renderer build's `dsh-client/` tree. Cocode-owned client bundles are
+built from `packages/cocode/*` plugins and use the same loader layout; non-copied
+host bundles continue to resolve against the sidecar origin.
 
 The embedded Cocode sidecar is an independent product runtime with a shared DSH
 home: `COCODE_HOME` (default `~/.cocode`) owns the account file, runtime slots,

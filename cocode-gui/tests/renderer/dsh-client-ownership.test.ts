@@ -34,8 +34,8 @@ test("keeps the local Web boot alias and rejects the removed legacy package", ()
 		path.resolve("src/renderer/app/bootstrap/start-renderer.ts"),
 		"utf8",
 	)
-	assert.equal(viteSource.includes("dsh-client-web"), true)
-	assert.equal(viteSource.includes("client/web/src/index.ts"), true)
+	assert.equal(viteSource.includes("node_modules/@deepseek-ai"), true)
+	assert.equal(viteSource.includes("packages/client"), false)
 	assert.equal(rendererSource.includes("@deepseek-ai/dsh-client-web"), true)
 	assert.throws(
 		() => resolveLocalDshClientBundleUrl("@deepseek-ai/dsh-client-web-react"),
@@ -49,10 +49,7 @@ test("keeps the local Web boot alias and rejects the removed legacy package", ()
 	const webAlias = aliases.find(
 		(alias) => String(alias.find) === "/^@deepseek-ai\\/dsh-client-web$/",
 	)
-	assert.match(
-		webAlias?.replacement ?? "",
-		/packages[\\/]client[\\/]client[\\/]web[\\/]src[\\/]index\.ts$/,
-	)
+	assert.equal(webAlias, undefined)
 	assert.equal(
 		aliases.some((alias) => String(alias.find).includes("dsh-client-web-react")),
 		false,

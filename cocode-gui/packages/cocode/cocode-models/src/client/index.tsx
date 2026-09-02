@@ -3,10 +3,9 @@
  * the Models page plus the official-DeepSeek onboarding dialog. The Host
  * settings and credential contracts stay behind their existing wire APIs.
  * Export discipline:
- * packages/client/AGENTS.md.
+ * the published DSH client package contracts and Cocode plugin boundary.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -22,6 +21,7 @@ import { ModelsSettingsStore } from './store.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
 import { HostedProviderGate } from './account-gate.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
+import { createModelsApi } from './api.ts'
 
 export type { ModelsSectionInjected, ModelsSectionProps } from './ModelsSection.tsx'
 export type { ModelsKey } from './locales.ts'
@@ -52,7 +52,16 @@ export function refreshIfLoaded(controller: ModelsSettingsStore): void {
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registration depends on each slot through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'settingsSchema']
+export const inject = [
+  'slots',
+  'locale',
+  'remote',
+  'remote.credentials',
+  'remote.llm',
+  'remote.settings',
+  'settingsScope',
+  'settingsSchema',
+]
 
 /**
  * Register the Models section once the `settings.section` declaration is on
@@ -63,10 +72,10 @@ export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-models: copy dictionaries')
 
-  const connection = ctx.get('connection') as ConnectionHandle
+  const api = createModelsApi(ctx.remote)
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
   const hosted = new HostedProviderGate(() => { refreshIfLoaded(controller) })
-  const controller = new ModelsSettingsStore(connection.api, schema, ctx.settingsScope.describe(), hosted.allowed)
+  const controller = new ModelsSettingsStore(api, schema, ctx.settingsScope.describe(), hosted.allowed)
   hosted.start()
   ctx.effect(() => () => { hosted.dispose() }, 'ui-settings-models: hosted account gate')
   // Registration-time text (the nav label thunk) and the inject faces share
@@ -75,14 +84,14 @@ export function apply(ctx: ClientContext): void {
   const injected = (): ModelsSectionInjected => ({
     controller,
     hooks: { snapshot: controller.store },
-    api: connection.api,
+    api,
     schema,
     t,
   })
   const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
     controller,
     hooks: { models: controller.store },
-    api: connection.api,
+    api,
     schema,
     t,
   })

@@ -108,7 +108,7 @@ test("loopback callback accepts only the exact local callback path", async () =>
 	callback.close()
 })
 
-test("DSH cloud config port sends a typed RPC envelope and maps settings", async () => {
+test("DSH cloud config port sends a typed Remote envelope and maps settings", async () => {
 	const calls: { path: string; body: string }[] = []
 	const runtime = {
 		request: async (request: { path: string; body?: Uint8Array }) => {
@@ -131,8 +131,190 @@ test("DSH cloud config port sends a typed RPC envelope and maps settings", async
 	const port = new DshCloudConfigPort(runtime)
 	const settings = await port.describeSettings()
 	assert.equal(settings.writable, true)
-	assert.equal(calls[0]?.path, "/api/settings.describe")
-	assert.equal(JSON.parse(calls[0]?.body ?? "{}").method, "settings.describe")
+	assert.equal(calls[0]?.path, "/api/settings/describe")
+	const request = JSON.parse(calls[0]?.body ?? "{}") as {
+		method?: string
+		payload?: { args?: unknown }
+	}
+	assert.equal(request.method, "settings/describe")
+	assert.deepEqual(request.payload?.args, {})
+})
+
+test("DSH cloud config port maps the current Remote endpoint results", async () => {
+	const calls: { path: string; request: Record<string, unknown> }[] = []
+	const values: Record<string, unknown> = {
+		"credentials/describe": { COCODE_NUT_API_KEY: { configured: true, writable: true } },
+		"llm/listProviders": [
+			{ id: "deepseek-official", name: "DeepSeek" },
+			{ id: "cocode-nut", name: "Cocode Nut" },
+		],
+		"llm/listConfigurableProviders": [
+			{
+				provider: "cocode-nut",
+				displayName: "Cocode Nut",
+				settingsNs: "llm-pi-ai",
+				settingsPath: ["providers", "cocode-nut"],
+			},
+		],
+		"session/modelCatalog": {
+			default: { provider: "cocode-nut", model: "nut-flash" },
+			groups: [
+				{
+					id: "cocode-nut",
+					name: "Cocode Nut",
+					models: [{ id: "nut-flash", name: "Nut Flash" }],
+				},
+			],
+		},
+		"session/list": { items: [{ sessionId: "session-1", blank: true, running: false }] },
+		"settings/describe": {
+			writable: true,
+			namespaces: [
+				{
+					ns: "agent-default-model",
+					value: { provider: "cocode-nut", model: "nut-flash", reasoningEffort: "high" },
+					revision: 3,
+				},
+			],
+		},
+		"credentials/set": undefined,
+		"credentials/unset": undefined,
+		"settings/mutate": undefined,
+		"session/selectModel": {
+			selected: { sessionId: "session-1", provider: "cocode-nut", model: "nut-flash" },
+		},
+	}
+	const runtime = {
+		request: async (request: { path: string; body?: Uint8Array }) => {
+			const body = JSON.parse(new TextDecoder().decode(request.body)) as Record<
+				string,
+				unknown
+			>
+			const method = String(body.method)
+			calls.push({ path: request.path, request: body })
+			return {
+				status: 200,
+				statusText: "OK",
+				headers: [] as [string, string][],
+				body: new TextEncoder().encode(
+					JSON.stringify({
+						type: "server-response",
+						rpcId: body.rpcId,
+						result: { ok: true, value: values[method] },
+					}),
+				),
+			}
+		},
+	} as never
+
+	const port = new DshCloudConfigPort(runtime)
+	assert.deepEqual(await port.describeCredentials(["COCODE_NUT_API_KEY"]), {
+		COCODE_NUT_API_KEY: { configured: true, writable: true },
+	})
+	assert.deepEqual(await port.providers(), [
+		{
+			provider: "cocode-nut",
+			displayName: "Cocode Nut",
+			settingsNs: "llm-pi-ai",
+			settingsPath: ["providers", "cocode-nut"],
+			active: true,
+		},
+		{
+			provider: "deepseek-official",
+			displayName: "DeepSeek",
+			settingsNs: "",
+			settingsPath: [],
+			active: true,
+		},
+	])
+	assert.deepEqual(
+		await port.models(),
+		values["session/modelCatalog"] instanceof Object
+			? (values["session/modelCatalog"] as { groups: unknown[] }).groups
+			: [],
+	)
+	assert.deepEqual(await port.currentDefault(), {
+		provider: "cocode-nut",
+		model: "nut-flash",
+		reasoningEffort: "high",
+	})
+	assert.deepEqual(await port.listSessions(), [
+		{ sessionId: "session-1", blank: true, running: false },
+	])
+	await port.mutateSettings({
+		ns: "agent-default-model",
+		expectedRevision: 3,
+		ops: [{ op: "set", path: ["model"], value: "nut-flash" }],
+	})
+	await port.setCredential("COCODE_NUT_API_KEY", "ck_test")
+	await port.unsetCredential("COCODE_NUT_API_KEY")
+	await port.selectModel("session-1", { provider: "cocode-nut", model: "nut-flash" })
+
+	assert.deepEqual(
+		calls.map(({ path, request }) => ({
+			path,
+			method: request.method,
+			args: (request.payload as { args: unknown }).args,
+		})),
+		[
+			{
+				path: "/api/credentials/describe",
+				method: "credentials/describe",
+				args: { refs: ["COCODE_NUT_API_KEY"] },
+			},
+			{
+				path: "/api/llm/listProviders",
+				method: "llm/listProviders",
+				args: {},
+			},
+			{
+				path: "/api/llm/listConfigurableProviders",
+				method: "llm/listConfigurableProviders",
+				args: {},
+			},
+			{
+				path: "/api/session/modelCatalog",
+				method: "session/modelCatalog",
+				args: {},
+			},
+			{
+				path: "/api/settings/describe",
+				method: "settings/describe",
+				args: {},
+			},
+			{
+				path: "/api/session/list",
+				method: "session/list",
+				args: { _request: {} },
+			},
+			{
+				path: "/api/settings/mutate",
+				method: "settings/mutate",
+				args: {
+					ns: "agent-default-model",
+					expectedRevision: 3,
+					ops: [{ op: "set", path: ["model"], value: "nut-flash" }],
+				},
+			},
+			{
+				path: "/api/credentials/set",
+				method: "credentials/set",
+				args: { ref: "COCODE_NUT_API_KEY", value: "ck_test" },
+			},
+			{
+				path: "/api/credentials/unset",
+				method: "credentials/unset",
+				args: { ref: "COCODE_NUT_API_KEY" },
+			},
+			{
+				path: "/api/session/selectModel",
+				method: "session/selectModel",
+				args: {
+					request: { sessionId: "session-1", provider: "cocode-nut", model: "nut-flash" },
+				},
+			},
+		],
+	)
 })
 
 test("Agency client rejects an authorization URL outside the configured origin", async () => {

@@ -7,7 +7,7 @@ import type {
 	DshThemePreference,
 } from "../../../contracts/ipc/dsh-runtime.contract"
 import { createDshBundleLoader } from "./dsh-bundle-loader"
-import { selectDshBootEntries } from "./dsh-boot-entries"
+import { selectDshBootBatches, selectDshBootEntries } from "./dsh-boot-entries"
 import {
 	DSH_CLIENT_MODULES_ID,
 	ensureDshModuleLoader,
@@ -26,6 +26,16 @@ import { RendererLogger } from "../../shared/logging/renderer-logger"
 import { prepareDshBootManifest } from "./prepare-dsh-boot"
 
 const logger = new RendererLogger()
+
+/**
+ * The shared Cocode client runtime is a browser contract library, not a
+ * Cordis application plugin. Its factory must be present in the module table
+ * so Cocode bundles can require it, but mounting its `apply` face alongside
+ * the upstream session/workspace controllers would register duplicate
+ * services. The Host advertises the package so it can serve the bundle; the
+ * renderer preloads it and removes it from the Loader roster below.
+ */
+const COCODE_CLIENT_RUNTIME_ID = "@deepseek-ai/dsh-client-runtime"
 
 /** macOS traffic-light strip height; sidebar logo row starts below it. */
 const DESKTOP_DARWIN_TITLEBAR_INSET_PX = 32
@@ -50,14 +60,43 @@ export async function startRenderer(element: HTMLElement): Promise<void> {
 			bootstrap.boot.entries,
 			window.location.protocol === "file:",
 		)
+		const runtimeEntry = bootEntries.find((entry) => entry.id === COCODE_CLIENT_RUNTIME_ID)
+		const loaderEntries = bootEntries.filter((entry) => entry.id !== COCODE_CLIENT_RUNTIME_ID)
+		const bootBatches = selectDshBootBatches(bootstrap.boot.batches, loaderEntries)
+		const resolveEntryUrl = (entry: (typeof loaderEntries)[number]): string =>
+			withRevision(
+				resolveLocalDshClientBundleUrl(entry.id) ?? new URL(entry.url, runtimeOrigin).href,
+				entry.rev,
+			)
+		logger.log("info", "renderer.dsh.boot.graph", {
+			component: "renderer",
+			attributes: {
+				entries: bootEntries.map((entry) => entry.id).join(","),
+				runtimeEntry: runtimeEntry?.id ?? "none",
+				queue: moduleLoader.pendingQueue.map((registration) => registration.id).join(","),
+			},
+		})
 		window.__DSH_BOOT__ = {
 			rev: bootstrap.boot.rev,
-			entries: bootEntries.map((entry) => ({
+			entries: loaderEntries.map((entry) => ({
 				...entry,
-				url:
-					resolveLocalDshClientBundleUrl(entry.id) ??
-					new URL(entry.url, runtimeOrigin).href,
+				url: resolveEntryUrl(entry),
 			})),
+			batches: localizeDshBootBatches(
+				bootBatches,
+				loaderEntries,
+				resolveEntryUrl,
+				runtimeOrigin,
+			),
+		}
+		if (runtimeEntry !== undefined) {
+			await createDshBundleLoader()(
+				withRevision(
+					resolveLocalDshClientBundleUrl(runtimeEntry.id) ??
+						new URL(runtimeEntry.url, runtimeOrigin).href,
+					runtimeEntry.rev,
+				),
+			)
 		}
 		await preloadDshModuleSystem(moduleLoader, window.__DSH_BOOT__.entries)
 
@@ -70,6 +109,62 @@ export async function startRenderer(element: HTMLElement): Promise<void> {
 		logger.error("renderer.start.failed", error, { component: "renderer" })
 		element.replaceChildren(createFailureView(error))
 	}
+}
+
+function localizeDshBootBatches(
+	batches: readonly (typeof window.__DSH_BOOT__ extends infer Boot
+		? Boot extends { batches: readonly (infer Batch)[] }
+			? Batch
+			: never
+		: never)[],
+	entries: readonly { readonly id: string; readonly rev: string; readonly url: string }[],
+	resolveEntryUrl: (entry: (typeof entries)[number]) => string,
+	runtimeOrigin: string,
+): readonly {
+	readonly phase: "bootstrap" | "application"
+	readonly url: string
+	readonly rev: string
+	readonly entries: readonly string[]
+}[] {
+	const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
+	const localized: {
+		phase: "bootstrap" | "application"
+		url: string
+		rev: string
+		entries: readonly string[]
+	}[] = []
+	for (const batch of batches) {
+		const remoteEntries: string[] = []
+		for (const id of batch.entries) {
+			const entry = entriesById.get(id)
+			if (entry === undefined) continue
+			const localUrl = resolveLocalDshClientBundleUrl(id)
+			if (localUrl === undefined) {
+				remoteEntries.push(id)
+				continue
+			}
+			localized.push({
+				phase: batch.phase,
+				url: resolveEntryUrl(entry),
+				rev: entry.rev,
+				entries: [id],
+			})
+		}
+		if (remoteEntries.length > 0) {
+			localized.push({
+				...batch,
+				url: new URL(batch.url, runtimeOrigin).href,
+				entries: remoteEntries,
+			})
+		}
+	}
+	return localized
+}
+
+function withRevision(url: string, revision: string): string {
+	const parsed = new URL(url, window.location.href)
+	parsed.searchParams.set("rev", revision)
+	return parsed.href
 }
 
 /** Load the bootstrap bundle that the Host normally parser-preloads in HTML. */

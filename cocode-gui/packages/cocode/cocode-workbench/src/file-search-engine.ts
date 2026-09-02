@@ -24,7 +24,7 @@ export interface WorkspaceIndex {
 }
 
 interface CachedIndex {
-  readonly promise: Promise<WorkspaceIndex>
+  promise: Promise<WorkspaceIndex>
   completedAt?: number
   estimatedBytes?: number
 }
@@ -53,7 +53,7 @@ export class WorkspaceIndexCache {
     const pendingCount = [...this.entries.values()].filter(entry => entry.completedAt === undefined).length
     if (pendingCount >= this.maxPending) return Promise.reject(new Error("file search is busy indexing other workspaces"))
 
-    let entry: CachedIndex
+    const entry = {} as CachedIndex
     const promise = Promise.resolve()
       .then(load)
       .then(
@@ -71,7 +71,7 @@ export class WorkspaceIndexCache {
           throw error
         },
       )
-    entry = { promise }
+    entry.promise = promise
     this.entries.set(cwd, entry)
     return promise
   }

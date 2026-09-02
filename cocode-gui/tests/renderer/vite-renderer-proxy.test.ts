@@ -24,6 +24,14 @@ test("forwards exactly the Host Web routes over a WebSocket-capable proxy", () =
 	}
 })
 
+test("forwards the authenticated DSH cookie to every Web route", () => {
+	const cookie = "dsh-auth-test=session"
+	const proxy = createDshRuntimeProxy("http://127.0.0.1:3080", cookie)
+	for (const options of Object.values(proxy)) {
+		assert.deepEqual(options?.headers, { Cookie: cookie })
+	}
+})
+
 test("points every route at the shared Host URL", () => {
 	const target = "http://127.0.0.1:3080"
 	const proxy = createDshRuntimeProxy(target)

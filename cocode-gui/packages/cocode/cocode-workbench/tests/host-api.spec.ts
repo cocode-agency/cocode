@@ -154,7 +154,6 @@ describe("Cocode Workbench host API", () => {
     await writeFile(seed, "<!doctype html><html><body><table><tr><td>Team</td><td>Status</td><td>Total</td></tr><tr><td>GUI</td><td>Ready</td><td>=1+2</td></tr></table></body></html>")
     const filter = extension === "xls" ? "xls:MS Excel 97" : "xlsx:Calc MS Excel 2007 XML"
     await execFile(office, ["--headless", "--invisible", "--nodefault", "--nologo", "--nolockcheck", "--norestore", "--infilter=HTML (StarCalc)", "--convert-to", filter, "--outdir", cwd, seed], { timeout: 45_000 })
-    const path = join(cwd, `report.${extension}`)
     const route = createTestApi(context(cwd))
 
     const preview = await invoke(route, "excel.read", { sessionId: "s1", path: `report.${extension}` })

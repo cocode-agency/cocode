@@ -1,0 +1,345 @@
+.root {
+	--dsh-sidebar-inline-padding: 12px;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	/* The slot owner is a grid item rather than a flex container, so flex: 1
+     alone content-sizes this shell and leaves the footer above the window
+     bottom. Fill the sidebar column explicitly. */
+	flex: 1;
+	height: 100%;
+	min-height: 0;
+	padding: 0 var(--dsh-sidebar-inline-padding) 6px var(--dsh-sidebar-inline-padding);
+	box-sizing: border-box;
+	background: var(--dsw-specific-sidebar-fill);
+	color: var(--dsw-alias-label-primary);
+	font-size: 14px;
+	--dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+	--dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.titlebarDragRegion {
+	display: none;
+	width: 100%;
+}
+
+:global(html[data-dsh-desktop="true"]) .root {
+	/* Stack content below the traffic-light drag strip (logo sits under the lights). */
+	padding-top: var(--dsh-desktop-titlebar-inset, 32px);
+}
+
+/* Expanded macOS: the wordmark needs a little more breathing room below the
+   traffic lights than the rail's 18px inset already provides when collapsed. */
+:global(html[data-dsh-desktop-platform="darwin"]) .root:not(.collapsed) {
+	padding-top: calc(var(--dsh-desktop-titlebar-inset, 32px) + 10px);
+}
+
+:global(html[data-dsh-desktop="true"]) .titlebarDragRegion {
+	display: block;
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: var(--dsh-desktop-titlebar-inset, 32px);
+	-webkit-app-region: drag;
+	user-select: none;
+}
+
+:global(html[data-dsh-desktop="true"]) .root button,
+:global(html[data-dsh-desktop="true"]) .root a,
+:global(html[data-dsh-desktop="true"]) .root input,
+:global(html[data-dsh-desktop="true"]) .root select,
+:global(html[data-dsh-desktop="true"]) .root textarea,
+:global(html[data-dsh-desktop="true"]) .root [role="button"] {
+	-webkit-app-region: no-drag;
+}
+
+:global(html[data-dsh-desktop-platform="darwin"]) .root {
+	background: transparent;
+}
+
+:global(html[data-dsh-desktop-platform="win32"]) .root {
+	padding-top: 6px;
+	background: transparent;
+}
+
+:global(html[data-dsh-desktop-platform="win32"]) .titlebarDragRegion {
+	display: none;
+}
+
+.root.collapsed {
+	padding: 18px 10px 6px;
+}
+
+:global(html[data-dsh-desktop="true"]) .root.collapsed {
+	padding-top: calc(18px + var(--dsh-desktop-titlebar-inset, 32px));
+}
+
+:global(html[data-dsh-desktop-platform="win32"]) .root.collapsed {
+	padding-top: 18px;
+}
+
+/* Collapsed rail: continue the session-header hairline through the rail and
+   start the column divider below it, so the two borders meet without the
+   divider protruding into the title row. The slot anchor is display: contents;
+   :has() resolves its owning AppFrame column without relying on hashed classes. */
+:global(html[data-dsh-desktop="true"] [data-sidebar-collapsed] > div:has(> [data-slot="sidebar"])) {
+	position: relative;
+	border-right: none;
+}
+
+:global(html[data-dsh-desktop="true"] [data-sidebar-collapsed] > div:has(> [data-slot="sidebar"]))::before,
+:global(html[data-dsh-desktop="true"] [data-sidebar-collapsed] > div:has(> [data-slot="sidebar"]))::after {
+	content: "";
+	position: absolute;
+	z-index: 1;
+	pointer-events: none;
+}
+
+:global(html[data-dsh-desktop="true"] [data-sidebar-collapsed] > div:has(> [data-slot="sidebar"]))::before {
+	top: calc(var(--dsh-shell-header-height, 46px) - 1px);
+	right: 0;
+	left: 0;
+	height: 1px;
+	background: var(--dsw-alias-border-l2);
+}
+
+:global(html[data-dsh-desktop="true"] [data-sidebar-collapsed] > div:has(> [data-slot="sidebar"]))::after {
+	top: var(--dsh-shell-header-height, 46px);
+	right: 0;
+	bottom: 0;
+	width: 1px;
+	background: var(--dsw-alias-border-l1);
+}
+
+.brandLogo {
+	display: block;
+	flex: none;
+	color: var(--dsw-alias-label-primary);
+}
+
+.root.quietBars {
+	--dsh-scrollbar-thumb: transparent;
+	--dsh-scrollbar-thumb-hover: transparent;
+}
+
+.fading > * {
+	opacity: 0;
+	transition: opacity 150ms var(--ds-ease-in-out);
+}
+
+.wide {
+	animation: wide-in 200ms var(--ds-ease-in-out);
+}
+
+@keyframes wide-in {
+	from {
+		opacity: 0;
+	}
+}
+
+.railIn .iconButton,
+.railIn .newSession,
+.railIn .regionArea {
+	animation: rail-in 150ms var(--ds-ease-in-out) backwards;
+}
+
+.railIn .footArea {
+	opacity: 1;
+	animation: none;
+}
+
+@keyframes rail-in {
+	from {
+		opacity: 0;
+		transform: translateX(49px);
+	}
+}
+
+.logoRow {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	height: 40px;
+	padding: 0 0 0 4px;
+	box-sizing: border-box;
+	overflow: hidden;
+}
+
+.collapsed .logoRow {
+	height: 36px;
+	padding: 0;
+	margin-bottom: 12px;
+	justify-content: flex-start;
+}
+
+.brand {
+	flex: 1;
+	min-width: 0;
+	display: inline-flex;
+	align-items: center;
+	overflow: hidden;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+
+.iconButton {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 8px;
+	padding: 0;
+	background: transparent;
+	cursor: pointer;
+	color: var(--dsw-alias-label-secondary);
+}
+
+.iconButton:hover {
+	background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.collapsed .iconButton {
+	width: 36px;
+	height: 36px;
+	border-radius: 12px;
+}
+
+.collapsed .toggle .panelIcon {
+	display: none;
+}
+
+.collapsed .toggle:hover .panelIcon {
+	display: inline;
+}
+
+.collapsed .toggle:hover .railLogo {
+	display: none;
+}
+
+/* The pixel C has built-in left and bottom whitespace. Its element is
+   geometrically centered, so optically offset only the visible mark. */
+.cocodeRailLogo {
+	transform: translate(-1px, 1px);
+}
+
+/* Rail icons ride the primary ink (figma rail spec); expanded keeps the
+   secondary icon-button ink. */
+.collapsed .iconButton {
+	color: var(--dsw-alias-label-primary);
+}
+
+.newSession {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 38px;
+	padding: 8px 16px;
+	margin: 8px 2px;
+	box-sizing: border-box;
+	border: 1px solid var(--dsw-alias-border-l2);
+	border-radius: 12px;
+	background: var(--dsw-alias-button-elevated-fill);
+	color: var(--dsw-alias-label-primary);
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 22px;
+	cursor: pointer;
+	overflow: hidden;
+}
+
+.newSession:hover {
+	background: var(--dsw-alias-button-floating-hover);
+}
+
+.collapsed .newSession {
+	align-self: flex-start;
+	width: 36px;
+	height: 36px;
+	margin: 0 0 12px;
+	padding: 0;
+	gap: 0;
+	border-color: transparent;
+	background: transparent;
+}
+
+.collapsed .newSession:hover {
+	background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.newSessionLabel {
+	max-width: 200px;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.collapsed .newSessionLabel {
+	max-width: 0;
+}
+
+.regionArea {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+	margin-right: calc(-1 * var(--dsh-sidebar-inline-padding));
+	margin-left: -4px;
+	padding-left: 4px;
+	overflow: hidden;
+}
+
+.collapsed .regionArea {
+	margin-right: 0;
+	margin-left: 0;
+	padding-left: 0;
+}
+
+.footArea {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+}
+
+.settingsArea,
+.footerActions {
+	flex: none;
+	width: 100%;
+	min-width: 0;
+}
+
+.footerActions {
+	display: flex;
+}
+
+.collapsed .footArea {
+	align-items: center;
+}
+
+.collapsed .settingsArea,
+.collapsed .footerActions {
+	display: flex;
+	justify-content: center;
+	width: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wide,
+	.fading > *,
+	.railIn .iconButton,
+	.railIn .newSession,
+	.railIn .footArea,
+	.railIn .regionArea {
+		transition: none;
+		animation: none;
+	}
+}

@@ -6,7 +6,7 @@
  * is on the other end.
  */
 
-import type { CallId, FinishReason, StreamChunk } from "@deepseek-ai/dsh-llm"
+import type { FinishReason, StreamChunk, ToolCallId } from "@deepseek-ai/dsh-llm"
 import { DsmlExtractor } from "./dsml.ts"
 import type { DsmlEvent } from "./dsml.ts"
 
@@ -72,7 +72,7 @@ export async function* liftDsmlToolCalls(
       // The brand is a compile-time marker over the raw string. Calling the
       // dsh-llm helper instead would turn a type-only import into a runtime
       // dependency that has to be staged into the sidecar.
-      const id = `${LIFTED_ID_PREFIX}${index}` as CallId
+      const id = `${LIFTED_ID_PREFIX}${index}` as ToolCallId
       yield { type: "block-start", index, blockType: "tool-call" }
       yield {
         type: "tool-call-delta",

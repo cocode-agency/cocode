@@ -4,7 +4,6 @@ import {
 	installDshTransport,
 	rebindDshTransport,
 } from "../../src/renderer/app/bootstrap/dsh-transport"
-import { ConnectionController } from "../../packages/client/client/connection/src/client/connection"
 
 test("desktop transport rebinds newly created WebSockets to the new Runtime origin", () => {
 	const originalWindow = globalThis.window
@@ -46,43 +45,3 @@ test("desktop transport rebinds newly created WebSockets to the new Runtime orig
 		globalThis.window = originalWindow
 	}
 })
-
-test("Host handshake timeouts request runtime recovery", async () => {
-	const states: string[] = []
-	const waitForAbort = async function* (signal: AbortSignal): AsyncGenerator<never> {
-		await new Promise<void>((resolve) =>
-			signal.addEventListener("abort", () => resolve(), { once: true }),
-		)
-		yield* []
-	}
-	const api = {
-		events: {
-			mux: (_payload: unknown, signal: AbortSignal) => waitForAbort(signal),
-			host: (_payload: unknown, signal: AbortSignal) => waitForAbort(signal),
-		},
-		host: {
-			describe: async () => {
-				throw new DOMException("timed out", "TimeoutError")
-			},
-		},
-	} as never
-	const controller = new ConnectionController(
-		api,
-		{
-			onStateChange: (state) => states.push(state),
-		},
-		{ backoffBaseMs: 1, backoffMaxMs: 1, streamOpenTimeoutMs: 1 },
-	)
-	controller.start()
-	await waitUntil(() => states.includes("reconnecting"))
-	controller.stop()
-	assert.deepEqual(states, ["reconnecting"])
-})
-
-async function waitUntil(predicate: () => boolean, timeoutMs = 250): Promise<void> {
-	const deadline = Date.now() + timeoutMs
-	while (!predicate() && Date.now() < deadline) {
-		await new Promise((resolve) => setTimeout(resolve, 1))
-	}
-	if (!predicate()) throw new Error("timed out waiting for condition")
-}

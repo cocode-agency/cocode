@@ -1,5 +1,12 @@
 /* Desktop titlebar drag, sidebar inset, and composer stats hide. */
 
+/* Keep the titlebar seam on one shared geometry contract. The upstream layout
+   frame used to declare this value; declaring it at the desktop root keeps the
+   extracted shell and the collapsed sidebar on the same CSS-pixel baseline. */
+:global(html[data-dsh-desktop='true']) {
+  --dsh-shell-header-height: 46px;
+}
+
 :global(html[data-dsh-desktop='true'] [data-desktop-titlebar-drag]) {
   display: block;
   position: absolute;
@@ -23,35 +30,36 @@
   -webkit-app-region: no-drag;
 }
 
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar]) {
-  position: relative;
-  padding-top: var(--dsh-desktop-titlebar-inset, 32px);
-}
-
-:global(html[data-dsh-desktop-platform='darwin'] [data-cocode-sidebar]) {
-  background: transparent;
-}
-
-:global(html[data-dsh-desktop-platform='darwin'] :not([data-sidebar-collapsed]) > [data-cocode-sidebar]) {
-  padding-top: calc(var(--dsh-desktop-titlebar-inset, 32px) + 10px);
-}
-
-:global(html[data-dsh-desktop-platform='win32'] [data-cocode-sidebar]) {
-  padding-top: 6px;
-  background: transparent;
-}
-
-:global(html[data-dsh-desktop-platform='win32'] [data-desktop-titlebar-drag]) {
+/* The desktop shell intentionally replaces context and system-prompt
+   renderers with an empty diagnostic seat. Remove those seats from the chat
+   flow as well; otherwise the upstream flow-gap rule still reserves a full
+   row of vertical space for each hidden diagnostic. */
+:global(html[data-dsh-desktop='true'] [data-chat-flow-kind='context']),
+:global(html[data-dsh-desktop='true'] [data-chat-flow-kind='system-prompt']) {
   display: none;
 }
 
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] button),
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] a),
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] input),
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] select),
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] textarea),
-:global(html[data-dsh-desktop='true'] [data-cocode-sidebar] [role='button']) {
-  -webkit-app-region: no-drag;
+/* Keep the session topic centered in the shell-owned 46px title row from
+   62686e0. The current conversation package only exposes the header through
+   its stable slot wrapper, so avoid coupling this geometry to hashed classes. */
+:global(html[data-dsh-desktop='true'] [data-slot='conversation.session.header'] > header) {
+  box-sizing: border-box;
+  height: var(--dsh-shell-header-height, 46px);
+  min-height: var(--dsh-shell-header-height, 46px);
+  /* ConversationRoot reserves a transparent 1px border. It changes the
+     pseudo-element's containing edge, leaving the rail hairline one pixel
+     lower even when both rows nominally use the same height. */
+  border-bottom: 0 !important;
+  padding: 7px 28px 7px 20px;
+  overflow: hidden;
+  background: var(--dsw-specific-sidebar-fill);
+}
+
+:global(html[data-dsh-desktop='true'] [data-slot='conversation.session.header'] header::after) {
+  /* ConversationRoot's base rule keeps this one pixel above the header edge.
+     The desktop shell spans the same edge into the rail, so place it on the
+     final pixel of the fixed 46px row. */
+  bottom: 0 !important;
 }
 
 .recoveryBanner {
@@ -97,4 +105,83 @@
 
 .recoveryBanner button + button:hover {
   background: var(--dsw-alias-button-tool-bar-hover);
+}
+
+/* Workspace chip: keep the clear affordance in the folder slot and reveal it
+   only while the chip is being inspected or keyboard-focused. */
+:global(.cocode-workspace-wrap) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  max-width: min(100%, 360px);
+  border-radius: 16px;
+}
+
+:global(.cocode-workspace) {
+  gap: 5px;
+  padding-left: 5px;
+}
+
+/* Keep the workspace title on the same optical center as its folder glyph. */
+:global(.cocode-workspace > span:last-child) {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+:global(.cocode-workspace-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+:global(.cocode-workspace-clear) {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+  line-height: 0;
+  margin-block: auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+:global(.cocode-workspace-clear svg) {
+  display: block;
+  flex: none;
+}
+
+:global(.cocode-workspace-wrap-clearable:hover .cocode-workspace-clear),
+:global(.cocode-workspace-wrap-clearable:focus-within .cocode-workspace-clear) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:global(.cocode-workspace-wrap-clearable:hover .cocode-workspace) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+:global(.cocode-workspace-wrap-clearable:hover .cocode-workspace-folder),
+:global(.cocode-workspace-wrap-clearable:focus-within .cocode-workspace-folder) {
+  opacity: 0;
 }

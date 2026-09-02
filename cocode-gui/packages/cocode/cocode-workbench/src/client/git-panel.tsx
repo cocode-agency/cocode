@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { Menu, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives"
 import type { WorkbenchPanelProps } from "./model.ts"
-import { sectionsOf, statusLetter, statusTone, gitRequest, type GitCommit, type GitRepo, type GitRow, type GitSection } from "./git-client.ts"
+import { sectionsOf, statusLetter, statusTone, gitRequest, type GitCommit, type GitRow, type GitSection } from "./git-client.ts"
 import { useGitStore } from "./git-store.ts"
 import { branchMenuEntries, checkoutTarget, commitMenuEntries, moreMenuEntries, rowMenuEntries, sectionLabel, type GitCommand } from "./git-menus.ts"
 import { BranchIcon, DiscardIcon, MoreIcon, OpenFileIcon, RefreshIcon, SectionChevron, SparkleIcon, SpinnerIcon, StageIcon, StashApplyIcon, StashDropIcon, StashPopIcon, SyncIcon, UnstageIcon } from "./git-icons.tsx"

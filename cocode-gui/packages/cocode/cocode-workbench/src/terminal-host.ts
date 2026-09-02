@@ -10,7 +10,6 @@
  * - `cols`/`rows` — geometry of the first spawn.
  * - `restart` — kill the shell behind the key and spawn a fresh one.
  */
-import type { IncomingMessage } from "node:http"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { WorkbenchContext } from "./host-types.ts"
 import { resolveSessionCwd, SessionWorkspaceNotReadyError } from "./session-cwd.ts"

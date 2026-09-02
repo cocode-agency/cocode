@@ -2,7 +2,11 @@ import { createElement, Fragment, useEffect, useMemo, useRef, useState, useSyncE
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { ClientContext } from "@deepseek-ai/dsh-client-runtime/client"
-import type { ConfigurableProviderView, ConnectionHandle } from "@deepseek-ai/dsh-api-remotes/client"
+import type {
+  ClientRemote,
+  LlmConfigurableProvider,
+  LlmProviderInfo,
+} from "@deepseek-ai/dsh-api-remotes/client"
 import type {} from "@deepseek-ai/dsh-client-locale/client"
 import type {} from "@deepseek-ai/dsh-api-remotes/client"
 import {
@@ -303,11 +307,11 @@ class AccountStore {
 
 class ProviderStore {
   private snapshot: ProviderSummary | null = null
-  private providers: readonly ConfigurableProviderView[] = []
+  private providers: readonly ProviderDirectoryEntry[] = []
   private listeners = new Set<() => void>()
   private generation = 0
 
-  constructor(private readonly connection: ConnectionHandle) {}
+  constructor(private readonly remote: ClientRemote) {}
 
   getSnapshot = (): ProviderSummary | null => this.snapshot
 
@@ -323,20 +327,21 @@ class ProviderStore {
   async load(): Promise<void> {
     const generation = ++this.generation
     try {
-      const response = await this.connection.api.llm.providers({})
-      if (!response.result.ok || generation !== this.generation) return
-      this.providers = response.result.value.providers
+      const [registered, directory] = await Promise.all([
+        this.remote.llm.listProviders(),
+        this.remote.llm.listConfigurableProviders(),
+      ])
+      if (!registered.ok || !directory.ok || generation !== this.generation) return
+      this.providers = joinProviderDirectory(registered.value, directory.value)
       this.publish(this.select(this.providers))
     } catch {
       // Keep the last confirmed provider while the runtime reconnects.
     }
   }
 
-  private select(providers: readonly ConfigurableProviderView[]): ProviderSummary | null {
+  private select(providers: readonly ProviderDirectoryEntry[]): ProviderSummary | null {
     const active = providers.filter(provider => provider.active)
-    const preferred = this.connection.hostDescription.getSnapshot()?.provider
-    const provider = active.find(candidate => candidate.provider === preferred)
-      ?? active.find(candidate => candidate.provider !== "cocode-nut")
+    const provider = active.find(candidate => candidate.provider !== "cocode-nut")
       ?? active[0]
     return provider === undefined ? null : { id: provider.provider, name: provider.displayName }
   }
@@ -346,6 +351,30 @@ class ProviderStore {
     this.snapshot = next
     for (const listener of [...this.listeners]) listener()
   }
+}
+
+type ProviderDirectoryEntry = {
+  readonly provider: string
+  readonly displayName: string
+  readonly active: boolean
+}
+
+function joinProviderDirectory(
+  registered: readonly LlmProviderInfo[],
+  directory: readonly LlmConfigurableProvider[],
+): readonly ProviderDirectoryEntry[] {
+  const active = new Set(registered.map(provider => provider.id))
+  const declared = new Set(directory.map(provider => provider.provider))
+  const rows: ProviderDirectoryEntry[] = directory.map(provider => ({
+    provider: provider.provider,
+    displayName: provider.displayName,
+    active: active.has(provider.provider),
+  }))
+  for (const provider of registered) {
+    if (declared.has(provider.id)) continue
+    rows.push({ provider: provider.id, displayName: provider.name, active: true })
+  }
+  return rows
 }
 
 function safeMessage(error: unknown): string {
@@ -361,6 +390,7 @@ function safeMessage(error: unknown): string {
  */
 const MARK_LINES = [" ▄█████", " ██", " ██", " ▀█████"] as const
 const MARK_COLUMNS = 7
+const MARK_CONTENT_COLUMN = 1
 const MARK_CELL_WIDTH = 10
 const MARK_ROW_HEIGHT = 16
 
@@ -375,14 +405,17 @@ function CocodeMark({ size }: { readonly size: number }): ReturnType<typeof crea
     if (glyph === "▀") return [createElement("rect", { key, x, y, width: MARK_CELL_WIDTH, height: half })]
     return []
   }))
-  const gridWidth = MARK_COLUMNS * MARK_CELL_WIDTH
+  // The first column is the wordmark's leading spacer. Keep it in the glyph
+  // matrix for the row alignment, but exclude it from the mark's viewport so
+  // the visible C is centered in its modal plate.
+  const gridWidth = (MARK_COLUMNS - MARK_CONTENT_COLUMN) * MARK_CELL_WIDTH
   const gridHeight = MARK_LINES.length * MARK_ROW_HEIGHT
   return createElement(
     "svg",
     {
       width: (size * gridWidth) / gridHeight,
       height: size,
-      viewBox: `0 0 ${gridWidth} ${gridHeight}`,
+      viewBox: `${MARK_CONTENT_COLUMN * MARK_CELL_WIDTH} 0 ${gridWidth} ${gridHeight}`,
       shapeRendering: "crispEdges",
       "aria-hidden": true,
     },
@@ -769,13 +802,11 @@ export const inject = ["slots", "connection", "remote", "locale"]
 
 export function apply(ctx: ClientContext): void {
   const store = new AccountStore()
-  const connection = ctx.get("connection") as ConnectionHandle
-  const providers = new ProviderStore(connection)
+  const providers = new ProviderStore(ctx.remote)
   ctx.effect(() => () => store.dispose(), "cocode-account: dispose store")
   ctx.effect(() => {
     const refresh = (): void => { void providers.load() }
     const disposers = [
-      connection.hostDescription.subscribe(() => { providers.refreshSelection() }),
       ctx.remote.$on("llm/adapters-updated", refresh),
       ctx.remote.$on("settings/document-updated", refresh),
       ctx.remote.$on("credentials/reference-updated", refresh),
@@ -806,11 +837,12 @@ export function apply(ctx: ClientContext): void {
 export function mountStandalone(target: HTMLElement): () => void {
   const store = new AccountStore()
   const providers = new ProviderStore({
-    api: { llm: { models: async () => ({ result: { ok: true, value: { groups: [], failures: [] } } }) } },
-    hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
-  } as unknown as ConnectionHandle)
-  let root: Root | undefined
-  root = createRoot(target)
+    llm: {
+      listProviders: async () => ({ ok: true, value: [] }),
+      listConfigurableProviders: async () => ({ ok: true, value: [] }),
+    },
+  } as unknown as ClientRemote)
+  const root: Root = createRoot(target)
   root.render(createElement(AccountAction, { wide: true, store, providers }))
   return () => root?.unmount()
 }

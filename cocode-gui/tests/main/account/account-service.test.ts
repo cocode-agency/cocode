@@ -266,7 +266,7 @@ test("reconciles a pre-existing reserved cloud credential", async () => {
 				: [
 						{
 							provider: "cocode-nut",
-							displayName: "Cocode Nut",
+							displayName: "Cocode",
 							settingsNs: "llm-pi-ai",
 							settingsPath: ["providers", "cocode-nut"],
 							active: true,
@@ -278,7 +278,7 @@ test("reconciles a pre-existing reserved cloud credential", async () => {
 				: [
 						{
 							id: "cocode-nut",
-							name: "Cocode Nut",
+							name: "Cocode",
 							models: [{ id: "cloud-model", name: "Cloud Model" }],
 						},
 				  ],
@@ -318,7 +318,7 @@ test("reuses a ready device cloud route without minting another API key", async 
 	const cocodeClient = await currentCocodeClient()
 	let writes = 0
 	const route = {
-		displayName: "Cocode Nut",
+		displayName: "Cocode",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
@@ -345,7 +345,7 @@ test("reuses a ready device cloud route without minting another API key", async 
 		providers: async (): Promise<ProviderView[]> => [
 			{
 				provider: "cocode-nut",
-				displayName: "Cocode Nut",
+				displayName: "Cocode",
 				settingsNs: "llm-pi-ai",
 				settingsPath: ["providers", "cocode-nut"],
 				active: true,
@@ -354,7 +354,7 @@ test("reuses a ready device cloud route without minting another API key", async 
 		models: async (): Promise<ModelGroup[]> => [
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [{ id: "cloud-model", name: "Cloud Model" }],
 			},
 		],
@@ -380,17 +380,9 @@ test("reuses a ready device cloud route without minting another API key", async 
 	})
 })
 
-test("refreshes hosted reasoning metadata on an existing managed route", async () => {
+test("normalizes a legacy hosted display name to Cocode", async () => {
 	const identity = new MemoryVault(validIdentity())
-	const { client, createdKeys } = agency({
-		models: async () => [
-			{
-				id: "cloud-model",
-				name: "Cloud Model",
-				reasoningEfforts: { high: "high", max: "max" },
-			},
-		],
-	})
+	const { client, createdKeys } = agency()
 	const cocodeClient = await currentCocodeClient()
 	let route: Record<string, unknown> = {
 		displayName: "Cocode Nut",
@@ -399,8 +391,10 @@ test("refreshes hosted reasoning metadata on an existing managed route", async (
 		apiKeyEnv: "COCODE_NUT_API_KEY",
 		cocodeClient,
 		retryPolicy: { mode: "normal", maxRetries: 5 },
+		reasoning: "high",
 		models: [{ id: "cloud-model", name: "Cloud Model" }],
 	}
+	const writes: string[] = []
 	const dsh = {
 		currentDefault: async () => ({ provider: "cocode-nut", model: "cloud-model" }),
 		describeSettings: async () => ({
@@ -428,11 +422,80 @@ test("refreshes hosted reasoning metadata on an existing managed route", async (
 				models: [{ id: "cloud-model", name: "Cloud Model" }],
 			},
 		],
+		mutateSettings: async (request: { ops: { value?: unknown }[] }) => {
+			route = request.ops[0]?.value as Record<string, unknown>
+			writes.push("route:set")
+		},
+		setCredential: async () => {
+			writes.push("credential:set")
+		},
+		unsetCredential: async (): Promise<void> => undefined,
+	} as never
+
+	const snapshot = await new AccountService(
+		dsh,
+		client,
+		dependencies(identity, new MemoryVault("ck_existing")).deps,
+	).signIn()
+	assert.equal(snapshot.phase, "signed-in")
+	assert.equal(route.displayName, "Cocode")
+	assert.deepEqual(writes, ["credential:set", "route:set"])
+	assert.deepEqual(createdKeys, [])
+})
+
+test("refreshes hosted reasoning metadata on an existing managed route", async () => {
+	const identity = new MemoryVault(validIdentity())
+	const { client, createdKeys } = agency({
+		models: async () => [
+			{
+				id: "cloud-model",
+				name: "Cloud Model",
+				reasoningEfforts: { high: "high", max: "max" },
+			},
+		],
+	})
+	const cocodeClient = await currentCocodeClient()
+	let route: Record<string, unknown> = {
+		displayName: "Cocode",
+		api: "openai-responses",
+		baseURL: "https://cocode.agency/v1",
+		apiKeyEnv: "COCODE_NUT_API_KEY",
+		cocodeClient,
+		retryPolicy: { mode: "normal", maxRetries: 5 },
+		models: [{ id: "cloud-model", name: "Cloud Model" }],
+	}
+	const dsh = {
+		currentDefault: async () => ({ provider: "cocode-nut", model: "cloud-model" }),
+		describeSettings: async () => ({
+			writable: true,
+			namespaces: [
+				{ ns: "llm-pi-ai", revision: 3, value: { providers: { "cocode-nut": route } } },
+			],
+		}),
+		describeCredentials: async () => ({
+			COCODE_NUT_API_KEY: { configured: true, writable: true },
+		}),
+		providers: async (): Promise<ProviderView[]> => [
+			{
+				provider: "cocode-nut",
+				displayName: "Cocode",
+				settingsNs: "llm-pi-ai",
+				settingsPath: ["providers", "cocode-nut"],
+				active: true,
+			},
+		],
+		models: async (): Promise<ModelGroup[]> => [
+			{
+				id: "cocode-nut",
+				name: "Cocode",
+				models: [{ id: "cloud-model", name: "Cloud Model" }],
+			},
+		],
 		mutateSettings: async (request: { ops: { value?: unknown }[] }): Promise<void> => {
 			route = request.ops[0]?.value as Record<string, unknown>
 		},
-		setCredential: async () => undefined,
-		unsetCredential: async () => undefined,
+		setCredential: async (): Promise<void> => undefined,
+		unsetCredential: async (): Promise<void> => undefined,
 	} as never
 
 	const snapshot = await new AccountService(
@@ -463,7 +526,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 	const selected: { sessionId: string; selection: DefaultSelection }[] = []
 	const defaultOps: { op: string; path: readonly string[]; value?: unknown }[] = []
 	const route = {
-		displayName: "Cocode Nut",
+		displayName: "Cocode",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
@@ -494,7 +557,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 		providers: async (): Promise<ProviderView[]> => [
 			{
 				provider: "cocode-nut",
-				displayName: "Cocode Nut",
+				displayName: "Cocode",
 				settingsNs: "llm-pi-ai",
 				settingsPath: ["providers", "cocode-nut"],
 				active: true,
@@ -508,7 +571,7 @@ test("paid sign-in switches a custom default and the open session onto Nut Flash
 			},
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [
 					{ id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro" },
 					{ id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },
@@ -569,7 +632,7 @@ test("free sign-in keeps a custom default model", async () => {
 	const cocodeClient = await currentCocodeClient()
 	let writes = 0
 	const route = {
-		displayName: "Cocode Nut",
+		displayName: "Cocode",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
@@ -600,7 +663,7 @@ test("free sign-in keeps a custom default model", async () => {
 		providers: async (): Promise<ProviderView[]> => [
 			{
 				provider: "cocode-nut",
-				displayName: "Cocode Nut",
+				displayName: "Cocode",
 				settingsNs: "llm-pi-ai",
 				settingsPath: ["providers", "cocode-nut"],
 				active: true,
@@ -609,7 +672,7 @@ test("free sign-in keeps a custom default model", async () => {
 		models: async (): Promise<ModelGroup[]> => [
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [{ id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" }],
 			},
 		],
@@ -641,7 +704,7 @@ test("upgrades a ready cloud route to the Cocode five-retry default", async () =
 	)
 	const { client, createdKeys } = agency()
 	let route: Record<string, unknown> = {
-		displayName: "Cocode Nut",
+		displayName: "Cocode",
 		api: "openai-responses",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
@@ -666,7 +729,7 @@ test("upgrades a ready cloud route to the Cocode five-retry default", async () =
 		providers: async (): Promise<ProviderView[]> => [
 			{
 				provider: "cocode-nut",
-				displayName: "Cocode Nut",
+				displayName: "Cocode",
 				settingsNs: "llm-pi-ai",
 				settingsPath: ["providers", "cocode-nut"],
 				active: true,
@@ -675,7 +738,7 @@ test("upgrades a ready cloud route to the Cocode five-retry default", async () =
 		models: async (): Promise<ModelGroup[]> => [
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [{ id: "cloud-model", name: "Cloud Model" }],
 			},
 		],
@@ -713,7 +776,7 @@ test("upgrades a Completions cloud route to Responses without minting another ke
 	)
 	const { client, createdKeys } = agency()
 	let route: Record<string, unknown> = {
-		displayName: "Cocode Nut",
+		displayName: "Cocode",
 		api: "openai-completions",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
@@ -738,7 +801,7 @@ test("upgrades a Completions cloud route to Responses without minting another ke
 		providers: async (): Promise<ProviderView[]> => [
 			{
 				provider: "cocode-nut",
-				displayName: "Cocode Nut",
+				displayName: "Cocode",
 				settingsNs: "llm-pi-ai",
 				settingsPath: ["providers", "cocode-nut"],
 				active: true,
@@ -747,7 +810,7 @@ test("upgrades a Completions cloud route to Responses without minting another ke
 		models: async (): Promise<ModelGroup[]> => [
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [{ id: "cloud-model", name: "Cloud Model" }],
 			},
 		],
@@ -813,7 +876,7 @@ test("failed provider activation rolls back the managed route and credential", a
 		providers: async () => [
 			{
 				provider: "cocode-nut",
-				displayName: "Cocode Nut",
+				displayName: "Cocode",
 				settingsNs: "llm-pi-ai",
 				settingsPath: ["providers", "cocode-nut"],
 				active: false,
@@ -882,7 +945,7 @@ test("sign out removes the managed provider first, then restores the previous de
 	const { client, revoked, revokedApiKeys } = agency()
 	let current: DefaultSelection = { provider: "cocode-nut", model: "cloud-model" }
 	let route: Record<string, unknown> | undefined = {
-		displayName: "Cocode Nut",
+		displayName: "Cocode",
 		api: "openai-completions",
 		baseURL: "https://cocode.agency/v1",
 		apiKeyEnv: "COCODE_NUT_API_KEY",
@@ -899,7 +962,7 @@ test("sign out removes the managed provider first, then restores the previous de
 			},
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [{ id: "cloud-model", name: "Cloud Model" }],
 			},
 		],
@@ -969,7 +1032,7 @@ test("sign out falls back to the deployment default when the previous model is g
 		models: async () => [
 			{
 				id: "cocode-nut",
-				name: "Cocode Nut",
+				name: "Cocode",
 				models: [{ id: "cloud-model", name: "Cloud Model" }],
 			},
 		],
@@ -1226,7 +1289,7 @@ test("desktop-key reauthentication opens a browser reauth gate before retry", as
 				: [
 						{
 							provider: "cocode-nut",
-							displayName: "Cocode Nut",
+							displayName: "Cocode",
 							settingsNs: "llm-pi-ai",
 							settingsPath: ["providers", "cocode-nut"],
 							active: credentialConfigured,
@@ -1238,7 +1301,7 @@ test("desktop-key reauthentication opens a browser reauth gate before retry", as
 				: [
 						{
 							id: "cocode-nut",
-							name: "Cocode Nut",
+							name: "Cocode",
 							models: [{ id: "cloud-model", name: "Cloud Model" }],
 						},
 				  ],
@@ -1339,7 +1402,7 @@ test("managed-client mismatch retries native authorization once", async () => {
 				: [
 						{
 							provider: "cocode-nut",
-							displayName: "Cocode Nut",
+							displayName: "Cocode",
 							settingsNs: "llm-pi-ai",
 							settingsPath: ["providers", "cocode-nut"],
 							active: credentialConfigured,
@@ -1351,7 +1414,7 @@ test("managed-client mismatch retries native authorization once", async () => {
 				: [
 						{
 							id: "cocode-nut",
-							name: "Cocode Nut",
+							name: "Cocode",
 							models: [{ id: "cloud-model", name: "Cloud Model" }],
 						},
 				  ],
@@ -1492,7 +1555,7 @@ test("a queued cleanup that keeps failing cannot strand the account", async () =
 				: [
 						{
 							provider: "cocode-nut",
-							displayName: "Cocode Nut",
+							displayName: "Cocode",
 							settingsNs: "llm-pi-ai",
 							settingsPath: ["providers", "cocode-nut"],
 							active: credentialConfigured,
@@ -1504,7 +1567,7 @@ test("a queued cleanup that keeps failing cannot strand the account", async () =
 				: [
 						{
 							id: "cocode-nut",
-							name: "Cocode Nut",
+							name: "Cocode",
 							models: [{ id: "cloud-model", name: "Cloud Model" }],
 						},
 				  ],

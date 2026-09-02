@@ -109,6 +109,33 @@ Cocode GUI ─┐
 Cocode TUI ─┘
 ```
 
+### 升级 DSH 时的兼容性检查
+
+Cocode 按一个精确版本线使用 DSH。规范来源是
+`cocode-host-supervisor/package.json` 里的 `@deepseek-ai/dsh`；GUI 客户端包和
+`packages/cocode/*` 下每个插件的 DSH peer dependency 都必须使用同一个版本。
+
+修改 DSH 版本并刷新两个 lockfile 后，先运行快速契约检查：
+
+```sh
+cd cocode-gui
+corepack pnpm@10.34.5 install --frozen-lockfile --ignore-scripts
+corepack pnpm@10.34.5 run check:dsh-contract
+```
+
+它会检查所有 DSH 版本声明、实际安装的 npm package manifest、Cocode 插件
+manifest、浏览器插件入口，以及每个 `dsh.client.inject` 目标是否存在且版本一致。
+完整门禁会重新构建插件和 Electron，运行 GUI/Host 测试，重新暂存干净的 npm DSH
+运行时，并校验依赖闭包与哈希：
+
+```sh
+corepack pnpm@10.34.5 run check:dsh-compatibility
+```
+
+不要只把 TypeScript 编译成功当作兼容证明。DSH 升级还可能改变 slot 名称、插件注入
+关系、客户端导出入口或运行时依赖闭包；干净 staging 和 runtime verification 才能
+在发布前拦住这些集成问题。
+
 ## 环境要求
 
 三个组件的工具链基线并不统一，按你要构建的那个来：

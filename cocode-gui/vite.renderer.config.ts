@@ -1,3 +1,4 @@
+import http from "node:http"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { defineConfig, type Plugin, type ProxyOptions } from "vite"
@@ -9,6 +10,10 @@ import {
 	assertDshClientPackageOwnership,
 	DSH_CLIENT_OWNERSHIP,
 } from "./scripts/lib/dsh-client-ownership.mjs"
+import {
+	cocodeClientBundleDirectory,
+	dshClientBundleDirectory,
+} from "./src/shared/dsh-runtime/dsh-client-bundle-path"
 
 assertDshClientPackageOwnership(DSH_CLIENT_OWNERSHIP.webBoot, "web-boot")
 assertDshClientPackageOwnership(DSH_CLIENT_OWNERSHIP.reactRenderer, "react-renderer")
@@ -17,20 +22,21 @@ assertDshClientPackageOwnership(DSH_CLIENT_OWNERSHIP.webBundle, "web-app")
 // electron-vite resolves this config from the GUI package root. Keep paths
 // independent of CommonJS-only __dirname so the config is also importable as ESM.
 const projectRoot = path.resolve()
-const dshClientRoot = path.join(projectRoot, "packages/client")
 const cocodeClientRoot = path.join(projectRoot, "packages/cocode")
-const dshSource = (relativePath: string): string => path.join(projectRoot, relativePath)
-const localClient = (relativePath: string): string => path.join(dshClientRoot, relativePath)
 const dshClientBundleDiscovery = findDshClientBundles()
 const dshClientBundles = dshClientBundleDiscovery.bundles
 const dshRuntimeUrl = normalizeRuntimeUrl(process.env.COCODE_DSH_RUNTIME_URL)
+const dshRuntimeCookie = process.env.COCODE_DSH_RUNTIME_COOKIE?.trim()
+const dshRuntimeAuthority = process.env.COCODE_DSH_RUNTIME_AUTHORITY?.trim()
 
 // https://vitejs.dev/config
 export default defineConfig({
 	base: "./",
-	plugins: [dshClientBundlePlugin(), dshWebDevPlugin()],
+	plugins: [dshClientBundlePlugin(), dshWebDevPlugin(dshRuntimeCookie, dshRuntimeAuthority)],
 	server:
-		dshRuntimeUrl === undefined ? undefined : { proxy: createDshRuntimeProxy(dshRuntimeUrl) },
+		dshRuntimeUrl === undefined
+			? undefined
+			: { proxy: createDshRuntimeProxy(dshRuntimeUrl, dshRuntimeCookie) },
 	resolve: {
 		alias: [
 			{ find: "@", replacement: path.join(projectRoot, "src/renderer") },
@@ -40,46 +46,6 @@ export default defineConfig({
 					projectRoot,
 					"src/renderer/app/bootstrap/node-module-stub.ts",
 				),
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-web$/,
-				replacement: localClient("client/web/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-ui-slots$/,
-				replacement: localClient("client/ui-slots/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-ui-primitives$/,
-				replacement: localClient("client/ui-primitives/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-ui-attachment$/,
-				replacement: localClient("client/ui-attachment/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-ui-theme\/styles\/(.+)$/,
-				replacement: `${localClient("client/ui-theme/src/styles")}/$1`,
-			},
-			{
-				find: /^@deepseek-ai\/dsh-client-modules\/client$/,
-				replacement: localClient("client/modules/src/client/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/cordis$/,
-				replacement: dshSource("vendor/cordis/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/cordis-plugin-loader$/,
-				replacement: dshSource("vendor/loader/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/cosmokit$/,
-				replacement: dshSource("vendor/cosmokit/src/index.ts"),
-			},
-			{
-				find: /^@deepseek-ai\/schemastery$/,
-				replacement: dshSource("vendor/schemastery/src/index.ts"),
 			},
 		],
 	},
@@ -96,16 +62,21 @@ export function normalizeRuntimeUrl(value: string | undefined): string | undefin
 	return trimmed.replace(/\/$/, "")
 }
 
-export function createDshRuntimeProxy(runtimeUrl: string): Record<string, ProxyOptions> {
+export function createDshRuntimeProxy(
+	runtimeUrl: string,
+	runtimeCookie?: string,
+): Record<string, ProxyOptions> {
 	// changeOrigin must stay false: the /api trust fence (client-connection)
 	// requires the request Host header to match the browser's Origin host, and
 	// the page always calls same-origin through this proxy (localhost:5273).
 	// Rewriting Host to the target would 403 every /api RPC — pickDirectory
 	// and the other loopback-pinned methods fail first, then the rest.
+	const target = cleanRuntimeUrl(runtimeUrl)
 	const proxy: ProxyOptions = {
-		target: runtimeUrl,
+		target,
 		changeOrigin: false,
 		ws: true,
+		...(runtimeCookie === undefined ? {} : { headers: { Cookie: runtimeCookie } }),
 	}
 	return {
 		"/api": proxy,
@@ -115,7 +86,7 @@ export function createDshRuntimeProxy(runtimeUrl: string): Record<string, ProxyO
 	}
 }
 
-function dshWebDevPlugin(): Plugin {
+function dshWebDevPlugin(runtimeCookie?: string, runtimeAuthority?: string): Plugin {
 	return {
 		name: "cocode-dsh-web-dev",
 		configureServer(server) {
@@ -127,7 +98,11 @@ function dshWebDevPlugin(): Plugin {
 					return
 				}
 				try {
-					const runtimeResponse = await fetch(dshRuntimeUrl)
+					const runtimeResponse = await fetchDshRuntime(
+						dshRuntimeUrl,
+						runtimeAuthority,
+						runtimeCookie,
+					)
 					if (!runtimeResponse.ok) {
 						throw new Error(
 							`DSH runtime bootstrap request failed with HTTP ${String(
@@ -160,9 +135,70 @@ function dshWebDevPlugin(): Plugin {
 	}
 }
 
+function fetchDshRuntime(
+	runtimeUrl: string,
+	runtimeAuthority: string | undefined,
+	runtimeCookie: string | undefined,
+): Promise<Response> {
+	if (runtimeAuthority === undefined) {
+		return fetch(
+			runtimeUrl,
+			runtimeCookie === undefined ? undefined : { headers: { Cookie: runtimeCookie } },
+		)
+	}
+	const parsed = new URL(runtimeUrl)
+	if (parsed.protocol !== "http:") {
+		throw new Error("DSH Web bootstrap requires an HTTP loopback endpoint")
+	}
+	return new Promise((resolve, reject) => {
+		const request = http.request(
+			{
+				hostname: parsed.hostname,
+				port: parsed.port,
+				path: `${parsed.pathname}${parsed.search}`,
+				method: "GET",
+				headers: {
+					Host: runtimeAuthority,
+					...(runtimeCookie === undefined ? {} : { Cookie: runtimeCookie }),
+				},
+			},
+			(response) => {
+				const chunks: Buffer[] = []
+				response.on("data", (chunk: Buffer) => chunks.push(chunk))
+				response.on("end", () => {
+					const headers = new Headers()
+					for (const [name, value] of Object.entries(response.headers)) {
+						if (Array.isArray(value)) {
+							for (const item of value) headers.append(name, item)
+						} else if (value !== undefined) {
+							headers.set(name, value)
+						}
+					}
+					resolve(
+						new Response(Buffer.concat(chunks), {
+							status: response.statusCode ?? 0,
+							statusText: response.statusMessage,
+							headers,
+						}),
+					)
+				})
+			},
+		)
+		request.once("error", reject)
+		request.end()
+	})
+}
+
+function cleanRuntimeUrl(runtimeUrl: string): string {
+	const parsed = new URL(runtimeUrl)
+	parsed.search = ""
+	parsed.hash = ""
+	return parsed.href.replace(/\/$/, "")
+}
+
 export function findDshClientBundles(
 	sources: readonly { readonly root: string; readonly prefix: string }[] = [
-		{ root: dshClientRoot, prefix: "" },
+		{ root: path.join(projectRoot, "node_modules/@deepseek-ai"), prefix: "" },
 		{ root: cocodeClientRoot, prefix: "cocode" },
 	],
 ): {
@@ -205,7 +241,9 @@ function visitDshClientPackages(
 		const relativeDirectory = path.relative(root, packageRoot).split(path.sep).join("/")
 		const bundleDirectory = source.prefix
 			? path.posix.join(source.prefix, relativeDirectory)
-			: clientBundleDirectory(manifest.name, relativeDirectory)
+			: dshClientBundleDirectory(manifest.name) ??
+			  cocodeClientBundleDirectory(manifest.name) ??
+			  relativeDirectory
 		const clientBundle = path.join(packageRoot, "lib", "client.js")
 		if (!existsSync(clientBundle)) {
 			missing.push(bundleDirectory)
@@ -213,12 +251,6 @@ function visitDshClientPackages(
 		}
 		bundles.set(bundleDirectory, clientBundle)
 	}
-}
-
-function clientBundleDirectory(packageName: string, relativeDirectory: string): string {
-	const prefix = "@deepseek-ai/dsh-client-"
-	if (packageName.startsWith(prefix)) return packageName.slice(prefix.length)
-	return relativeDirectory
 }
 
 function dshClientBundlePlugin(): Plugin {

@@ -14,8 +14,8 @@ import {
 
 test("uses the reference-free browser tsconfig for mirrored client bundles", () => {
 	assert.equal(
-		resolveClientBuildTsconfig(path.resolve("packages/client/client/ui-agent-preset")),
-		path.resolve("tsconfig.base.client.json"),
+		resolveClientBuildTsconfig(path.resolve("packages/cocode/cocode-workbench")),
+		path.resolve("packages/cocode/cocode-workbench/tsconfig.json"),
 	)
 	assert.equal(
 		resolveClientBuildTsconfig(path.resolve("packages/cocode/cocode-workbench")),
@@ -36,6 +36,7 @@ test("discovers only web client packages with a source client entry", () => {
 				dsh: { client: { platform: "web" } },
 			}),
 		)
+		writeFileSync(path.join(valid, "tsconfig.json"), "{}")
 		writeFileSync(path.join(valid, "tsdown.config.ts"), "export default {}")
 		writeFileSync(path.join(valid, "src", "client", "index.ts"), "export {}")
 
@@ -73,6 +74,7 @@ test("discovers web client packages nested below category directories", () => {
 				dsh: { client: { platform: "web" } },
 			}),
 		)
+		writeFileSync(path.join(nested, "tsconfig.json"), "{}")
 		writeFileSync(path.join(nested, "tsdown.config.ts"), "export default {}")
 		writeFileSync(path.join(nested, "src", "client", "index.ts"), "export {}")
 
@@ -98,6 +100,7 @@ test("rejects the removed dsh-client-web-react package from the active Web roste
 				dsh: { client: { platform: "web" } },
 			}),
 		)
+		writeFileSync(path.join(legacy, "tsconfig.json"), "{}")
 		writeFileSync(path.join(legacy, "tsdown.config.ts"), "export default {}")
 		writeFileSync(path.join(legacy, "src", "client", "index.ts"), "export {}")
 
@@ -125,6 +128,7 @@ test("continues scanning below a non-client package manifest", () => {
 				dsh: { client: { platform: "web" } },
 			}),
 		)
+		writeFileSync(path.join(nested, "tsconfig.json"), "{}")
 		writeFileSync(path.join(nested, "tsdown.config.ts"), "export default {}")
 		writeFileSync(path.join(nested, "src", "client", "index.ts"), "export {}")
 
@@ -137,11 +141,15 @@ test("continues scanning below a non-client package manifest", () => {
 	}
 })
 
-test("discovers the migrated client tree from the workspace package root", () => {
-	const ids = discoverDshClientPackages(path.resolve("packages/client")).map((item) => item.id)
-	assert.equal(ids.length >= 37, true)
-	assert.equal(ids.includes("@deepseek-ai/dsh-client-ui-sidebar"), true)
-	assert.equal(ids.includes("@deepseek-ai/dsh-client-ui-conversation"), true)
+test("discovers only Cocode-owned client plugins from the workspace package root", () => {
+	const ids = discoverDshClientPackages().map((item) => item.id)
+	assert.equal(ids.length >= 8, true)
+	assert.equal(ids.includes("cocode-brand"), true)
+	assert.equal(ids.includes("cocode-appearance"), true)
+	assert.equal(
+		ids.every((id) => id.startsWith("cocode-")),
+		true,
+	)
 })
 
 test("detects a source bundle that is newer than its emitted client bundle", () => {
@@ -229,10 +237,10 @@ test("marks browser bundles with unresolved Node process globals for rebuild", (
 
 test("forces ordinary client dependencies into the browser bundle", async () => {
 	const config = await createClientBuildConfig({
-		id: "@deepseek-ai/dsh-client-ui-trajectory",
-		root: path.resolve("packages/client/client/ui-trajectory"),
-		configPath: path.resolve("packages/client/client/ui-trajectory/tsdown.config.ts"),
-		tsconfigPath: path.resolve("tsconfig.base.client.json"),
+		id: "cocode-workbench",
+		root: path.resolve("packages/cocode/cocode-workbench"),
+		configPath: path.resolve("packages/cocode/cocode-workbench/tsdown.config.ts"),
+		tsconfigPath: path.resolve("packages/cocode/cocode-workbench/tsconfig.json"),
 	})
 
 	const neverBundle = config.deps?.neverBundle as (specifier: string) => boolean
@@ -249,31 +257,26 @@ test("forces ordinary client dependencies into the browser bundle", async () => 
 	])
 		assert.equal(neverBundle(specifier), true, specifier)
 	assert.equal(neverBundle("@deepseek-ai/dsh-client-schema-form"), false)
-	assert.equal(config.deps?.alwaysBundle?.("@tanstack/react-virtual"), true)
+	assert.equal(config.deps?.alwaysBundle?.("@codemirror/view"), true)
 	assert.equal(config.deps?.alwaysBundle?.("diff"), true)
 	assert.equal(config.deps?.alwaysBundle?.("react"), false)
 
 	const resolver = (config.plugins as Array<{ name?: string; resolveId?: Function }>).find(
-		(plugin) => plugin.name === "dsh-client-dependency-fallback",
+		(plugin) => plugin.name === "cocode-client-dependency-resolver",
 	)
 	assert.equal(typeof resolver?.resolveId, "function")
-	const importer = path.resolve(
-		"packages/client/client/ui-trajectory/src/client/TrajectoryTable.tsx",
-	)
-	assert.match(
-		String(resolver?.resolveId?.("@tanstack/react-virtual", importer)),
-		/react-virtual/,
-	)
+	const importer = path.resolve("packages/cocode/cocode-workbench/src/client/index.tsx")
+	assert.match(String(resolver?.resolveId?.("@codemirror/view", importer)), /codemirror[\\/]view/)
 	assert.match(String(resolver?.resolveId?.("diff", importer)), /diff/)
 	assert.equal(resolver?.resolveId?.("@xterm/xterm/css/xterm.css", importer), null)
 })
 
 test("defines the browser-safe DSH client build profile", async () => {
 	const config = await createClientBuildConfig({
-		id: "@deepseek-ai/dsh-client-ui-brand-official",
-		root: path.resolve("packages/client/client/ui-brand-official"),
-		configPath: path.resolve("packages/client/client/ui-brand-official/tsdown.config.ts"),
-		tsconfigPath: path.resolve("tsconfig.base.client.json"),
+		id: "cocode-brand",
+		root: path.resolve("packages/cocode/cocode-brand"),
+		configPath: path.resolve("packages/cocode/cocode-brand/tsdown.config.ts"),
+		tsconfigPath: path.resolve("packages/cocode/cocode-brand/tsconfig.json"),
 	})
 
 	assert.equal(config.define?.["process.env"], "{}")

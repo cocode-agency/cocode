@@ -11,7 +11,7 @@ import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { MessageFontSize } from './font-size.ts'
 import type { AppearanceLocaleKey } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { createAppearanceSectionStore } from './settings-store.ts'
+import type { AppearanceSectionState, createAppearanceSectionStore } from './settings-store.ts'
 import css from './AppearanceSection.module.css'
 
 /** Injected business face: preference writes (t rides the standard locale seat). */
@@ -49,7 +49,7 @@ const FONT_SIZE_CUBES: readonly { id: MessageFontSize; labelKey: AppearanceLocal
 export function AppearanceSection({
   t, setTheme, setMessageFontSize, useStore,
 }: AppearanceSectionComponentProps) {
-  const { preference, messageFontSize } = useStore(s => s)
+  const { preference, messageFontSize } = useStore((s: AppearanceSectionState) => s)
   return (
     <div className={css.section}>
       <div className={css.group}>

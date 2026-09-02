@@ -58,12 +58,21 @@ export interface DshBootEntryDto {
 	readonly url: string
 	readonly rev: string
 	readonly inject?: readonly string[]
+	readonly external?: readonly string[]
 	readonly immediately?: boolean
+}
+
+export interface DshBootBatchDto {
+	readonly phase: "bootstrap" | "application"
+	readonly url: string
+	readonly rev: string
+	readonly entries: readonly string[]
 }
 
 export interface DshBootManifestDto {
 	readonly rev: string
 	readonly entries: readonly DshBootEntryDto[]
+	readonly batches: readonly DshBootBatchDto[]
 }
 
 export interface DshRuntimeBootstrapDto {

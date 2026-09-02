@@ -1,0 +1,23 @@
+/*
+ * Keep the visible gap between the attach control and permission selector in
+ * line with the model selector/send-button gap. PermissionSelect contributes
+ * 8px of left padding, so the tool-group gap is 8px rather than the upstream
+ * 16px default.
+ */
+body [data-composer-card] {
+	padding-top: 8px;
+}
+
+/* Match the shell's 16px outer rhythm below the active composer. */
+body [data-phase="active"] [data-composer-seat] :has(> [data-composer-card]) {
+	padding-bottom: 16px;
+}
+
+[data-composer-card] > div:last-child > div:first-child {
+	gap: 8px;
+}
+
+/* Keep the model, context meter, and send controls on the same compact grid. */
+[data-composer-card] > div:last-child > div:last-child {
+	gap: 8px;
+}

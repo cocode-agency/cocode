@@ -1,16 +1,8 @@
 const isIgnoredByOxlint = (file) => {
 	const normalized = file.replace(/\\/g, "/")
-	return [
-		"packages/cocode/",
-		"packages/client/",
-		"vendor/",
-		".cache/",
-		".vite/",
-		"dist/",
-		"dist-electron/",
-		"out/",
-		"release/",
-	].some((ignoredPath) => normalized.includes(ignoredPath))
+	return [".cache/", ".vite/", "dist/", "dist-electron/", "out/", "release/"].some(
+		(ignoredPath) => normalized.includes(ignoredPath),
+	)
 }
 
 module.exports = {

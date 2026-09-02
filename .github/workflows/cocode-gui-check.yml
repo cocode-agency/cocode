@@ -79,6 +79,9 @@ jobs:
       - name: Install GUI dependencies
         run: corepack pnpm@10.34.5 install --frozen-lockfile
 
+      - name: Check DSH and Cocode plugin contract
+        run: corepack pnpm@10.34.5 run check:dsh-contract
+
       - name: Prepare Host Supervisor Linux native helpers
         run: |
           node --input-type=module -e "import('./scripts/lib/workspace-dependencies.mjs').then(({ prepareNodePtyNatives }) => prepareNodePtyNatives({ root: '../cocode-host-supervisor', platform: process.platform, arch: process.arch }))"

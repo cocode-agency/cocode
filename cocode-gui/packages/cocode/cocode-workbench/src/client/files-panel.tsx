@@ -9,7 +9,7 @@ import {
 } from "./files-actions.ts"
 import { fileMenuEntries, isFileCommand, type FileCommand } from "./files-menu.ts"
 import {
-  activeFileShortcutTarget, FILE_ADD_TO_CHAT_COMMAND, FILE_CANCEL_COMMAND,
+  FILE_ADD_TO_CHAT_COMMAND, FILE_CANCEL_COMMAND,
   FILE_COLLAPSE_COMMAND, FILE_CONTEXT_MENU_COMMAND, FILE_COPY_COMMAND,
   FILE_CUT_COMMAND, FILE_DELETE_COMMAND, FILE_EXPAND_COMMAND, FILE_OPEN_COMMAND,
   FILE_PASTE_COMMAND, FILE_RENAME_COMMAND, FILE_SELECT_NEXT_COMMAND,
@@ -505,6 +505,7 @@ export function FilesPanel(props: WorkbenchPanelProps) {
       onClose={() => setRemoval(undefined)}
       title={removal?.isDir === true ? t("files.deleteFolder") : t("files.delete")}
       description={removal === undefined ? "" : t("files.deleteDescription", { name: removal.name, contents: removal.isDir ? t("files.contentsRemoved") : "" })}
+      closeLabel={t("files.cancel")}
       footer={<>
         <Button variant="outline" onClick={() => setRemoval(undefined)}>{t("files.cancel")}</Button>
         <Button variant="primary" className={css.treeDangerAction} onClick={() => { if (removal !== undefined) void remove(removal) }}>{t("files.delete")}</Button>

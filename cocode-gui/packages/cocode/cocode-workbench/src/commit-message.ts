@@ -24,6 +24,7 @@ const MAX_OUTPUT_TOKENS = 512
 const TIMEOUT_MS = 45_000
 const THINKING_OFF = ReasoningEffortId("off")
 const COCODE_NUT_PROVIDERS = new Set(["cocode-nut", "cocode-cloud"])
+const COCODE_DISPLAY_NAME = "Cocode"
 
 const SYSTEM_PROMPT = [
   "You write git commit messages from a diff.",
@@ -175,7 +176,7 @@ interface CatalogEntry {
 async function catalogOf(llm: LlmRuntime): Promise<readonly CatalogEntry[]> {
   return Promise.all(llm.listProviders().map(async provider => ({
     provider: provider.id,
-    providerName: provider.name,
+    providerName: COCODE_NUT_PROVIDERS.has(provider.id) ? COCODE_DISPLAY_NAME : provider.name,
     models: await llm.listModels(provider.id).catch(() => []),
   })))
 }

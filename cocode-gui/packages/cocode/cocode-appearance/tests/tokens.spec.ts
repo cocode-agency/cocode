@@ -21,5 +21,8 @@ describe("Cocode appearance tokens", () => {
     expect(css).toContain("--dsw-alias-bg-base: var(--cocode-background);")
     expect(css).toContain("--dsw-alias-button-primary-fill: var(--cocode-primary);")
     expect(css).toContain("--dsw-specific-input-major: var(--cocode-input);")
+    expect(css).toContain("body,\n  body[data-ds-dark-theme]")
+    expect(css).toContain("body[data-cocode-message-font-size]")
+    expect(css).toContain("--dsh-content-font-size: var(--cocode-message-font-size) !important;")
   })
 })

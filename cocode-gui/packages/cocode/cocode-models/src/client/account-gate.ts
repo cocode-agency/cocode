@@ -23,6 +23,7 @@ type DesktopAccount = {
 
 /** Provider ids reserved for the desktop account provisioning flow. */
 const ACCOUNT_MANAGED_PROVIDER_IDS = new Set(['cocode-nut', 'cocode-cloud'])
+export const ACCOUNT_MANAGED_PROVIDER_DISPLAY_NAME = 'Cocode'
 
 /** Localized row-tag key for the provider identity shown in the Models list. */
 export type ProviderTagKey = 'managedProvider' | 'customTag'
@@ -44,6 +45,11 @@ export function providerTagKey(
 /** Whether a provider route is owned by the Cocode account rather than the Models page. */
 export function isAccountManagedProvider(provider: string): boolean {
   return ACCOUNT_MANAGED_PROVIDER_IDS.has(provider)
+}
+
+/** Human-facing label used for account-managed routes in model settings. */
+export function providerDisplayName(provider: string, displayName: string): string {
+  return isAccountManagedProvider(provider) ? ACCOUNT_MANAGED_PROVIDER_DISPLAY_NAME : displayName
 }
 
 /** Whether a settings address names an account-managed provider profile. */

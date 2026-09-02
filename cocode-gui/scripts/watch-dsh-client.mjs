@@ -7,10 +7,8 @@ import { build } from "tsdown"
 import { assertDshClientPackageOwnership } from "./lib/dsh-client-ownership.mjs"
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const clientRoot = path.join(repositoryRoot, "packages", "client")
 const cocodeClientRoot = path.join(repositoryRoot, "packages", "cocode")
-const clientTsconfig = path.join(repositoryRoot, "tsconfig.base.client.json")
-const clientRoots = [clientRoot, cocodeClientRoot]
+const clientRoots = [cocodeClientRoot]
 
 // These are the only CommonJS requires the browser loader can resolve from
 // its frozen module table. Older bundles may still be newer than their source
@@ -28,7 +26,7 @@ const CLIENT_MODULE_TABLE_EXTERNALS = new Set([
 	"@deepseek-ai/dsh-client-runtime/client",
 ])
 
-export function discoverDshClientPackages(root = clientRoot) {
+export function discoverDshClientPackages(root = cocodeClientRoot) {
 	const packages = []
 	visit(root)
 	return packages.sort((left, right) => left.id.localeCompare(right.id))
@@ -75,16 +73,15 @@ export function discoverDshClientPackages(root = clientRoot) {
 }
 
 /**
- * The mirrored upstream packages keep their full-harness project references,
- * including packages that are intentionally absent from this Electron
- * checkout. The watch build only transpiles one browser entry and must not ask
- * Rolldown to resolve that project graph. Project-owned Cocode packages remain
- * on their own tsconfig because their references live in this repository.
+ * Cocode plugin packages own their build configs and dependencies. DSH client
+ * bundles are published npm artifacts and are never rebuilt from this repo.
  */
 export function resolveClientBuildTsconfig(packageRoot) {
-	if (isPathWithin(clientRoot, packageRoot)) return clientTsconfig
 	const packageTsconfig = path.join(packageRoot, "tsconfig.json")
-	return existsSync(packageTsconfig) ? packageTsconfig : clientTsconfig
+	if (!existsSync(packageTsconfig)) {
+		throw new Error(`Cocode plugin package is missing tsconfig.json: ${packageRoot}`)
+	}
+	return packageTsconfig
 }
 
 export function resolveRuntimeClientBundlePath(runtimeRoot, packageId) {
@@ -275,7 +272,7 @@ async function prepareClientPackages(packages, runtimeRoot) {
 export async function buildDshClientPackages(runtimeRoot) {
 	const packages = clientRoots.flatMap((root) => discoverDshClientPackages(root))
 	if (packages.length === 0)
-		throw new Error("No dsh.client packages were found under packages/client.")
+		throw new Error("No Cocode client plugins were found under packages/cocode.")
 	await prepareClientPackages(packages, runtimeRoot)
 	return packages
 }
@@ -283,7 +280,7 @@ export async function buildDshClientPackages(runtimeRoot) {
 async function startWatcher(runtimeRoot) {
 	const packages = clientRoots.flatMap((root) => discoverDshClientPackages(root))
 	if (packages.length === 0)
-		throw new Error("No dsh.client packages were found under packages/client.")
+		throw new Error("No Cocode client plugins were found under packages/cocode.")
 
 	const scheduleBuild = createBuildScheduler(packages, runtimeRoot)
 	const watcher = watch(
@@ -323,7 +320,7 @@ async function main() {
 		return
 	}
 	const { packages, watcher } = await startWatcher(readRuntimeRoot())
-	console.log(`[client-watch] watching ${String(packages.length)} DSH client packages`)
+	console.log(`[client-watch] watching ${String(packages.length)} Cocode client plugins`)
 	process.send?.({ type: "ready", packages: packages.length })
 
 	const close = async () => {

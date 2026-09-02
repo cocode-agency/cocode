@@ -17,12 +17,15 @@ import {
 } from "./font-size.ts"
 import { en, zh } from "./locales.ts"
 import { createAppearanceSectionStore } from "./settings-store.ts"
+import { applyShellTheme } from "./shell-theme.ts"
+import composerCss from "../styles/composer.css?inline"
 import tokens from "../styles/tokens.css?inline"
 
 export const inject = ["slots", "locale", "theme", "settingsScope"]
 
 const NS = "settings.appearance"
 const TOKEN_PLUGIN_ID = "cocode-appearance"
+const COMPOSER_CSS_PLUGIN_ID = "cocode-appearance/composer"
 
 function HiddenAppearanceRow(): null {
 	return null
@@ -40,6 +43,45 @@ function installTokens(ctx: ClientContext): void {
 	}, "cocode-appearance: tokens")
 }
 
+function installComposerCss(ctx: ClientContext): void {
+	if (typeof document === "undefined") return
+	ctx.effect(() => {
+		const tag = document.createElement("style")
+		tag.dataset.plugin = TOKEN_PLUGIN_ID
+		tag.dataset.pluginCss = COMPOSER_CSS_PLUGIN_ID
+		tag.textContent = composerCss
+		document.head.appendChild(tag)
+		return () => { tag.remove() }
+	}, "cocode-appearance: composer spacing")
+}
+
+/**
+ * Keep the renderer shell's Tailwind theme state in step with the DSH theme
+ * presenter. DSH owns the body palette attribute, while the renderer shell
+ * still consumes the `html.dark` class for its base variables.
+ */
+function installShellTheme(ctx: ClientContext, theme: ThemeRuntime): void {
+	if (typeof document === "undefined") return
+	const html = document.documentElement
+	const previousTheme = html.dataset.theme
+	const previousDark = html.classList.contains("dark")
+	const previousColorScheme = html.style.colorScheme
+	const apply = (snapshot: ThemeSnapshot): void => {
+		applyShellTheme(snapshot)
+	}
+	ctx.effect(() => {
+		apply(theme.getTheme())
+		const off = ctx.on("theme/change", apply)
+		return () => {
+			off()
+			if (previousTheme === undefined) delete html.dataset.theme
+			else html.dataset.theme = previousTheme
+			html.classList.toggle("dark", previousDark)
+			html.style.colorScheme = previousColorScheme
+		}
+	}, "cocode-appearance: shell theme")
+}
+
 /**
  * Own the Appearance settings section, hide the DSH General appearance row,
  * and apply Cocode design tokens plus the message-list font size.
@@ -47,7 +89,9 @@ function installTokens(ctx: ClientContext): void {
  */
 export function apply(ctx: ClientContext): void {
 	installTokens(ctx)
+	installComposerCss(ctx)
 	const theme = ctx.get("theme") as ThemeRuntime
+	installShellTheme(ctx, theme)
 	let messageFontSize = readStoredMessageFontSize()
 	applyMessageFontSize(messageFontSize)
 	ctx.effect(() => () => clearMessageFontSize(), "cocode-appearance: message font-size")

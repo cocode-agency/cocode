@@ -14,7 +14,6 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
@@ -24,6 +23,7 @@ import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { isAccountManagedProviderPath, providerTagKey } from './account-gate.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
+import type { ModelsApi } from './api.ts'
 import styles from './ModelsSection.module.css'
 
 /** Injected dependencies of {@link ModelsSection} (slot `inject`). */
@@ -35,7 +35,7 @@ export interface ModelsSectionInjected {
     snapshot: ModelsSettingsStore['store']
   }
   /** Wire faces the editor writes through. */
-  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
+  api: ModelsApi
   /** Settings schema and immutable path callbacks. */
   schema: SettingsSchemaOperations
   /** Section copy. */
@@ -101,7 +101,7 @@ function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): 
  * @returns the failure message, or undefined once the write and reload landed.
  */
 export async function removeProviderProfile(
-  api: Pick<IApiClient, 'settings' | 'credentials'>,
+  api: Pick<ModelsApi, 'settings' | 'credentials'>,
   controller: ModelsSettingsStore,
   target: { settingsNs: string; settingsPath: readonly string[]; credentialRef?: string },
 ): Promise<string | undefined> {
@@ -191,7 +191,7 @@ export function ModelsSection(props: ModelsSectionProps): ReactNode {
 
 function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const { controller, api, schema, t } = injected
-  const state = injected.useSnapshot(snapshot => snapshot)
+  const state = injected.useSnapshot((snapshot: import('./store.ts').ModelsSettingsState) => snapshot)
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
   const [adding, setAdding] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
@@ -269,7 +269,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // exists to name it with.
   const savedRow = savedTarget === undefined
     ? undefined
-    : state.rows.find(row => row.entry.provider === savedTarget.provider)
+    : state.rows.find((row: ProviderRow) => row.entry.provider === savedTarget.provider)
   const savedIdentity = savedRow === undefined
     ? savedTarget
     : { provider: savedRow.entry.provider, displayName: savedRow.entry.displayName }
@@ -277,8 +277,8 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured)
-  const addable = state.rows.filter(row => !row.managed && !row.configured && row.entry.settingsNs !== '')
+  const configured = state.rows.filter((row: ProviderRow) => row.configured)
+  const addable = state.rows.filter((row: ProviderRow) => !row.managed && !row.configured && row.entry.settingsNs !== '')
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // Hand-declared routes live in the pi-ai namespace, which is also the only
@@ -299,7 +299,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
           </p>
         )}
       <ul className={styles['rows']}>
-        {configured.map((row) => {
+        {configured.map((row: ProviderRow) => {
           const target = targetOf(row)
           const namespace = state.namespaces.get(target.settingsNs)
           /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
@@ -430,13 +430,13 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                   value={addTarget.provider}
                   aria-label={t('provider')}
                   onChange={(event) => {
-                    const row = addable.find(candidate => candidate.entry.provider === event.target.value)
+                    const row = addable.find((candidate: ProviderRow) => candidate.entry.provider === event.target.value)
                     /* v8 ignore next -- the select only lists addable rows */
                     if (row === undefined) return
                     setEditing(targetOf(row))
                   }}
                 >
-                  {addable.map(row => (
+                  {addable.map((row: ProviderRow) => (
                     <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
                   ))}
                 </select>
@@ -460,7 +460,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
             ? (
               <div className={styles['addCard']}>
                 <CustomProviderCard
-                  taken={state.rows.map(row => row.entry.provider)}
+                  taken={state.rows.map((row: ProviderRow) => row.entry.provider)}
                   protocols={protocols}
                   /* v8 ignore next -- the card only opens from a button disabled without this namespace */
                   revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
