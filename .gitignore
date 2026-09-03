@@ -48,6 +48,10 @@ Desktop.ini
 /*.webp
 /*.gif
 
+# Local screenshot / verification dumps
+/outputs/
+/cocode-gui/outputs/
+
 # Dependencies
 node_modules/
 .pnpm-store/
